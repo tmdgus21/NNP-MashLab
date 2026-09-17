@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  # 1. 문지기 (Caddy 리버스 프록시)
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy-server
+    restart: unless-stopped
+    ports:
+      - "80:80"    # HTTP 기본 접근
+      - "443:443"  # HTTPS (SSL 인증서) 접근
+      - "8080:8080" #로컬 API 테스트용
+      - "8081:8081" #로컬 대시보드 테스트용
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile  # 우리가 작성할 라우팅 규칙 파일 연결
+      - caddy_data:/data                  # Let's Encrypt에서 받아온 SSL 인증서 보관
+      - caddy_config:/config
+    networks:
+      - mash-net
+
+  # 2. 백엔드 더미 (나중에 FastAPI 코드로 교체)
+  server-api:
+    image: traefik/whoami  # 접속하면 "난 여기 있어!"라고 알려주는 가벼운 테스트용 웹 서버
+    container_name: dummy-api
+    restart: unless-stopped
+    expose:
+      - "80" # 외부(해커)는 못 들어오고, 오직 Caddy만 내부망에서 접속할 수 있게 열어둠
+    networks:
+      - mash-net
+
+  # 3. 대시보드 더미 (나중에 NiceGUI 코드로 교체)
+  ops-dashboard:
+    image: traefik/whoami
+    container_name: dummy-dashboard
+    restart: unless-stopped
+    expose:
+      - "80"
+    networks:
+      - mash-net
+
+# 컨테이너들끼리 안전하게 통신할 수 있는 우리만의 가상 네트워크
+networks:
+  mash-net:
+    driver: bridge
+
+# 컨테이너가 꺼져도 SSL 인증서가 날아가지 않도록 하드디스크에 영구 저장
+volumes:
+  caddy_data:
+  caddy_config:
