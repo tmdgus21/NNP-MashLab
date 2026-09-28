@@ -1,0 +1,59 @@
+services:
+  # 1. 문지기 (Caddy 리버스 프록시)
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy-server
+    restart: unless-stopped
+    ports:
+      - "80:80"       # HTTP 기본 접근
+      - "443:443"     # HTTPS (SSL 인증서) 접근
+    volumes:
+      - ./infra/Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - server-api
+    networks:
+      - mash-net
+
+  # 2. FastAPI (Caddy만 내부망에서 접속)
+  server-api:
+    build: ./server-api
+    container_name: dummy-api
+    restart: unless-stopped
+    expose:
+      - "8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mash-net
+
+  # 3. PostgreSQL
+  postgres:
+    image: postgres:18-alpine
+    container_name: mashlab-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mashlab}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mashlab}
+      POSTGRES_DB: ${POSTGRES_DB:-mashlab}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mashlab} -d ${POSTGRES_DB:-mashlab}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mash-net
+
+networks:
+  mash-net:
+    driver: bridge
+
+# 컨테이너가 꺼져도 데이터가 날아가지 않도록 하드디스크에 영구 저장
+volumes:
+  caddy_data:
+  caddy_config:
+  postgres_data:
