@@ -19,7 +19,7 @@ services:
   # 2. FastAPI (Caddy만 내부망에서 접속)
   server-api:
     build: ./server-api
-    container_name: dummy-api
+    container_name: backend-api
     restart: unless-stopped
     expose:
       - "8000"
