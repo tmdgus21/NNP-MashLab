@@ -10,8 +10,6 @@ jobs:
   deploy:
     runs-on: ubuntu-24.04
     steps:
-      - name: Check Secret Status
-
       - name: git pull and docker compose up
         uses: appleboy/ssh-action@v1.2.2
         with:
