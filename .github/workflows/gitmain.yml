@@ -10,6 +10,9 @@ jobs:
   deploy:
     runs-on: ubuntu-24.04
     steps:
+      - name: Check Secret Status
+        run: echo "키 값이 등록되어 있는지 확인 (true면 정상) -> ${{ secrets.SSH_KEY != '' }}"
+
       - name: git pull and docker compose up
         uses: appleboy/ssh-action@v1.2.2
         with:
@@ -21,4 +24,3 @@ jobs:
             cd ${{ secrets.APP_DIR }}
             git pull origin main
             docker compose up -d --build
-- run: echo "키 길이가 0이면 문제가 있는 것입니다 -> ${{ len(secrets.SSH_KEY) }}"
