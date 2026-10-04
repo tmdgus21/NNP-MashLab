@@ -3,6 +3,8 @@ name: Deploy
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
   deploy:
@@ -19,3 +21,4 @@ jobs:
             cd ${{ secrets.APP_DIR }}
             git pull origin main
             docker compose up -d --build
+- run: echo "키 길이가 0이면 문제가 있는 것입니다 -> ${{ len(secrets.SSH_KEY) }}"
