@@ -38,10 +38,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-mashlab}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mashlab}
       POSTGRES_DB: ${POSTGRES_DB:-mashlab}
-    ports:
-    - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
-    - postgres_data:/var/lib/postgresql
+      - postgres_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mashlab} -d ${POSTGRES_DB:-mashlab}"]
       interval: 5s

@@ -5,3 +5,10 @@ __pycache__/
 .venv/
 venv/
 .DS_Store
+.artifacts/
+*.apk
+*.aab
+*.log
+*.tmp
+.env.*
+!.env.example
