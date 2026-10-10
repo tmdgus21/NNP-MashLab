@@ -1,3 +1,4 @@
-oranganman.site {
+# [배포 시 전환] 나중에 도메인을 사면 http://localhost 대신 example.com 으로 변경
+oranganman.site  {
     reverse_proxy server-api:8000
 }
