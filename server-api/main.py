@@ -3,6 +3,7 @@ from secrets import choice
 from uuid import uuid4
 
 from fastapi import FastAPI
+from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field
 
 
@@ -21,6 +22,7 @@ class RoomCreateRequest(BaseModel):
 
 
 app = FastAPI()
+Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 # 학습용 임시 저장소입니다. 서버를 재시작하면 내용이 사라집니다.
 rooms = {}

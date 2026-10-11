@@ -117,6 +117,9 @@ services:
       DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-mashlab}:${POSTGRES_PASSWORD:-mashlab}@postgres:5432/${POSTGRES_DB:-mashlab}?sslmode=disable"
     networks:
       - mash-net
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
 networks:
