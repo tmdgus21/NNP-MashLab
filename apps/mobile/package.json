@@ -12,7 +12,10 @@
     "apk:debug": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-apk.ps1",
     "test:android": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/android-smoke.ps1 -Install",
     "setup:android": "node scripts/ensure-debug-key.cjs",
-    "preandroid": "npm run setup:android"
+    "preandroid": "npm run configure && npm run setup:android",
+    "configure": "node scripts/configure.cjs",
+    "prestart": "npm run configure",
+    "pretypecheck": "npm run configure"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "3.1.1",
@@ -21,8 +24,11 @@
     "react": "19.2.3",
     "react-native": "0.87.1",
     "react-native-gesture-handler": "3.3.0",
+    "react-native-keychain": "^10.0.0",
+    "react-native-qrcode-svg": "^6.3.26",
     "react-native-safe-area-context": "^5.5.2",
     "react-native-screens": "4.28.0",
+    "react-native-svg": "^15.15.5",
     "zod": "4.6.5",
     "zustand": "5.0.15"
   },

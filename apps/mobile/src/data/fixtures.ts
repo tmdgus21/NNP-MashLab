@@ -7,7 +7,7 @@ export function fixture(scenario: Scenario): Meeting {
   const roles = ['진행', '기록', '촬영'];
   const m: Meeting = {
     id: 'demo',
-    code: 'OK2026',
+    roomCode: 'OK2026',
     title: '주말 프로젝트 모임',
     hostId: 'p1',
     timezone: 'Asia/Seoul',

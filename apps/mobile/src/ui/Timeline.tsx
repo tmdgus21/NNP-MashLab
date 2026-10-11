@@ -13,8 +13,9 @@ export function Timeline({ meeting: m }: { meeting: Meeting }) {
   );
   const people = m.participants.map(p => ({
     ...p,
-    slots: intervalsToSlots(p.conditions.availability, date),
+    slots: intervalsToSlots(p.conditions.availability, date).filter(slot=>!intervalsToSlots(p.conditions.unavailable??[],date).includes(slot)),
   }));
+  const needed = m.roles.reduce((sum,role)=>sum+(m.roleNeeds?.[role]??1),0);
   const counts = slots.map(s => people.filter(p => p.slots.includes(s)).length);
   return (
     <View style={{ gap: 12 }}>
@@ -98,7 +99,7 @@ export function Timeline({ meeting: m }: { meeting: Meeting }) {
                     alignItems: 'center',
                     justifyContent: 'center',
                     backgroundColor:
-                      count >= m.roles.length ? colors.primary : colors.pale,
+                      count >= needed ? colors.primary : colors.pale,
                     borderRightWidth: 2,
                     borderColor: colors.white,
                   }}
@@ -108,7 +109,7 @@ export function Timeline({ meeting: m }: { meeting: Meeting }) {
                       fontSize: 12,
                       fontWeight: '700',
                       color:
-                        count >= m.roles.length ? colors.white : colors.primary,
+                        count >= needed ? colors.white : colors.primary,
                     }}
                   >
                     {count}

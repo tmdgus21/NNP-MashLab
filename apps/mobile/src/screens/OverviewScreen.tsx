@@ -1,26 +1,19 @@
-import React, { useState } from 'react';
-import { RefreshControl, ScrollView, Share, Text, View } from 'react-native';
+import React, {useState} from 'react';
+import { NativeModules, RefreshControl, ScrollView, Share, Text, View } from 'react-native';
+import QRCode from 'react-native-qrcode-svg';
 import { useApp } from '../state/store';
-import { repository, mockRepository } from '../data/repositoryInstance';
-import { Scenario } from '../data/RepositoryPort';
 import { consentLabel, planLabel } from '../domain/model';
 import { Button, Chip, StatusCard } from '../ui/components';
 import { Timeline } from '../ui/Timeline';
 import { colors, ui } from '../ui/theme';
-const scenarios: [Scenario, string][] = [
-  ['feasible', '배정 가능'],
-  ['conflict', '시간 충돌'],
-  ['infeasible', '역할 부족'],
-  ['changed', '조건 변경 / 재동의'],
-  ['finalized', '최종 확정'],
-  ['empty', '빈 조건'],
-];
+import { INVITE_BASE_URL } from '../config/runtime.generated';
 export function OverviewScreen() {
   const app = useApp();
   const m = app.meeting!;
-  const [demo, setDemo] = useState(false);
+  const [shareError,setShareError]=useState('');
+  const inviteUrl=`${INVITE_BASE_URL}/join?code=${encodeURIComponent(m.roomCode)}`;
   const count = m.participants.filter(
-    p => p.conditions.availability.length && p.conditions.roles.length,
+    p => p.submitted ?? !!(p.conditions.availability.length && p.conditions.roles.length),
   ).length;
   return (
     <ScrollView
@@ -97,6 +90,10 @@ export function OverviewScreen() {
               <Text style={ui.small}>
                 {p.conditions.roles.join(' · ') || '역할 미입력'}
               </Text>
+              <Text style={ui.small}>{p.submitted===undefined?'':p.submitted?`제출 완료 · v${p.conditionVersion}`:'아직 제출하지 않았어요'}</Text>
+              {!!p.conditions.requiredRoles?.length && <Text style={ui.small}>필수: {p.conditions.requiredRoles.join(', ')}</Text>}
+              {!!p.conditions.roleUnavailable?.length && <Text style={ui.small}>불가: {p.conditions.roleUnavailable.join(', ')}</Text>}
+              {!!p.conditions.rolePreferences?.length && <Text style={ui.small}>선호: {p.conditions.rolePreferences.join(', ')}</Text>}
             </View>
             <Text
               style={{
@@ -109,14 +106,23 @@ export function OverviewScreen() {
           </View>
         ))}
         <Button
-          title={`초대 코드 ${m.code} 공유`}
+          title={`초대 코드 ${m.roomCode} 공유`}
           secondary
           onPress={() => {
             void Share.share({
-              message: `조건부 OK · ${m.title}\n초대 코드: ${m.code}`,
+              message: `조건부 OK · ${m.title}\n초대 코드: ${m.roomCode}\n${inviteUrl}`,
             });
           }}
         />
+        <View style={{alignItems:'center',padding:16,backgroundColor:'#FFFFFF'}} accessible accessibilityLabel={`QR 초대 코드 ${m.roomCode}`}>
+          <QRCode value={inviteUrl} size={190} />
+        </View>
+        <Text style={ui.small}>QR을 카메라로 스캔하면 이 모임의 참여 화면이 열립니다.</Text>
+        <Button title="카카오톡으로 초대" secondary onPress={()=>{
+          setShareError('');
+          void NativeModules.ConditionalOKInvitation.shareKakao(`조건부 OK · ${m.title}\n초대 코드: ${m.roomCode}\n${inviteUrl}`).catch((e:Error)=>setShareError(e.message));
+        }} />
+        {!!shareError && <StatusCard kind="error" title="공유 화면을 열지 못했어요" detail={shareError}/>}
       </View>
       <View style={ui.card}>
         <Text style={ui.heading}>조율 기록</Text>
@@ -137,55 +143,6 @@ export function OverviewScreen() {
         }}
         disabled={!!app.busy}
       />
-      {repository.mode === 'mock' && (
-        <View style={ui.card}>
-          <Button
-            title={demo ? '데모 도구 접기' : '데모 시나리오 · 참가자 전환'}
-            secondary
-            onPress={() => setDemo(!demo)}
-          />
-          {demo && (
-            <>
-              <Text style={ui.muted}>
-                Mock 전용 도구 · 시나리오 선택은 데모 모임을 초기화합니다. 실제
-                모임은 별도로 보존돼요.
-              </Text>
-              <Text style={ui.heading}>현재 참가자</Text>
-              <View style={ui.wrap}>
-                {m.participants.map(p => (
-                  <Chip
-                    key={p.id}
-                    title={`${p.name}로 전환`}
-                    selected={p.id === app.actorId}
-                    onPress={() => {
-                      void app.switchActor(p.id);
-                    }}
-                  />
-                ))}
-              </View>
-              <View style={ui.wrap}>
-                {scenarios.map(([s, label]) => (
-                  <Chip
-                    key={s}
-                    title={label}
-                    onPress={() => {
-                      void app.scenario(s);
-                    }}
-                  />
-                ))}
-              </View>
-              <Button
-                title="다음 조회 오류 재현"
-                secondary
-                onPress={() => {
-                  mockRepository.simulateError();
-                  void app.refresh();
-                }}
-              />
-            </>
-          )}
-        </View>
-      )}
     </ScrollView>
   );
 }

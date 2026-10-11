@@ -1,22 +1,26 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, ScrollView, Text, View } from 'react-native';
 import { useApp } from '../state/store';
 import { parseTime } from '../domain/time';
 import { Button, Chip, Field, StatusCard } from '../ui/components';
 import { colors, ui } from '../ui/theme';
-import { repository } from '../data/repositoryInstance';
+import { secureSession } from '../data/secureSession';
+import { StoredSession } from '../data/sessionTypes';
 export function WelcomeScreen() {
   const app = useApp();
   const [mode, setMode] = useState<'create' | 'join'>('create');
   const [name, setName] = useState('');
   const [title, setTitle] = useState('');
-  const [code, setCode] = useState('');
-  const [dates, setDates] = useState('2026-10-17, 2026-10-18');
+  const [roomCode, setRoomCode] = useState('');
+  const [dates, setDates] = useState(new Date(Date.now()+9*60*60*1000).toISOString().slice(0,10));
   const [roles, setRoles] = useState('진행, 기록, 촬영');
   const [start, setStart] = useState('09:00');
   const [end, setEnd] = useState('18:00');
   const [duration, setDuration] = useState('60');
   const [error, setError] = useState('');
+  const [savedSessions,setSavedSessions]=useState<StoredSession[]>([]);
+  useEffect(()=>{void secureSession.list().then(setSavedSessions).catch(e=>setError(String(e)));},[]);
+  useEffect(()=>{if(app.invitationCode){setRoomCode(app.invitationCode);setMode('join');}},[app.invitationCode]);
   const create = () => {
     try {
       setError('');
@@ -29,8 +33,9 @@ export function WelcomeScreen() {
           .filter(Boolean),
         roles: roles
           .split(',')
-          .map(v => v.trim())
+          .map(v => v.trim().split(':')[0].trim())
           .filter(Boolean),
+        roleNeeds: Object.fromEntries(roles.split(',').filter(v=>v.trim()).map(v=>{const [role,count]=v.trim().split(':');return [role.trim(),count?Number(count):1];})),
         duration: Number(duration),
         windowStart: parseTime(start),
         windowEnd: parseTime(end),
@@ -45,6 +50,10 @@ export function WelcomeScreen() {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={ui.content}
       >
+        {savedSessions.length>0 && <View style={ui.card}>
+          <Text style={ui.heading}>내가 참여한 모임</Text>
+          {savedSessions.map(s=><Button key={s.meetingId} title={`${s.title} · ${s.name}로 계속`} secondary onPress={()=>{void secureSession.activate(s.meetingId).then(()=>app.restore()).catch(e=>setError(String(e)));}} />)}
+        </View>}
         <View
           style={[
             ui.card,
@@ -104,7 +113,7 @@ export function WelcomeScreen() {
                 placeholder="YYYY-MM-DD"
               />
               <Field
-                label="필요한 역할 (역할마다 1명, 최대 6개)"
+                label="필요한 역할과 인원 (예: 진행:1, 기록:2)"
                 value={roles}
                 onChangeText={setRoles}
               />
@@ -140,14 +149,15 @@ export function WelcomeScreen() {
               <Field
                 label="초대 코드"
                 autoCapitalize="characters"
-                value={code}
-                onChangeText={setCode}
-                placeholder="예: OK2026"
+                value={roomCode}
+                onChangeText={setRoomCode}
+                placeholder="8자리 초대 코드"
+                maxLength={8}
               />
               <Button
                 title="모임 참가하기"
                 onPress={() => {
-                  void app.join(code, name);
+                  void app.join(roomCode, name);
                 }}
                 disabled={!!app.busy}
               />
@@ -160,25 +170,6 @@ export function WelcomeScreen() {
             detail={error}
             kind="error"
           />
-        )}
-        {repository.mode === 'mock' && (
-          <View style={ui.card}>
-            <Text style={ui.eyebrow}>MOCK DEMO</Text>
-            <Text style={ui.heading}>먼저 4명의 모임을 둘러보세요</Text>
-            <Text style={ui.muted}>
-              서버 없이 생성 → 조건 → 합의 → 확정까지 체험할 수 있어요. 데모
-              데이터는 이 기기에 저장됩니다.
-            </Text>
-            <Button
-              testID="open-demo"
-              title="데모 모임 체험하기"
-              secondary
-              onPress={() => {
-                void app.scenario('feasible');
-              }}
-              disabled={!!app.busy}
-            />
-          </View>
         )}
       </ScrollView>
     </KeyboardAvoidingView>

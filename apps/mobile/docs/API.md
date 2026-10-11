@@ -59,3 +59,9 @@ MockRepository: UX 검증용 작은 결정론적 배정기 및 고정 시나리�
 ```
 `idle / calculating / feasible / infeasible` 계산상태와 `info / warning / error` 확인카드 타입은 모든 화면에서 동일합니다.
 전체 응답 타입과 런타임 스키마의 단일 기준은 `src/domain/model.ts`입니다. 생성/참가는 `{meeting, actorId}`, 조회/변경/계산/동의/확정은 `Meeting`, 미리보기는 `{revision, before, after, changes}`, 파서는 `{draft, questions, source}`를 반환합니다.
+
+## 초대 코드 필드 경계
+앱 도메인(`Meeting`)·Mock·화면은 `roomCode`를 사용합니다. 서버 JSON의 필드는 `code`입니다.
+`HttpRepository`는 모임 응답(생성/참가의 중첩 meeting 포함)을 검증한 뒤 `code`를 제거하고 `roomCode`로 변환합니다. 참가 요청은 앱의 `roomCode`를 `{code, name}`으로 직렬화합니다.
+HTTP 응답에 `roomCode`만 있고 `code`가 없거나 타입이 틀리면 계약 오류입니다. 두 필드가 모두 있어도 서버 `code`만 사용합니다. 기존 Mock 로컬 저장의 `code` 호환 처리는 Mock 복원 경로에만 있으며 서버 계약의 대체값으로 쓰지 않습니다.
+이는 필드 매핑 규칙이며, 배포 서버의 `/rooms`와 현재 제안 계약 `/meetings` 간 전체 엔드포인트/응답 구조 연결을 완료했다는 의미는 아닙니다.

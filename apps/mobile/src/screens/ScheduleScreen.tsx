@@ -40,17 +40,19 @@ export function ScheduleScreen() {
             : '담당표와 확인사항을 검토한 뒤 이번 회차에 응답해 주세요.'
         }
       />
-      {(m.plan.status === 'idle' || m.plan.status === 'calculating') && (
+      {!finished && (m.hostId === app.actorId || m.plan.status === 'calculating') && (
         <Button
           title={
-            m.plan.status === 'idle' ? '담당표 계산하기' : '계산 결과 새로고침'
+            m.plan.status === 'calculating' ? '계산 결과 새로고침' : m.plan.status === 'idle' ? '담당표 계산하기' : '새 회차로 다시 배정'
           }
           onPress={() => {
-            void (m.plan.status === 'idle' ? app.calculate() : app.refresh());
+            void (m.plan.status === 'calculating' ? app.refresh() : app.calculate());
           }}
           disabled={!!app.busy}
         />
       )}
+      {!finished && m.hostId !== app.actorId && m.plan.status==='idle' && <Text style={ui.muted}>조건 제출 후 방장의 배정을 기다려 주세요.</Text>}
+      <Button title="최신 담당표 새로고침" secondary onPress={()=>{void app.refresh();}} disabled={!!app.busy} />
       <View style={ui.card}>
         <PlanTable plan={m.plan} meeting={m} />
       </View>

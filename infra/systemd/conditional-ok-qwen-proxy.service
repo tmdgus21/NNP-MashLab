@@ -1,0 +1,9 @@
+[Unit]
+Description=Forward local Unix socket to Qwen on 127.0.0.1:8080
+Requires=conditional-ok-qwen.service
+After=conditional-ok-qwen.service
+
+[Service]
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd 127.0.0.1:8080
+NoNewPrivileges=true
+PrivateTmp=true

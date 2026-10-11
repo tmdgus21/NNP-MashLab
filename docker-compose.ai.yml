@@ -1,0 +1,11 @@
+# Linux production overlay: no new TCP ports and no Caddy changes.
+services:
+  server-api:
+    env_file:
+      - path: .env.database
+        format: raw
+    environment:
+      QWEN_UNIX_SOCKET: /run/conditional-ok/qwen.sock
+    volumes:
+      - /run/conditional-ok:/run/conditional-ok:ro
+      - /home/linuxuser/conditional-ok-releases:/releases:ro

@@ -30,7 +30,7 @@ export function canFinalize(m: Meeting, actorId: string) {
     m.status !== 'finalized' &&
     m.plan.status === 'feasible' &&
     m.plan.round === m.round &&
-    m.plan.assignments.length === m.roles.length &&
+    m.plan.assignments.length === m.roles.reduce((sum, role) => sum + (m.roleNeeds?.[role] ?? 1), 0) &&
     m.participants.length > 0 &&
     m.participants.every(
       p => p.consent === 'agreed' && p.consentRound === m.round,

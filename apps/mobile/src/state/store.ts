@@ -7,8 +7,7 @@ import {
   Preview,
   Session,
 } from '../domain/model';
-import { repository, mockRepository } from '../data/repositoryInstance';
-import { Scenario } from '../data/RepositoryPort';
+import { repository } from '../data/repositoryInstance';
 
 interface AppState {
   meeting: Meeting | null;
@@ -16,12 +15,12 @@ interface AppState {
   ready: boolean;
   busy: string | null;
   error: string | null;
+  invitationCode: string;
+  invite(code:string): void;
   restore(): Promise<void>;
   create(input: CreateMeeting): Promise<void>;
-  join(code: string, name: string): Promise<void>;
-  scenario(s: Scenario): Promise<void>;
+  join(roomCode: string, name: string): Promise<void>;
   refresh(): Promise<void>;
-  switchActor(id: string): Promise<void>;
   preview(c: Conditions): Promise<Preview | undefined>;
   apply(c: Conditions, revision: number): Promise<boolean>;
   calculate(): Promise<void>;
@@ -64,6 +63,8 @@ export const useApp = create<AppState>((set, get) => {
     ready: false,
     busy: null,
     error: null,
+    invitationCode: '',
+    invite: code => set({invitationCode:code, meeting:null, actorId:''}),
     restore: async () => {
       await run('저장된 모임을 불러오는 중', async () => {
         const s = await repository.restore();
@@ -78,29 +79,15 @@ export const useApp = create<AppState>((set, get) => {
         session(await repository.create(input)),
       );
     },
-    join: async (code, name) => {
+    join: async (roomCode, name) => {
       await run('모임에 참가하는 중', async () =>
-        session(await repository.join(code, name)),
-      );
-    },
-    scenario: async scenario => {
-      await run('데모를 준비하는 중', async () =>
-        session(await mockRepository.scenario(scenario)),
+        session(await repository.join(roomCode, name)),
       );
     },
     refresh: async () => {
       await run('최신 현황을 불러오는 중', () =>
         update(m => repository.get(m.id)),
       );
-    },
-    switchActor: async actorId => {
-      const m = get().meeting;
-      if (m && repository.mode === 'mock') {
-        await run('참가자 전환 중', async () => {
-          await mockRepository.switchActor(m.id, actorId);
-          set({ actorId });
-        });
-      }
     },
     preview: c =>
       run('변경 영향을 계산하는 중', async () => {

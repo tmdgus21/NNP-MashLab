@@ -15,8 +15,7 @@ class MainApplication : Application(), ReactApplication {
       useDevSupport = BuildConfig.DEBUG && !BuildConfig.OFFLINE_BUNDLE,
       packageList =
         PackageList(this).packages.apply {
-          // Packages that cannot be autolinked yet can be added manually here, for example:
-          // add(MyReactNativePackage())
+          add(InvitationPackage())
         },
     )
   }

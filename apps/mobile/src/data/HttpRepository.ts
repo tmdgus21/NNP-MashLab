@@ -8,23 +8,38 @@ import {
   previewSchema,
 } from '../domain/model';
 import { Repository } from './RepositoryPort';
+import { SessionVault } from './sessionTypes';
 
-const sessionSchema = z.object({ meeting: meetingSchema, actorId: z.string() });
+// Wire DTOs use `code`; the app and Mock use `roomCode` exclusively.
+// Validate the server field before mapping: never accept a Mock-shaped response
+// as proof that the server contract is correct.
+const serverMeetingSchema = meetingSchema
+  .omit({ roomCode: true })
+  .extend({ code: z.string() })
+  .transform(({ code, ...meeting }) => ({ ...meeting, roomCode: code }));
+const sessionSchema = z.object({
+  meeting: serverMeetingSchema,
+  actorId: z.string(),
+});
+const authenticatedSessionSchema = sessionSchema.extend({token:z.string().min(20)});
 export class HttpRepository implements Repository {
   readonly mode = 'http' as const;
   constructor(
     private baseUrl: string,
     private token: () => Promise<string | null>,
     private fetcher: typeof fetch = fetch,
+    private vault?: SessionVault,
   ) {}
   private async request<T>(
     path: string,
     method: string,
     schema: z.ZodType<T>,
     body?: unknown,
+    timeoutMs = 20000,
+    requestKey?: string,
   ): Promise<T> {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const token = await this.token();
       const response = await this.fetcher(
@@ -35,6 +50,7 @@ export class HttpRepository implements Repository {
           headers: {
             'Content-Type': 'application/json',
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...(requestKey ? {'Idempotency-Key':requestKey} : {}),
           },
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         },
@@ -47,9 +63,9 @@ export class HttpRepository implements Repository {
           409: '다른 변경이 있습니다. 새로고침 후 다시 시도해 주세요.',
           422: '조건 입력값을 확인해 주세요.',
         };
-        throw new Error(
-          messages[response.status] ?? `서버 요청 실패 (${response.status})`,
-        );
+        let detail: unknown;
+        try { detail = (await response.json()).detail; } catch {}
+        throw new Error(typeof detail === 'string' ? detail : messages[response.status] ?? `서버 요청 실패 (${response.status})`);
       }
       const parsed = schema.safeParse(await response.json());
       if (!parsed.success) {
@@ -65,16 +81,27 @@ export class HttpRepository implements Repository {
       clearTimeout(timeout);
     }
   }
-  // Wire secure auth/session restoration here when the backend is available.
   async restore() {
-    return null;
+    if (!this.vault || !(await this.vault.read())) {return null;}
+    return this.request('/session', 'GET', sessionSchema);
   }
-  create(input: CreateMeeting) {
-    return this.request('/meetings', 'POST', sessionSchema, input);
+  private async remember(result:z.infer<typeof authenticatedSessionSchema>) {
+    await this.vault?.save({meetingId:result.meeting.id, actorId:result.actorId, token:result.token, title:result.meeting.title, name:result.meeting.participants.find(p=>p.id===result.actorId)?.name ?? ''});
+    return {meeting:result.meeting, actorId:result.actorId};
   }
-  join(code: string, name: string) {
-    return this.request('/meetings/join', 'POST', sessionSchema, {
-      code,
+  async create(input: CreateMeeting) {
+    return this.enter('/meetings',input);
+  }
+  private async enter(path:string, body:unknown) {
+    const fingerprint=path+JSON.stringify(body);
+    const key=await this.vault?.requestKey?.(fingerprint);
+    const result=await this.remember(await this.request(path,'POST',authenticatedSessionSchema,body,20000,key));
+    await this.vault?.completeRequest?.(fingerprint);
+    return result;
+  }
+  async join(roomCode: string, name: string) {
+    return this.enter('/meetings/join', {
+      code: roomCode.trim().toUpperCase(),
       name,
     });
   }
@@ -82,7 +109,7 @@ export class HttpRepository implements Repository {
     return this.request(
       `/meetings/${encodeURIComponent(id)}`,
       'GET',
-      meetingSchema,
+      serverMeetingSchema,
     );
   }
   preview(
@@ -107,7 +134,7 @@ export class HttpRepository implements Repository {
     return this.request(
       `/meetings/${encodeURIComponent(id)}/conditions`,
       'PUT',
-      meetingSchema,
+      serverMeetingSchema,
       { conditions, expectedRevision },
     );
   }
@@ -115,7 +142,7 @@ export class HttpRepository implements Repository {
     return this.request(
       `/meetings/${encodeURIComponent(id)}/calculations`,
       'POST',
-      meetingSchema,
+      serverMeetingSchema,
       { expectedRevision },
     );
   }
@@ -130,7 +157,7 @@ export class HttpRepository implements Repository {
     return this.request(
       `/meetings/${encodeURIComponent(id)}/consent`,
       'PUT',
-      meetingSchema,
+      serverMeetingSchema,
       { consent, note, round, expectedRevision },
     );
   }
@@ -138,14 +165,12 @@ export class HttpRepository implements Repository {
     return this.request(
       `/meetings/${encodeURIComponent(id)}/finalize`,
       'POST',
-      meetingSchema,
+      serverMeetingSchema,
       { expectedRevision },
     );
   }
-  parseConditions(text: string) {
-    return this.request('/conditions/parse', 'POST', parseSchema, {
-      text,
-      timezone: 'Asia/Seoul',
-    });
+  parseConditions(text: string, context?: {meetingId:string; date:string}) {
+    if (!context) {return Promise.reject(new Error('모임과 후보 날짜를 선택해 주세요.'));}
+    return this.request(`/meetings/${encodeURIComponent(context.meetingId)}/conditions/parse`, 'POST', parseSchema, {text,meeting_date:context.date}, 75000);
   }
 }

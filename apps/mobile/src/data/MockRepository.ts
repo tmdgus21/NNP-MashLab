@@ -60,8 +60,19 @@ export class MockRepository implements Repository {
     const saved = await this.storage?.getItem(KEY);
     if (saved) {
       const data = JSON.parse(saved);
-      Object.values(data.meetings).forEach(m => meetingSchema.parse(m));
-      this.meetings = data.meetings;
+      // Migrate pre-roomCode local snapshots only. HTTP DTOs are mapped separately.
+      this.meetings = Object.fromEntries(
+        Object.entries(data.meetings).map(([id, value]) => {
+          const { code, ...stored } = value as Record<string, unknown>;
+          return [
+            id,
+            meetingSchema.parse({
+              ...stored,
+              roomCode: 'roomCode' in stored ? stored.roomCode : code,
+            }),
+          ];
+        }),
+      );
       this.session = data.session;
     }
     if (!this.session) {
@@ -78,7 +89,9 @@ export class MockRepository implements Repository {
       !input.name.trim() ||
       !input.dates.length ||
       input.dates.length > 7 ||
-      ![input.duration, input.windowStart, input.windowEnd].every(Number.isFinite) ||
+      ![input.duration, input.windowStart, input.windowEnd].every(
+        Number.isFinite,
+      ) ||
       input.dates.some(d => !validDate(d)) ||
       !input.roles.length ||
       input.roles.length > 6 ||
@@ -98,7 +111,7 @@ export class MockRepository implements Repository {
     const m: Meeting = {
       ...fixture('empty'),
       id,
-      code: `OK${Date.now().toString(36).toUpperCase()}`,
+      roomCode: `OK${Date.now().toString(36).toUpperCase()}`,
       title: input.title.trim(),
       hostId: actorId,
       dates: [...new Set(input.dates)],
@@ -122,10 +135,10 @@ export class MockRepository implements Repository {
     await this.save();
     return { meeting: copy(m), actorId };
   }
-  async join(code: string, name: string): Promise<Session> {
+  async join(roomCode: string, name: string): Promise<Session> {
     await this.wait();
     const m = Object.values(this.meetings).find(
-      v => v.code === code.trim().toUpperCase(),
+      v => v.roomCode === roomCode.trim().toUpperCase(),
     );
     if (!m) {
       throw new Error('초대 코드를 확인해 주세요.');

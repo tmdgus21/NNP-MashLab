@@ -13,6 +13,14 @@ export const conditionsSchema = z.object({
   preference: z.enum(['balanced', 'early', 'late']),
   companionId: z.string().nullable(),
   note: z.string().max(1000),
+  unavailable: z.array(intervalSchema).optional(),
+  requiredRoles: z.array(z.string()).optional(),
+  roleUnavailable: z.array(z.string()).optional(),
+  rolePreferences: z.array(z.string()).optional(),
+  timePreferences: z.array(z.object({date: z.string(), start: z.number().int().multipleOf(30), end: z.number().int().multipleOf(30), kind: z.enum(['available', 'unavailable'])})).optional(),
+  companionRequirements: z.array(z.object({participantId: z.string(), relation: z.enum(['together', 'apart']), strength: z.enum(['required', 'preferred'])})).optional(),
+  aiDraftId: z.string().nullable().optional(),
+  ambiguitiesResolved: z.boolean().optional(),
 });
 export const participantSchema = z.object({
   id: z.string(),
@@ -21,6 +29,8 @@ export const participantSchema = z.object({
   consent: z.enum(['pending', 'agreed', 'review']),
   consentRound: z.number().int(),
   reviewNote: z.string(),
+  submitted: z.boolean().optional(),
+  conditionVersion: z.number().int().optional(),
 });
 export const assignmentSchema = z.object({
   id: z.string(),
@@ -37,18 +47,20 @@ export const noticeSchema = z.object({
 });
 export const planSchema = z.object({
   round: z.number().int(),
-  status: z.enum(['idle', 'calculating', 'feasible', 'infeasible']),
+  status: z.enum(['idle', 'calculating', 'feasible', 'infeasible', 'unknown']),
+  solverStatus: z.enum(['OPTIMAL', 'FEASIBLE', 'INFEASIBLE', 'UNKNOWN']).optional(),
   assignments: z.array(assignmentSchema),
   notices: z.array(noticeSchema),
 });
 export const meetingSchema = z.object({
   id: z.string(),
-  code: z.string(),
+  roomCode: z.string(),
   title: z.string(),
   hostId: z.string(),
   timezone: z.literal('Asia/Seoul'),
   dates: z.array(z.string()).min(1),
   roles: z.array(z.string()).min(1),
+  roleNeeds: z.record(z.string(), z.number().int().positive()).optional(),
   duration: z.number().int().positive().multipleOf(30),
   windowStart: z.number().int(),
   windowEnd: z.number().int(),
@@ -70,6 +82,8 @@ export const parseSchema = z.object({
   draft: conditionsSchema.partial(),
   questions: z.array(z.string()),
   source: z.enum(['mock', 'server']),
+  parseId: z.string().optional(),
+  raw: z.unknown().optional(),
 });
 export type Interval = z.infer<typeof intervalSchema>;
 export type Conditions = z.infer<typeof conditionsSchema>;
@@ -85,6 +99,7 @@ export interface CreateMeeting {
   name: string;
   dates: string[];
   roles: string[];
+  roleNeeds?: Record<string, number>;
   duration: number;
   windowStart: number;
   windowEnd: number;
@@ -110,4 +125,5 @@ export const planLabel: Record<Plan['status'], string> = {
   calculating: '계산 중',
   feasible: '배정 가능',
   infeasible: '배정 불가',
+  unknown: '계산 시간 초과 · 해 여부 미확인',
 };

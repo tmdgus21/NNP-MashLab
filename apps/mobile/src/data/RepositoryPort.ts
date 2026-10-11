@@ -12,7 +12,7 @@ export interface Repository {
   readonly mode: 'mock' | 'http';
   restore(): Promise<Session | null>;
   create(input: CreateMeeting): Promise<Session>;
-  join(code: string, name: string): Promise<Session>;
+  join(roomCode: string, name: string): Promise<Session>;
   get(id: string): Promise<Meeting>;
   preview(
     id: string,
@@ -44,7 +44,7 @@ export interface Repository {
     actorId: string,
     expectedRevision: number,
   ): Promise<Meeting>;
-  parseConditions(text: string): Promise<ParseResult>;
+  parseConditions(text: string, context?: {meetingId: string; date: string}): Promise<ParseResult>;
 }
 export type Scenario =
   | 'feasible'

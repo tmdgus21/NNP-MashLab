@@ -77,6 +77,9 @@ def enableProguardInReleaseBuilds = false
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
 android {
+    externalNativeBuild {
+        cmake { buildStagingDirectory file("../../../../.cxx-mobile") }
+    }
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
@@ -87,10 +90,22 @@ android {
         buildConfigField "boolean", "OFFLINE_BUNDLE", project.hasProperty('offlineBundle') ? "true" : "false"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        externalNativeBuild {
+            cmake { arguments "-DCMAKE_OBJECT_PATH_MAX=240" }
+        }
+        versionCode 2
+        versionName "1.0.0"
     }
     signingConfigs {
+        release {
+            def signingPath = System.getenv('CONDITIONAL_OK_KEYSTORE_PATH')
+            if (signingPath) {
+                storeFile file(signingPath)
+                storePassword System.getenv('CONDITIONAL_OK_STORE_PASSWORD')
+                keyAlias System.getenv('CONDITIONAL_OK_KEY_ALIAS')
+                keyPassword System.getenv('CONDITIONAL_OK_KEY_PASSWORD')
+            }
+        }
         debug {
             storeFile file('debug.keystore')
             storePassword 'android'
@@ -103,11 +118,18 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.release
+            debuggable false
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+        }
+    }
+}
+
+gradle.taskGraph.whenReady { graph ->
+    if (graph.allTasks.any { it.name.toLowerCase().contains('release') }) {
+        ['CONDITIONAL_OK_KEYSTORE_PATH', 'CONDITIONAL_OK_STORE_PASSWORD', 'CONDITIONAL_OK_KEY_ALIAS', 'CONDITIONAL_OK_KEY_PASSWORD'].each {
+            if (!System.getenv(it)) throw new GradleException("Missing release signing environment: " + it)
         }
     }
 }

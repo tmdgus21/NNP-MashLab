@@ -3,6 +3,7 @@ import { Text, View } from 'react-native';
 import { Conditions, ParseResult } from '../domain/model';
 import { Button, Field, StatusCard } from './components';
 import { ui } from './theme';
+import { timeLabel } from '../domain/time';
 
 /** Independent parser port: AI proposes conditions only, never a schedule. */
 export function NaturalLanguageInput({
@@ -62,7 +63,7 @@ export function NaturalLanguageInput({
       )}
       {result && (
         <StatusCard
-          title={result.source === 'mock' ? '데모 조건 초안' : '조건 초안'}
+          title="AI 조건 초안 · 제출 전 확인"
           detail={result.questions.join('\n')}
         >
           <Text style={ui.text}>
@@ -73,6 +74,13 @@ export function NaturalLanguageInput({
               ? '늦은 시간'
               : '변경 없음'}
           </Text>
+          {result.draft.availability?.map((v,i)=><Text key={`a${i}`} style={ui.text}>가능: {v.date} {timeLabel(v.start)}~{timeLabel(v.end)}</Text>)}
+          {result.draft.unavailable?.map((v,i)=><Text key={`u${i}`} style={ui.text}>불가: {v.date} {timeLabel(v.start)}~{timeLabel(v.end)}</Text>)}
+          {!!result.draft.requiredRoles?.length && <Text style={ui.text}>필수 역할: {result.draft.requiredRoles.join(', ')}</Text>}
+          {!!result.draft.rolePreferences?.length && <Text style={ui.text}>선호 역할: {result.draft.rolePreferences.join(', ')}</Text>}
+          {!!result.draft.roleUnavailable?.length && <Text style={ui.text}>불가 역할: {result.draft.roleUnavailable.join(', ')}</Text>}
+          {!!result.draft.companionRequirements?.length && <Text style={ui.text}>동반 조건 {result.draft.companionRequirements.length}개 · 반영 후 참가자와 강도를 확인하세요.</Text>}
+          {!!result.draft.timePreferences?.length && <Text style={ui.text}>선호 시간 {result.draft.timePreferences.length}개 · 선호 시간 탭에서 수정하세요.</Text>}
           <Button
             title="초안을 내 입력에 반영"
             onPress={() => {

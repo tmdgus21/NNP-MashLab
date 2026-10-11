@@ -5,6 +5,25 @@ import { canFinalize } from '../src/domain/rules';
 import { covers } from '../src/domain/time';
 import { emptyConditions, meetingSchema } from '../src/domain/model';
 const repo = () => new MockRepository(undefined, 0);
+test('restores legacy Mock code as domain roomCode without losing the session', async () => {
+  const { roomCode, ...meeting } = fixture('feasible');
+  const storage = {
+    getItem: async () =>
+      JSON.stringify({
+        meetings: { demo: { ...meeting, code: roomCode } },
+        session: { id: 'demo', actorId: 'p1' },
+      }),
+    setItem: async () => {},
+  };
+  const r = new MockRepository(storage, 0);
+  const restored = await r.restore();
+  expect(restored?.meeting.roomCode).toBe('OK2026');
+  expect(restored?.meeting).not.toHaveProperty('code');
+  expect(restored?.actorId).toBe('p1');
+  expect(
+    (await r.join('OK2026', '새 참가자')).meeting.participants,
+  ).toHaveLength(5);
+});
 test.each([
   'feasible',
   'conflict',
@@ -111,7 +130,7 @@ test('create, join, storage restoration and simulated network error', async () =
     windowStart: 540,
     windowEnd: 1080,
   });
-  const joined = await r.join(s.meeting.code, '참가자');
+  const joined = await r.join(s.meeting.roomCode, '참가자');
   expect(joined.meeting.participants).toHaveLength(2);
   expect((await new MockRepository(storage, 0).restore())?.actorId).toBe(
     joined.actorId,

@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Pressable, StatusBar, Text, View } from 'react-native';
+import { Linking, Pressable, StatusBar, Text, View } from 'react-native';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -11,7 +11,8 @@ import { ConditionsScreen } from './src/screens/ConditionsScreen';
 import { ScheduleScreen } from './src/screens/ScheduleScreen';
 import { Loading } from './src/ui/components';
 import { colors, ui } from './src/ui/theme';
-import { repository } from './src/data/repositoryInstance';
+import { invitationCode } from './src/domain/invitation';
+import { INVITE_BASE_URL } from './src/config/runtime.generated';
 const Tab = createBottomTabNavigator();
 const icons: Record<string, string> = {
   현황: '▥',
@@ -21,7 +22,10 @@ const icons: Record<string, string> = {
 function Content() {
   const app = useApp();
   useEffect(() => {
-    void useApp.getState().restore();
+    const accept=(url:string)=>{const code=invitationCode(url,INVITE_BASE_URL);if(code){useApp.getState().invite(code);}};
+    void useApp.getState().restore().then(()=>Linking.getInitialURL()).then(url=>{if(url){accept(url);}});
+    const subscription=Linking.addEventListener('url',({url})=>accept(url));
+    return ()=>subscription.remove();
   }, []);
   return (
     <SafeAreaView edges={['top', 'left', 'right']} style={ui.page}>
@@ -41,7 +45,7 @@ function Content() {
         >
           조건부 OK
           <Text style={{ fontSize: 10, color: colors.muted }}>
-            {repository.mode === 'mock' ? '   DEMO' : ''}
+            {'   LIVE'}
           </Text>
         </Text>
         {app.meeting && (

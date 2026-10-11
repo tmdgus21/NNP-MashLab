@@ -1,7 +1,6 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { MockRepository } from './MockRepository';
 import { Repository } from './RepositoryPort';
+import { HttpRepository } from './HttpRepository';
+import { secureSession } from './secureSession';
+import { API_BASE_URL } from '../config/runtime.generated';
 
-export const mockRepository = new MockRepository(AsyncStorage);
-// Replace this one injection point with new HttpRepository(url, secureTokenProvider).
-export const repository: Repository = mockRepository;
+export const repository: Repository = new HttpRepository(API_BASE_URL, async () => (await secureSession.read())?.token ?? null, fetch, secureSession);
