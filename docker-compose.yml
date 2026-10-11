@@ -78,6 +78,7 @@ services:
       - grafana_data:/var/lib/grafana
     networks:
       - monitoring-net
+      - mash-net
     restart: unless-stopped
 
   node-exporter:

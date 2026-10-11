@@ -2,3 +2,7 @@
 oranganman.site  {
     reverse_proxy server-api:8000
 }
+
+grafana.oranganman.site {
+    reverse_proxy grafana:3000
+}
