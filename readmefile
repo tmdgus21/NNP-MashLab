@@ -1,0 +1,14 @@
+# 1. 로컬 DB 실행 (프로젝트 루트)
+docker compose -f docker-compose.local.yml up -d
+
+# 2. FastAPI 폴더 이동
+cd server-api
+
+# 3. 의존성 설치 (가상환경 활성화 후)
+pip install -r requirements.txt
+
+# 4. DB 마이그레이션 (Alembic 구성 후)
+alembic upgrade head
+
+# 5. FastAPI 실행
+uvicorn main:app --reload
