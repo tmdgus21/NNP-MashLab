@@ -43,6 +43,9 @@ jobs:
           distribution: microsoft
           java-version: '17'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
       - run: sdkmanager 'platforms;android-37.0' 'build-tools;37.0.0' 'ndk;27.1.12297006' 'cmake;3.22.1'
       - run: npm ci && npm run configure
         working-directory: apps/mobile
