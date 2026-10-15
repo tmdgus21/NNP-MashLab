@@ -5,3 +5,4 @@ prometheus-fastapi-instrumentator
 SQLAlchemy
 alembic
 psycopg[binary]
+python-dotenv
