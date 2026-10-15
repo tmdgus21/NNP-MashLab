@@ -1,7 +1,15 @@
 fastapi
-uvicorn[standard]
 prometheus-fastapi-instrumentator
+<<<<<<< HEAD
 
 SQLAlchemy
 alembic
 psycopg[binary]
+=======
+uvicorn[standard]
+httpx==0.28.1
+SQLAlchemy>=2.0.36,<2.1
+psycopg[binary]>=3.2,<4
+ortools==9.15.6755
+-c requirements.lock
+>>>>>>> 6e10cba7205e256b6fc56ec1635791e22a7955ed

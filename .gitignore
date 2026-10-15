@@ -6,3 +6,17 @@ __pycache__/
 .venv/
 venv/
 .DS_Store
+.artifacts/
+*.apk
+*.aab
+*.gguf
+*.log
+*.tmp
+.env.*
+!.env.example
+*.jks
+*.keystore
+*.dump
+.secrets/
+apps/mobile/src/config/runtime.generated.ts
+.cxx-mobile/
