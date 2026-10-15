@@ -18,12 +18,16 @@ export function TimeGrid({
   onChange,
   onDrawing,
   disabled,
+  tone = colors.primary,
+  label = '가능',
 }: {
   dates: string[];
   value: Interval[];
   onChange(value: Interval[]): void;
   onDrawing(active: boolean): void;
   disabled?: boolean;
+  tone?: string;
+  label?: string;
 }) {
   const [date, setDate] = useState(dates[0]);
   const [band, setBand] = useState(1);
@@ -32,6 +36,7 @@ export function TimeGrid({
   const stroke = useRef<{
     base: number[];
     start: number;
+    last: number;
     erase: boolean;
   } | null>(null);
   const current = useRef({ value, date, band, erase, onChange });
@@ -57,14 +62,16 @@ export function TimeGrid({
       const c = current.current;
       const start = hit(e.x, e.y);
       const base = intervalsToSlots(c.value, c.date);
-      stroke.current = { base, start, erase: c.erase };
+      stroke.current = { base, start, last: start, erase: c.erase };
       onDrawing(true);
       publish(paintSlots(base, start, start, c.erase));
     },
     onUpdate: e => {
       const s = stroke.current;
-      if (s) {
-        publish(paintSlots(s.base, s.start, hit(e.x, e.y), s.erase));
+      const slot = hit(e.x, e.y);
+      if (s && s.last !== slot) {
+        s.last = slot;
+        publish(paintSlots(s.base, s.start, slot, s.erase));
       }
     },
     onFinalize: () => {
@@ -74,16 +81,20 @@ export function TimeGrid({
   });
   return (
     <View style={{ gap: 12 }}>
-      <View style={ui.wrap}>
-        {dates.map(d => (
-          <Chip
-            key={d}
-            title={d.slice(5).replace('-', '/')}
-            selected={d === date}
-            onPress={() => setDate(d)}
-          />
-        ))}
-      </View>
+      {dates.length === 1 ? (
+        <Text style={ui.small}>{date.replace(/-/g, '.')} · 한 칸 30분</Text>
+      ) : (
+        <View style={ui.wrap}>
+          {dates.map(d => (
+            <Chip
+              key={d}
+              title={d.slice(5).replace('-', '/')}
+              selected={d === date}
+              onPress={() => setDate(d)}
+            />
+          ))}
+        </View>
+      )}
       <View style={ui.wrap}>
         {['00–06', '06–12', '12–18', '18–24'].map((label, i) => (
           <Chip
@@ -94,7 +105,7 @@ export function TimeGrid({
           />
         ))}
       </View>
-      <View style={ui.row}>
+      <View style={ui.wrap}>
         <Chip
           title="＋ 칠하기"
           selected={!erase}
@@ -130,7 +141,9 @@ export function TimeGrid({
                 key={slot}
                 accessible
                 accessibilityRole="checkbox"
-                accessibilityLabel={`${date} ${timeLabel(slot * 30)}부터 30분`}
+                accessibilityLabel={`${label} · ${date} ${timeLabel(
+                  slot * 30,
+                )}부터 30분`}
                 accessibilityState={{ checked: active, disabled: !!disabled }}
                 accessibilityActions={[
                   { name: 'activate', label: '선택 변경' },
@@ -145,7 +158,7 @@ export function TimeGrid({
                   height: 48,
                   borderWidth: 1,
                   borderColor: colors.white,
-                  backgroundColor: active ? colors.primary : '#EAF0EE',
+                  backgroundColor: active ? tone : colors.bg,
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
@@ -169,15 +182,18 @@ export function TimeGrid({
         손가락을 끌어 연속 시간을 선택하세요. 다른 구간도 이어서 추가할 수
         있어요.
       </Text>
-      <Text
-        accessibilityLiveRegion="polite"
-        testID="selected-intervals"
-        style={[ui.text, { color: colors.primary }]}
-      >
-        {value.length
-          ? value.map(intervalLabel).join('\n')
-          : '선택한 시간이 없어요'}
-      </Text>
+      <View style={ui.summary}>
+        <Text style={ui.heading}>{label} 시간 요약</Text>
+        <Text
+          accessibilityLiveRegion="polite"
+          testID="selected-intervals"
+          style={[ui.text, { color: tone }]}
+        >
+          {value.length
+            ? value.map(intervalLabel).join('\n')
+            : '선택한 시간이 없어요'}
+        </Text>
+      </View>
     </View>
   );
 }

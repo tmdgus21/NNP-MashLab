@@ -8,6 +8,7 @@ import {
   Session,
 } from '../domain/model';
 import { repository } from '../data/repositoryInstance';
+import { MeetingDeletedError } from '../data/MeetingDeletedError';
 
 interface AppState {
   meeting: Meeting | null;
@@ -26,6 +27,7 @@ interface AppState {
   calculate(): Promise<void>;
   consent(c: Consent, note?: string): Promise<void>;
   finalize(): Promise<void>;
+  deleteMeeting(): Promise<void>;
   leave(): void;
   clearError(): void;
 }
@@ -41,6 +43,7 @@ export const useApp = create<AppState>((set, get) => {
     try {
       return await task();
     } catch (e) {
+      if (e instanceof MeetingDeletedError) {set({meeting: null, actorId: '', invitationCode: ''});}
       set({ error: e instanceof Error ? e.message : '요청에 실패했습니다.' });
       return undefined;
     } finally {
@@ -121,7 +124,15 @@ export const useApp = create<AppState>((set, get) => {
         update((m, actor) => repository.finalize(m.id, actor, m.revision)),
       );
     },
-    leave: () => set({ meeting: null, actorId: '', error: null }),
+    deleteMeeting: async () => {
+      await run('모임을 삭제하는 중', async () => {
+        const {meeting, actorId} = get();
+        if (!meeting || meeting.hostId !== actorId) {throw new Error('방장만 모임을 삭제할 수 있습니다.');}
+        await repository.deleteMeeting(meeting.id, actorId, meeting.revision);
+        set({meeting: null, actorId: '', invitationCode: ''});
+      });
+    },
+    leave: () => set({ meeting: null, actorId: '', error: null, invitationCode: '' }),
     clearError: () => set({ error: null }),
   };
 });

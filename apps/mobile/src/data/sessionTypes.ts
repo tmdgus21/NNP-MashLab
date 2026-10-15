@@ -8,6 +8,7 @@ export interface StoredSession {
 export interface SessionVault {
   read(): Promise<StoredSession | null>;
   save(value: StoredSession): Promise<void>;
+  remove?(meetingId: string): Promise<void>;
   requestKey?(fingerprint:string): Promise<string>;
   completeRequest?(fingerprint:string): Promise<void>;
 }

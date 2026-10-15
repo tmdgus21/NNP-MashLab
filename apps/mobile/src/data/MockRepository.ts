@@ -23,6 +23,15 @@ const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const KEY = 'conditionalok.mock.v1';
 export class MockRepository implements Repository {
   readonly mode = 'mock' as const;
+  async deleteMeeting(id: string, actorId: string, expectedRevision: number) {
+    await this.wait();
+    const m = this.meeting(id);
+    if (m.hostId !== actorId) {throw new Error('방장만 모임을 삭제할 수 있습니다.');}
+    requireRevision(m, expectedRevision);
+    delete this.meetings[id];
+    if (this.session?.id === id) {this.session = null;}
+    await this.save();
+  }
   private meetings: Record<string, Meeting> = { demo: fixture('feasible') };
   private session: { id: string; actorId: string } | null = null;
   private failNext = false;

@@ -47,6 +47,8 @@ def creation_identity(db, key, scope, request):
         fail(409, "동일한 요청 키에 다른 입력을 사용할 수 없습니다.")
     if existing:
         room = db.scalar(select(Room).where(Room.id == existing.room_id).with_for_update())
+        if room.status == "deleted":
+            fail(410, "방장이 삭제한 모임입니다.")
         return token, key_hash, fingerprint, {"meeting": meeting_view(db, room), "actorId": existing.id, "token": token}
     return token, key_hash, fingerprint, None
 
@@ -60,7 +62,7 @@ def identity(db, authorization):
     return member
 
 
-def access(db, room_id, authorization, expected=None, host=False, mutable=False):
+def access(db, room_id, authorization, expected=None, host=False, mutable=False, allow_deleted=False):
     member = identity(db, authorization)
     if member.room_id != room_id:
         fail(403, "다른 모임에는 접근할 수 없습니다.")
@@ -69,6 +71,10 @@ def access(db, room_id, authorization, expected=None, host=False, mutable=False)
         fail(404, "모임을 찾을 수 없습니다.")
     if host and room.host_id != member.id:
         fail(403, "방장만 할 수 있는 작업입니다.")
+    if room.status == "deleted":
+        if allow_deleted:
+            return room, member
+        fail(410, "방장이 삭제한 모임입니다.")
     if mutable and room.status == "finalized":
         fail(409, "이미 최종 확정된 모임입니다.")
     if expected is not None and expected != room.revision:
@@ -141,7 +147,7 @@ def join_meeting(request: JoinMeeting, db=Depends(db_session), idempotency_key: 
     if replay:
         return replay
     room = db.scalar(select(Room).where(Room.code == request.code.upper()).with_for_update())
-    if not room:
+    if not room or room.status == "deleted":
         fail(404, "초대 코드를 확인해 주세요.")
     if key_hash:
         _, _, _, replay = creation_identity(db, idempotency_key, "join", request)
@@ -173,6 +179,18 @@ def restore(authorization: str | None = Header(default=None), db=Depends(db_sess
 def get_meeting(room_id: str, authorization: str | None = Header(default=None), db=Depends(db_session)):
     room, _ = access(db, room_id, authorization)
     return meeting_view(db, room)
+
+
+@router.delete("/meetings/{room_id}")
+def delete_meeting(room_id: str, request: Revision, authorization: str | None = Header(default=None), db=Depends(db_session)):
+    # Logical deletion preserves audit/history, but all public access is revoked.
+    # The host can safely retry after a lost response, even with the old revision.
+    room, _ = access(db, room_id, authorization, request.expectedRevision, host=True, allow_deleted=True)
+    if room.status != "deleted":
+        room.status = "deleted"
+        room.revision += 1
+        event(db, room, "방장이 모임을 삭제했습니다.")
+    return {"deleted": True}
 
 
 def validate_conditions(db, room, member, conditions):

@@ -56,7 +56,11 @@ export function Chip({
       accessibilityLabel={title}
       accessibilityState={{ selected: !!selected }}
       onPress={onPress}
-      style={[ui.chip, selected && ui.chipSelected]}
+      style={({ pressed }) => [
+        ui.chip,
+        selected && ui.chipSelected,
+        { opacity: pressed ? 0.65 : 1 },
+      ]}
     >
       <Text
         style={[

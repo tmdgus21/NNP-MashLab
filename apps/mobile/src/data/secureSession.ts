@@ -15,6 +15,7 @@ async function persist(data: z.infer<typeof vaultSchema>) {
   if (!result) {throw new Error('참가자 인증을 안전하게 저장하지 못했습니다.');}
 }
 export const secureSession = {
+  async remove(id: string) {const data = await load(); delete data.sessions[id]; if (data.active === id) {data.active = null;} await persist(data);},
   async read() {const data=await load(); return data.active ? data.sessions[data.active] ?? null : null;},
   async save(value: StoredSession) {const data=await load(); data.sessions[value.meetingId]=value; data.active=value.meetingId; await persist(data);},
   async list() {return Object.values((await load()).sessions);},

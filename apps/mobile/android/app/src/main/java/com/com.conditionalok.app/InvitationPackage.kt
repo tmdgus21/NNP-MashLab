@@ -15,6 +15,14 @@ class InvitationModule(context: ReactApplicationContext) : ReactContextBaseJavaM
   @ReactMethod
   fun newRequestKey(promise: Promise) { promise.resolve(java.util.UUID.randomUUID().toString()) }
   @ReactMethod
+  fun copyCode(code: String, promise: Promise) {
+    try {
+      val clipboard = reactApplicationContext.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+      clipboard.setPrimaryClip(android.content.ClipData.newPlainText("모임 초대 코드", code))
+      promise.resolve(null)
+    } catch (error: Exception) { promise.reject("COPY_FAILED", "코드를 복사하지 못했습니다.", error) }
+  }
+  @ReactMethod
   fun shareKakao(text: String, promise: Promise) {
     try {
       val intent = Intent(Intent.ACTION_SEND).apply {

@@ -88,3 +88,17 @@ python3 server-api/tests/live_rooms.py
 `/rooms` 구현은 기존 메모리 저장소를 유지한다. 서버 재시작 시 방이 사라지는 기존 특성도 동일하며 Postgres 영속화는 이번 변경에 포함되지 않는다. 배포 전 원격 main.py/requirements.txt는 `/home/linuxuser/conditional-ok-backups/pre-ai/`에 보관했다. 모델 파일은 Git과 Docker 빌드에 포함하지 않는다.
 
 참고: [공식 Qwen 모델](https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/blob/90862c4b9d2787eaed51d12237eafdfe7c5f6077/Qwen3-1.7B-Q8_0.gguf), [llama.cpp Pydantic JSON schema 예제](https://github.com/ggml-org/llama.cpp/blob/master/examples/json_schema_pydantic_example.py), [HTTPX timeout](https://www.python-httpx.org/advanced/timeouts/).
+
+## Meeting deletion (local change; requires server deployment)
+
+`DELETE /v1/meetings/{room_id}` requires the host's Bearer session and
+`{"expectedRevision": <latest revision>}`. Success returns `{"deleted": true}`.
+Missing authentication returns 401; guests/other rooms return 403; stale revisions
+return 409. Retrying by the same host after deletion returns the same success.
+Deletion is logical: `ok_rooms.status = deleted`; historical records remain for
+recovery/audit. No schema migration is required. All session/read/write/proposal
+access returns 410 after deletion, and joining with its code returns 404.
+This is not a personal-data erasure endpoint. The mobile app removes the saved
+room session only after confirmed deletion, and handles 410 for other members.
+The currently deployed server must be updated separately; do not deploy this
+change without the project owner's approval.
