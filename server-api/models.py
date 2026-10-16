@@ -1,99 +1,108 @@
-from datetime import date, datetime, time
-from uuid import UUID, uuid4
+"""Operational Conditional OK schema (ok_*). Single source for ORM + Alembic."""
+from datetime import datetime, timezone
+from uuid import uuid4
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text, Time, Uuid
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy.dialects.postgresql import JSONB
+
+
+def uid():
+    return str(uuid4())
+
+
+def now():
+    return datetime.now(timezone.utc)
 
 
 class Base(DeclarativeBase):
     pass
 
 
-class Room(Base):  # 모임의 기본 정보, 방 코드, 운영 시간, 현재 상태와 버전을 관리한다.
-    __tablename__ = "rooms"
+class Room(Base):
+    __tablename__ = "ok_rooms"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    code: Mapped[str] = mapped_column(String(8), unique=True, index=True)
+    host_id: Mapped[str] = mapped_column(String(36))
+    config: Mapped[dict] = mapped_column(JSON)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    round: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(20), default="collecting")
+    dirty: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
-    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
-    code: Mapped[str] = mapped_column(String(8), unique=True)
-    title: Mapped[str] = mapped_column(String(100))
-    date: Mapped[date] = mapped_column(Date)
-    start_time: Mapped[time] = mapped_column(Time)
-    end_time: Mapped[time] = mapped_column(Time)
-    status: Mapped[str] = mapped_column(String(20))
-    version: Mapped[int] = mapped_column(Integer)
-    created_at: Mapped[datetime] = mapped_column(DateTime)
 
-class Member(Base):  # 방에 참여한 사용자의 닉네임과 방장 여부를 관리한다.
-    __tablename__ = "members"
-
-    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
-    room_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("rooms.id"))
+class Member(Base):
+    __tablename__ = "ok_members"
+    __table_args__ = (
+        UniqueConstraint("room_id", "nickname"),
+        Index("ix_ok_members_request_key_hash", "request_key_hash", unique=True),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    room_id: Mapped[str] = mapped_column(ForeignKey("ok_rooms.id"), index=True)
     nickname: Mapped[str] = mapped_column(String(30))
-    is_owner: Mapped[bool] = mapped_column(Boolean)
-    joined_at: Mapped[datetime] = mapped_column(DateTime)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    request_key_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    request_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
-class Role(Base):   # 방에서 사용할 역할과 역할별 필요 인원을 관리한다.
-    __tablename__ = "roles"
 
-    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
-    room_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("rooms.id"))
-    name: Mapped[str] = mapped_column(String(30))
-    need_count: Mapped[int] = mapped_column(Integer)
+class AIDraft(Base):
+    __tablename__ = "ok_ai_drafts"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    member_id: Mapped[str] = mapped_column(ForeignKey("ok_members.id"), index=True)
+    raw_text: Mapped[str] = mapped_column(String(1500))
+    model_output: Mapped[dict] = mapped_column(JSON)
+    app_draft: Mapped[dict] = mapped_column(JSON)
+    questions: Mapped[list] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
-class Availability(Base):  # 참가자가 가능한 시간대와 해당 조건의 버전을 저장한다.
-    __tablename__ = "availability"
 
-    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
-    member_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("members.id"))
-    start_time: Mapped[time] = mapped_column(Time)
-    end_time: Mapped[time] = mapped_column(Time)
+class Submission(Base):
+    __tablename__ = "ok_condition_submissions"
+    __table_args__ = (UniqueConstraint("member_id", "version"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    member_id: Mapped[str] = mapped_column(ForeignKey("ok_members.id"), index=True)
     version: Mapped[int] = mapped_column(Integer)
+    confirmed: Mapped[dict] = mapped_column(JSON)
+    ai_draft_id: Mapped[str | None] = mapped_column(ForeignKey("ok_ai_drafts.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
-class Preference(Base):  # 참가자의 가능 역할, 선호 여부, 간단한 조건 메모를 저장한다.
-    __tablename__ = "preferences"
 
-    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
-    member_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("members.id"))
-    role_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("roles.id"))
-    preferred: Mapped[bool] = mapped_column(Boolean)
-    note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    version: Mapped[int] = mapped_column(Integer)
+class Proposal(Base):
+    __tablename__ = "ok_proposals"
+    __table_args__ = (UniqueConstraint("room_id", "round"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    room_id: Mapped[str] = mapped_column(ForeignKey("ok_rooms.id"), index=True)
+    round: Mapped[int] = mapped_column(Integer)
+    source_revision: Mapped[int] = mapped_column(Integer)
+    input_snapshot: Mapped[dict] = mapped_column(JSON)
+    plan: Mapped[dict] = mapped_column(JSON)
+    solver_status: Mapped[str] = mapped_column(String(20))
+    finalized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
-class Plan(Base):   # OR-Tools가 생성한 역할 배정안의 버전과 상태를 관리한다.
-    __tablename__ = "plans"
 
-    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
-    room_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("rooms.id"))
-    version: Mapped[int] = mapped_column(Integer)
+class ConsentRow(Base):
+    __tablename__ = "ok_consents"
+    __table_args__ = (UniqueConstraint("proposal_id", "member_id"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    proposal_id: Mapped[str] = mapped_column(ForeignKey("ok_proposals.id"), index=True)
+    member_id: Mapped[str] = mapped_column(ForeignKey("ok_members.id"), index=True)
     status: Mapped[str] = mapped_column(String(20))
-    created_at: Mapped[datetime] = mapped_column(DateTime)
+    note: Mapped[str] = mapped_column(String(1000), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
-class Assignment(Base):  # 배정안 안에서 누가 어떤 역할을 어느 시간에 맡는지 저장한다.
-    __tablename__ = "assignments"
 
-    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
-    plan_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("plans.id"))
-    member_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("members.id"))
-    role_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("roles.id"))
-    start_time: Mapped[time] = mapped_column(Time)
-    end_time: Mapped[time] = mapped_column(Time)
-    completed: Mapped[bool] = mapped_column(Boolean)
+class RoomEvent(Base):
+    __tablename__ = "ok_room_events"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    room_id: Mapped[str] = mapped_column(ForeignKey("ok_rooms.id"), index=True)
+    message: Mapped[str] = mapped_column(String(300))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
-class Consent(Base):  # 참가자의 배정안 동의 여부와 동의 시각을 저장한다.
-    __tablename__ = "consents"
 
-    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
-    plan_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("plans.id"))
-    member_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("members.id"))
-    agreed: Mapped[bool] = mapped_column(Boolean)
-    agreed_at: Mapped[datetime] = mapped_column(DateTime)
-
-class AiDraft(Base):  # 자연어 조건과 AI가 해석한 구조화 초안을 저장하고 사용자 확인 여부를 저장한다.
-    __tablename__ = "ai_drafts"
-
-    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
-    member_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("members.id"))
-    input_text: Mapped[str] = mapped_column(Text)
-    result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    confirmed: Mapped[bool] = mapped_column(Boolean)
-    created_at: Mapped[datetime] = mapped_column(DateTime)
+class SchemaVersion(Base):
+    """Legacy version marker retained for parity with existing databases."""
+    __tablename__ = "ok_schema_versions"
+    version: Mapped[int] = mapped_column(Integer, primary_key=True)
+    applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

@@ -11,20 +11,6 @@ concurrency:
   group: conditional-ok-${{ github.ref }}
   cancel-in-progress: false
 jobs:
-  deploy:
-    runs-on: ubuntu-24.04
-    steps:
-      - name: git pull and docker compose up
-        uses: appleboy/ssh-action@v1.2.2
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          script: |
-            set -e
-            cd ${{ secrets.APP_DIR }}
-            git pull origin main
-            docker compose up -d --build
   test:
     runs-on: ubuntu-24.04
     steps:
@@ -43,6 +29,27 @@ jobs:
         working-directory: server-api
         env:
           DATABASE_URL: sqlite://
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Deploy with infra/deploy.sh
+        uses: appleboy/ssh-action@v1.2.2
+        env:
+          APP_DIR: ${{ secrets.APP_DIR }}
+          SHA: ${{ github.sha }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          envs: APP_DIR,SHA
+          script: |
+            set -eu
+            cd "$APP_DIR"
+            git fetch origin "$SHA"
+            git checkout --detach --force FETCH_HEAD
+            bash infra/deploy.sh
   release:
     if: github.event_name != 'pull_request'
     needs: test

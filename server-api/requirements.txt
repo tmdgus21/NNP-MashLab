@@ -1,6 +1,7 @@
 fastapi
 prometheus-fastapi-instrumentator
-alembic
+alembic==1.20.0
+python-dotenv
 uvicorn[standard]
 httpx==0.28.1
 SQLAlchemy>=2.0.36,<2.1
