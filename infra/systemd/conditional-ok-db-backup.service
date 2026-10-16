@@ -1,0 +1,11 @@
+[Unit]
+Description=Conditional OK PostgreSQL private backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=linuxuser
+WorkingDirectory=/home/linuxuser/projects/NNP-MashLab
+ExecStart=/usr/bin/python3 /home/linuxuser/projects/NNP-MashLab/infra/backup_database.py
+UMask=0077

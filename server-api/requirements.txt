@@ -1,3 +1,10 @@
 fastapi
-uvicorn[standard]
 prometheus-fastapi-instrumentator
+alembic==1.20.0
+python-dotenv
+uvicorn[standard]
+httpx==0.28.1
+SQLAlchemy>=2.0.36,<2.1
+psycopg[binary]>=3.2,<4
+ortools==9.15.6755
+-c requirements.lock
