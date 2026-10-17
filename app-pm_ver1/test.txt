@@ -1,0 +1,975 @@
+package com.example.potatomeet
+
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.os.Bundle
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.potatomeet.ui.theme.PotatoMeetTheme
+
+data class Appointment(
+    val id: Long = System.currentTimeMillis(),
+    val title: String,
+    val category: String,
+    val duration: String,
+    val location: String,
+    val timeInfo: String,
+    val invitedFriends: List<String>
+)
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            PotatoMeetTheme {
+                val currentScreen = remember { mutableStateOf("login") }
+                val userNickname = remember { mutableStateOf("") }
+
+                val appointmentName = remember { mutableStateOf("") }
+                val category = remember { mutableStateOf("") }
+                val duration = remember { mutableStateOf("") }
+                val location = remember { mutableStateOf("") }
+                val availableTimeInput = remember { mutableStateOf("") }
+                val selectedFriendsForNew = remember { mutableStateMapOf<String, Boolean>() }
+                
+                val coordinatingAppointments = remember { mutableStateListOf<Appointment>() }
+
+                BackHandler(enabled = currentScreen.value != "login") {
+                    when (currentScreen.value) {
+                        "signup" -> currentScreen.value = "login"
+                        "home" -> finish()
+                        "create_step1" -> currentScreen.value = "home"
+                        "create_step2" -> currentScreen.value = "create_step1"
+                        "create_step3" -> currentScreen.value = "create_step2"
+                    }
+                }
+
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = Color(0xFFFFFCF3)
+                ) {
+                    when (currentScreen.value) {
+                        "login" -> {
+                            LoginScreen(
+                                onLoginClick = { currentScreen.value = "home" },
+                                onSignUpClick = { currentScreen.value = "signup" }
+                            )
+                        }
+                        "signup" -> {
+                            SignUpScreen(
+                                onCompleteClick = { enteredName ->
+                                    if (enteredName.isNotBlank()) {
+                                        userNickname.value = enteredName.trim()
+                                    }
+                                    currentScreen.value = "home"
+                                }
+                            )
+                        }
+                        "home" -> {
+                            HomeScreen(
+                                nickname = userNickname.value,
+                                coordinatingList = coordinatingAppointments,
+                                onLogoutClick = {
+                                    userNickname.value = ""
+                                    currentScreen.value = "login"
+                                },
+                                onCreateAppointmentClick = {
+                                    currentScreen.value = "create_step1"
+                                },
+                                onDeleteAppointment = { appt ->
+                                    coordinatingAppointments.remove(appt)
+                                },
+                                onUpdateAppointment = { updatedAppt ->
+                                    val index = coordinatingAppointments.indexOfFirst { it.id == updatedAppt.id }
+                                    if (index != -1) {
+                                        coordinatingAppointments[index] = updatedAppt
+                                    }
+                                }
+                            )
+                        }
+                        "create_step1" -> {
+                            CreateAppointmentStep1Screen(
+                                appointmentName = appointmentName.value,
+                                onAppointmentNameChange = { appointmentName.value = it },
+                                category = category.value,
+                                onCategoryChange = { category.value = it },
+                                duration = duration.value,
+                                onDurationChange = { duration.value = it },
+                                location = location.value,
+                                onLocationChange = { location.value = it },
+                                onBackClick = { currentScreen.value = "home" },
+                                onNextClick = { currentScreen.value = "create_step2" },
+                                onStepClick = { step -> currentScreen.value = step }
+                            )
+                        }
+                        "create_step2" -> {
+                            CreateAppointmentStep2Screen(
+                                availableTimeInput = availableTimeInput.value,
+                                onAvailableTimeInputChange = { availableTimeInput.value = it },
+                                onBackClick = { currentScreen.value = "create_step1" },
+                                onNextClick = { currentScreen.value = "create_step3" },
+                                onStepClick = { step -> currentScreen.value = step }
+                            )
+                        }
+                        "create_step3" -> {
+                            CreateAppointmentStep3Screen(
+                                selectedFriendsMap = selectedFriendsForNew,
+                                onBackClick = { currentScreen.value = "create_step2" },
+                                onStepClick = { step -> currentScreen.value = step },
+                                onComplete = { friends ->
+                                    val newAppt = Appointment(
+                                        title = appointmentName.value.ifBlank { "제목 없는 약속" },
+                                        category = category.value.ifBlank { "기타" },
+                                        duration = duration.value.ifBlank { "시간 미정" },
+                                        location = location.value.ifBlank { "장소 미정" },
+                                        timeInfo = availableTimeInput.value.ifBlank { "일정 조율 중" },
+                                        invitedFriends = friends
+                                    )
+                                    coordinatingAppointments.add(newAppt)
+
+                                    appointmentName.value = ""
+                                    category.value = ""
+                                    duration.value = ""
+                                    location.value = ""
+                                    availableTimeInput.value = ""
+                                    selectedFriendsForNew.clear()
+                                    currentScreen.value = "home"
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// 1. 로그인 화면
+@Composable
+fun LoginScreen(onLoginClick: () -> Unit, onSignUpClick: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 30.dp).verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Image(painter = painterResource(id = R.drawable.potato_logo), contentDescription = "Logo", modifier = Modifier.size(200.dp))
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(text = "함께하는 일정, 더 쉬운 약속", fontSize = 15.sp, color = Color(0xFF666666))
+        Spacer(modifier = Modifier.height(70.dp))
+        Button(
+            onClick = onLoginClick,
+            modifier = Modifier.fillMaxWidth().height(54.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFBA00)),
+            shape = RoundedCornerShape(27.dp)
+        ) {
+            Text(text = "로그인하기", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3C1E1E))
+        }
+        Spacer(modifier = Modifier.height(30.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(text = "계정이 없으신가요?", fontSize = 14.sp, color = Color(0xFF999999))
+            Spacer(modifier = Modifier.width(6.dp))
+            TextButton(onClick = onSignUpClick, contentPadding = PaddingValues(0.dp)) {
+                Text(text = "회원가입", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFFBA00))
+            }
+        }
+    }
+}
+
+// 2. 회원가입 화면
+@Composable
+fun SignUpScreen(onCompleteClick: (String) -> Unit) {
+    var nickname by remember { mutableStateOf("") }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 30.dp).verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Image(painter = painterResource(id = R.drawable.potato_logo), contentDescription = "Logo", modifier = Modifier.size(180.dp))
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(text = "함께하는 일정, 더 쉬운 약속", fontSize = 15.sp, color = Color(0xFF666666))
+        Spacer(modifier = Modifier.height(35.dp))
+        OutlinedTextField(
+            value = nickname,
+            onValueChange = { nickname = it },
+            placeholder = { Text("사용할 닉네임을 입력하세요", color = Color(0xFFAAAAAA)) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { keyboardController?.hide(); onCompleteClick(nickname) }),
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            shape = RoundedCornerShape(28.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = Color(0xFFFFBA00),
+                unfocusedBorderColor = Color(0xFFE0E0E0),
+                focusedContainerColor = Color.White,
+                unfocusedContainerColor = Color.White
+            )
+        )
+        Spacer(modifier = Modifier.height(20.dp))
+        Button(
+            onClick = { onCompleteClick(nickname) },
+            modifier = Modifier.fillMaxWidth().height(54.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFBA00)),
+            shape = RoundedCornerShape(27.dp)
+        ) {
+            Text(text = "완료", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3C1E1E))
+        }
+    }
+}
+
+// 3. 홈 화면 및 상세 다이얼로그
+@Composable
+fun HomeScreen(
+    nickname: String,
+    coordinatingList: List<Appointment>,
+    onLogoutClick: () -> Unit,
+    onCreateAppointmentClick: () -> Unit,
+    onDeleteAppointment: (Appointment) -> Unit,
+    onUpdateAppointment: (Appointment) -> Unit
+) {
+    var selectedAppointment by remember { mutableStateOf<Appointment?>(null) }
+    var isEditing by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp)
+    ) {
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Image(painter = painterResource(id = R.drawable.potato_logo), contentDescription = "Logo", modifier = Modifier.size(54.dp))
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = buildAnnotatedString {
+                        withStyle(SpanStyle(color = Color(0xFF4A3B32), fontWeight = FontWeight.ExtraBold)) { append("potato ") }
+                        withStyle(SpanStyle(color = Color(0xFFFF9800), fontWeight = FontWeight.ExtraBold)) { append("meet") }
+                    },
+                    fontSize = 30.sp
+                )
+            }
+            TextButton(onClick = onLogoutClick) {
+                Text(text = "로그아웃", fontSize = 12.sp, color = Color(0xFF888888))
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        val greetingText = if (nickname.isNotBlank()) "안녕하세요, ${nickname}님! 👋" else "안녕하세요! 👋"
+        Text(text = greetingText, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+        Text(text = "오늘도 좋은 하루 보내세요!", fontSize = 14.sp, color = Color(0xFF777777))
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Button(
+            onClick = onCreateAppointmentClick,
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFBA00)),
+            shape = RoundedCornerShape(26.dp)
+        ) {
+            Text(text = "+ 약속 만들기", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3C1E1E))
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = "다가오는 약속", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+            Text(text = "전체보기 >", fontSize = 13.sp, color = Color(0xFF888888))
+        }
+        Spacer(modifier = Modifier.height(10.dp))
+        Box(
+            modifier = Modifier.fillMaxWidth().height(90.dp).clip(RoundedCornerShape(16.dp)).background(Color.White),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(text = "약속이 없습니다.", fontSize = 14.sp, color = Color(0xFFAAAAAA))
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = "조율 중인 약속", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+            Text(text = "전체보기 >", fontSize = 13.sp, color = Color(0xFF888888))
+        }
+        Spacer(modifier = Modifier.height(10.dp))
+
+        if (coordinatingList.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxWidth().height(90.dp).clip(RoundedCornerShape(16.dp)).background(Color.White),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(text = "약속이 없습니다.", fontSize = 14.sp, color = Color(0xFFAAAAAA))
+            }
+        } else {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth().height(180.dp)
+            ) {
+                items(coordinatingList) { appt ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                selectedAppointment = appt
+                                isEditing = false
+                            },
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(16.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(text = appt.title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+                                Surface(
+                                    color = Color(0xFFFFECB3),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text(
+                                        text = "조율 중",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFE65100),
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(text = "📅 ${appt.timeInfo}", fontSize = 13.sp, color = Color(0xFF666666))
+                            Text(text = "📍 ${appt.location} (${appt.category})", fontSize = 13.sp, color = Color(0xFF666666))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 💡 상세 / 수정 다이얼로그 (닫기 버튼 오른쪽 고정 및 휴지통 옆 '삭제' 빨간색 표시)
+    selectedAppointment?.let { appt ->
+        var editTitle by remember { mutableStateOf(appt.title) }
+        var editLocation by remember { mutableStateOf(appt.location) }
+        var editTime by remember { mutableStateOf(appt.timeInfo) }
+
+        val allFriends = listOf("김민수", "이지훈", "박영희", "이철수")
+        val editSelectedFriends = remember {
+            mutableStateMapOf<String, Boolean>().apply {
+                allFriends.forEach { friend ->
+                    put(friend, appt.invitedFriends.contains(friend))
+                }
+            }
+        }
+
+        var showDeleteConfirm by remember { mutableStateOf(false) }
+        var showCloseConfirm by remember { mutableStateOf(false) }
+
+        AlertDialog(
+            onDismissRequest = {
+                if (isEditing) {
+                    showCloseConfirm = true
+                } else {
+                    selectedAppointment = null
+                }
+            },
+            containerColor = Color.White,
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (isEditing) "약속 수정하기" else "약속 상세 정보",
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF333333)
+                    )
+                    // 🗑️ 휴지통 아이콘 옆에 빨간색 '삭제' 문구 배치
+                    TextButton(onClick = { showDeleteConfirm = true }) {
+                        Text(text = "🗑️ 삭제", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.Red)
+                    }
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (!isEditing) {
+                        Text(text = "📌 약속 이름: ${appt.title}", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+                        Text(text = "🏷️ 카테고리: ${appt.category}", fontSize = 14.sp, color = Color(0xFF666666))
+                        Text(text = "⏱️ 소요 시간: ${appt.duration}", fontSize = 14.sp, color = Color(0xFF666666))
+                        Text(text = "📍 장소: ${appt.location}", fontSize = 14.sp, color = Color(0xFF666666))
+                        Text(text = "📅 시간: ${appt.timeInfo}", fontSize = 14.sp, color = Color(0xFF666666))
+                        if (appt.invitedFriends.isNotEmpty()) {
+                            Text(text = "👥 초대된 친구: ${appt.invitedFriends.joinToString(", ")}", fontSize = 14.sp, color = Color(0xFF666666))
+                        }
+                    } else {
+                        OutlinedTextField(
+                            value = editTitle,
+                            onValueChange = { editTitle = it },
+                            label = { Text("약속 이름") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = editLocation,
+                            onValueChange = { editLocation = it },
+                            label = { Text("장소") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = editTime,
+                            onValueChange = { editTime = it },
+                            label = { Text("조율 시간") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(text = "👥 친구 추가 및 관리", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF555555))
+                        
+                        Column(modifier = Modifier.height(130.dp).verticalScroll(rememberScrollState())) {
+                            allFriends.forEach { friend ->
+                                val isChecked = editSelectedFriends[friend] ?: false
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { editSelectedFriends[friend] = !isChecked }
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(text = friend, fontSize = 14.sp, color = Color(0xFF333333))
+                                    Checkbox(
+                                        checked = isChecked,
+                                        onCheckedChange = { editSelectedFriends[friend] = it },
+                                        colors = CheckboxDefaults.colors(checkedColor = Color(0xFFFFBA00))
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            // 왼쪽 액션 버튼 (기본: 수정, 수정모드: 저장)
+            confirmButton = {
+                if (!isEditing) {
+                    Button(
+                        onClick = { isEditing = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFBA00))
+                    ) {
+                        Text(text = "수정", color = Color(0xFF3C1E1E), fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            val newFriendsList = allFriends.filter { editSelectedFriends[it] == true }
+                            val updated = appt.copy(
+                                title = editTitle,
+                                location = editLocation,
+                                timeInfo = editTime,
+                                invitedFriends = newFriendsList
+                            )
+                            onUpdateAppointment(updated)
+                            selectedAppointment = null
+                            isEditing = false
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFBA00))
+                    ) {
+                        Text(text = "저장", color = Color(0xFF3C1E1E), fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            // 오른쪽 고정 닫기 버튼
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        if (isEditing) {
+                            showCloseConfirm = true
+                        } else {
+                            selectedAppointment = null
+                        }
+                    }
+                ) {
+                    Text(text = "닫기", color = Color(0xFF888888), fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+
+        if (showDeleteConfirm) {
+            AlertDialog(
+                onDismissRequest = { showDeleteConfirm = false },
+                title = { Text(text = "약속 삭제", fontWeight = FontWeight.Bold) },
+                text = { Text(text = "정말 약속을 삭제하시겠습니까?") },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            onDeleteAppointment(appt)
+                            showDeleteConfirm = false
+                            selectedAppointment = null
+                            isEditing = false
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                    ) {
+                        Text(text = "삭제", color = Color.White)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteConfirm = false }) {
+                        Text(text = "취소")
+                    }
+                }
+            )
+        }
+
+        if (showCloseConfirm) {
+            AlertDialog(
+                onDismissRequest = { showCloseConfirm = false },
+                title = { Text(text = "변경사항 확인", fontWeight = FontWeight.Bold) },
+                text = { Text(text = "저장하시겠습니까?") },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val newFriendsList = allFriends.filter { editSelectedFriends[it] == true }
+                            val updated = appt.copy(
+                                title = editTitle,
+                                location = editLocation,
+                                timeInfo = editTime,
+                                invitedFriends = newFriendsList
+                            )
+                            onUpdateAppointment(updated)
+                            showCloseConfirm = false
+                            selectedAppointment = null
+                            isEditing = false
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFBA00))
+                    ) {
+                        Text(text = "저장", color = Color(0xFF3C1E1E), fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showCloseConfirm = false
+                            selectedAppointment = null
+                            isEditing = false
+                        }
+                    ) {
+                        Text(text = "아니오 (그냥 닫기)", color = Color.Red)
+                    }
+                }
+            )
+        }
+    }
+}
+
+// 4. 약속 만들기 - Step 1: 약속 정보 입력 (스텝 클릭 네비게이션 연동)
+@Composable
+fun CreateAppointmentStep1Screen(
+    appointmentName: String,
+    onAppointmentNameChange: (String) -> Unit,
+    category: String,
+    onCategoryChange: (String) -> Unit,
+    duration: String,
+    onDurationChange: (String) -> Unit,
+    location: String,
+    onLocationChange: (String) -> Unit,
+    onBackClick: () -> Unit,
+    onNextClick: () -> Unit,
+    onStepClick: (String) -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState())
+    ) {
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(text = "〈", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333), modifier = Modifier.clickable { onBackClick() }.padding(end = 16.dp))
+            Text(text = "약속 만들기", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+        }
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // 스텝 클릭 연동 (1: 약속 정보)
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.CenterVertically) {
+            StepIndicatorItem(stepNumber = "1", title = "약속 정보", isActive = true, onClick = { onStepClick("create_step1") })
+            StepIndicatorItem(stepNumber = "2", title = "나의 시간", isActive = false, onClick = { onStepClick("create_step2") })
+            StepIndicatorItem(stepNumber = "3", title = "사람 초대", isActive = false, onClick = { onStepClick("create_step3") })
+            StepIndicatorItem(stepNumber = "4", title = "완료", isActive = false, onClick = {})
+        }
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            shape = RoundedCornerShape(20.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(text = "약속 정보", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(text = "약속 이름", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF555555))
+                Spacer(modifier = Modifier.height(6.dp))
+                OutlinedTextField(value = appointmentName, onValueChange = onAppointmentNameChange, placeholder = { Text("예) 친구들과 저녁 먹기", color = Color(0xFFAAAAAA)) }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(text = "무엇을 할까요?", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF555555))
+                Spacer(modifier = Modifier.height(6.dp))
+                OutlinedTextField(value = category, onValueChange = onCategoryChange, placeholder = { Text("예) 식사, 카페, 스터디", color = Color(0xFFAAAAAA)) }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(text = "예상 소요시간", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF555555))
+                Spacer(modifier = Modifier.height(6.dp))
+                OutlinedTextField(value = duration, onValueChange = onDurationChange, placeholder = { Text("예) 2시간", color = Color(0xFFAAAAAA)) }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(text = "장소", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF555555))
+                Spacer(modifier = Modifier.height(6.dp))
+                OutlinedTextField(value = location, onValueChange = onLocationChange, placeholder = { Text("장소를 입력해주세요", color = Color(0xFFAAAAAA)) }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp))
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Button(
+                    onClick = onNextClick,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFBA00)),
+                    shape = RoundedCornerShape(26.dp)
+                ) {
+                    Text(text = "다음", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3C1E1E))
+                }
+            }
+        }
+    }
+}
+
+// 5. 약속 만들기 - Step 2: 나의 시간 설정 (인터랙티브 캘린더 UI 적용)
+@Composable
+fun CreateAppointmentStep2Screen(
+    availableTimeInput: String,
+    onAvailableTimeInputChange: (String) -> Unit,
+    onBackClick: () -> Unit,
+    onNextClick: () -> Unit,
+    onStepClick: (String) -> Unit
+) {
+    var selectedDay by remember { mutableStateOf(17) }
+    val daysInMonth = (1..31).toList()
+    val daysOfWeek = listOf("일", "월", "화", "수", "목", "금", "토")
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState())
+    ) {
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(text = "〈", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333), modifier = Modifier.clickable { onBackClick() }.padding(end = 16.dp))
+            Text(text = "약속 만들기", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+        }
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.CenterVertically) {
+            StepIndicatorItem(stepNumber = "1", title = "약속 정보", isActive = false, onClick = { onStepClick("create_step1") })
+            StepIndicatorItem(stepNumber = "2", title = "나의 시간", isActive = true, onClick = { onStepClick("create_step2") })
+            StepIndicatorItem(stepNumber = "3", title = "사람 초대", isActive = false, onClick = { onStepClick("create_step3") })
+            StepIndicatorItem(stepNumber = "4", title = "완료", isActive = false, onClick = {})
+        }
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            shape = RoundedCornerShape(20.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(text = "나의 시간 설정", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(text = "📅 캘린더에서 날짜를 선택 후 가능한 시간대를 입력해주세요.", fontSize = 13.sp, color = Color(0xFF777777))
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // 🗓️ 캘린더 컴포저블 UI
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color(0xFFFFFDF9))
+                        .border(1.dp, Color(0xFFFFE082), RoundedCornerShape(16.dp))
+                        .padding(14.dp)
+                ) {
+                    Text(
+                        text = "2026년 10월",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF4A3B32),
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // 요일 헤더
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
+                        daysOfWeek.forEach { dayName ->
+                            Text(
+                                text = dayName,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (dayName == "일") Color.Red else Color(0xFF666666),
+                                modifier = Modifier.weight(1f),
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // 날짜 그리드 (31일)
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(7),
+                        modifier = Modifier.height(200.dp),
+                        userScrollEnabled = false
+                    ) {
+                        items(daysInMonth) { day ->
+                            val isSelected = (day == selectedDay)
+                            Box(
+                                modifier = Modifier
+                                    .padding(3.dp)
+                                    .aspectRatio(1f)
+                                    .clip(CircleShape)
+                                    .background(if (isSelected) Color(0xFFFFBA00) else Color.Transparent)
+                                    .clickable {
+                                        selectedDay = day
+                                        if (availableTimeInput.isBlank() || availableTimeInput.startsWith("10월")) {
+                                            onAvailableTimeInputChange("10월 ${day}일 ")
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "$day",
+                                    fontSize = 13.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) Color(0xFF3C1E1E) else Color(0xFF333333)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Text(
+                    text = "선택한 날짜: 10월 ${selectedDay}일",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFFF9800)
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = availableTimeInput,
+                    onValueChange = onAvailableTimeInputChange,
+                    placeholder = { Text("예) 10월 ${selectedDay}일 오후 6시 ~ 8시", color = Color(0xFFAAAAAA)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Button(
+                    onClick = onNextClick,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFBA00)),
+                    shape = RoundedCornerShape(26.dp)
+                ) {
+                    Text(text = "다음", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3C1E1E))
+                }
+            }
+        }
+    }
+}
+
+// 6. 약속 만들기 - Step 3: 사람 초대
+@Composable
+fun CreateAppointmentStep3Screen(
+    selectedFriendsMap: MutableMap<String, Boolean>,
+    onBackClick: () -> Unit,
+    onNextClick: () -> Unit = {},
+    onStepClick: (String) -> Unit,
+    onComplete: (List<String>) -> Unit
+) {
+    val context = LocalContext.current
+    val friendsList = listOf("김민수", "이지훈", "박영희", "이철수")
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState())
+    ) {
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(text = "〈", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333), modifier = Modifier.clickable { onBackClick() }.padding(end = 16.dp))
+            Text(text = "사람 초대", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+        }
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.CenterVertically) {
+            StepIndicatorItem(stepNumber = "1", title = "약속 정보", isActive = false, onClick = { onStepClick("create_step1") })
+            StepIndicatorItem(stepNumber = "2", title = "나의 시간", isActive = false, onClick = { onStepClick("create_step2") })
+            StepIndicatorItem(stepNumber = "3", title = "사람 초대", isActive = true, onClick = { onStepClick("create_step3") })
+            StepIndicatorItem(stepNumber = "4", title = "완료", isActive = false, onClick = {})
+        }
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            shape = RoundedCornerShape(20.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(text = "누구와 만날까요?", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+                Spacer(modifier = Modifier.height(14.dp))
+
+                OutlinedTextField(value = "", onValueChange = {}, placeholder = { Text("친구 검색하기", color = Color(0xFFAAAAAA)) }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp))
+                Spacer(modifier = Modifier.height(14.dp))
+
+                LazyColumn(modifier = Modifier.height(180.dp)) {
+                    items(friendsList) { friend ->
+                        val isSelected = selectedFriendsMap[friend] ?: false
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable { selectedFriendsMap[friend] = !isSelected }.padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(modifier = Modifier.size(36.dp).clip(CircleShape).background(Color(0xFFE0E0E0)))
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(text = friend, fontSize = 15.sp, color = Color(0xFF333333))
+                            }
+                            Checkbox(checked = isSelected, onCheckedChange = { selectedFriendsMap[friend] = it }, colors = CheckboxDefaults.colors(checkedColor = Color(0xFFFFBA00)))
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clip = ClipData.newPlainText("PotatoMeet Invite", "https://potatomeet.app/invite/room123")
+                        clipboard.setPrimaryClip(clip)
+                        Toast.makeText(context, "초대 링크가 복사되었습니다!", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(text = "🔗 링크로 초대하기 (복사)", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Button(
+                    onClick = {
+                        val intent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            setPackage("com.kakao.talk")
+                            putExtra(Intent.EXTRA_TEXT, "[Potato Meet] 약속에 초대합니다! 링크: https://potatomeet.app/invite/room123")
+                        }
+                        try {
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, "[Potato Meet] 약속에 초대합니다! 링크: https://potatomeet.app/invite/room123")
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "공유하기"))
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(44.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFE082))
+                ) {
+                    Text(text = "💛 카카오톡으로 공유하기", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3C1E1E))
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Button(
+                    onClick = {
+                        val chosenList = friendsList.filter { selectedFriendsMap[it] == true }
+                        onComplete(chosenList)
+                    },
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFBA00)),
+                    shape = RoundedCornerShape(26.dp)
+                ) {
+                    Text(text = "완료 (약속 생성)", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3C1E1E))
+                }
+            }
+        }
+    }
+}
+
+// 스텝 인디케이터 (터치 클릭 이동 지원)
+@Composable
+fun StepIndicatorItem(stepNumber: String, title: String, isActive: Boolean, onClick: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.clickable { onClick() }
+    ) {
+        Box(
+            modifier = Modifier.size(28.dp).clip(CircleShape).background(if (isActive) Color(0xFFFFBA00) else Color(0xFFE0E0E0)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(text = stepNumber, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (isActive) Color(0xFF3C1E1E) else Color(0xFF888888))
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(text = title, fontSize = 11.sp, color = if (isActive) Color(0xFF333333) else Color(0xFFAAAAAA), fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal)
+    }
+}
