@@ -13,17 +13,17 @@ if env_path.is_file():
         if separator:
             dotenv[key] = value.strip().strip('"').strip("'")
 
-required = ("POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB")
+required = ("DB_USER", "DB_PASSWORD", "DB_NAME")
 missing = [key for key in required if not dotenv.get(key)]
 if missing:
     raise SystemExit(f".env missing required keys: {', '.join(missing)}")
 
 settings = {
-    "DB_HOST": dotenv.get("POSTGRES_HOST", "172.19.0.1"),
-    "DB_PORT": dotenv.get("POSTGRES_PORT", "5432"),
-    "DB_USER": dotenv["POSTGRES_USER"],
-    "DB_PASSWORD": dotenv["POSTGRES_PASSWORD"],
-    "DB_NAME": dotenv["POSTGRES_DB"],
+    "DB_HOST": dotenv.get("DB_HOST", "172.19.0.1"),
+    "DB_PORT": dotenv.get("DB_PORT", "5432"),
+    "DB_USER": dotenv["DB_USER"],
+    "DB_PASSWORD": dotenv["DB_PASSWORD"],
+    "DB_NAME": dotenv["DB_NAME"],
 }
 target = root / ".env.database"
 prior = dict(line.split("=", 1) for line in target.read_text().splitlines() if "=" in line) if target.is_file() else {}
