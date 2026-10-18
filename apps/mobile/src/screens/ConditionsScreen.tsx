@@ -15,7 +15,6 @@ import { TimeGrid } from '../ui/TimeGrid';
 import { PlanTable } from '../ui/PlanTable';
 import { NaturalLanguageInput } from '../ui/NaturalLanguageInput';
 import { intervalLabel } from '../domain/time';
-import { Disclosure } from '../ui/Disclosure';
 import { colors, ui } from '../ui/theme';
 export function ConditionsScreen() {
   const { meeting, actorId } = useApp();
@@ -32,7 +31,12 @@ function ConditionEditor() {
   const [draft, setDraft] = useState<Conditions>(me.conditions);
   const [drawing, setDrawing] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
-  const [details, setDetails] = useState(false);
+  const [step, setStep] = useState(0);
+  const go = (next: number) => {
+    Keyboard.dismiss();
+    setStep(next);
+    scroll.current?.scrollTo({ y: 0, animated: false });
+  };
   const [saved, setSaved] = useState(false);
   const [timeMode, setTimeMode] = useState<
     'availability' | 'unavailable' | 'preferred' | 'avoid'
@@ -49,6 +53,29 @@ function ConditionEditor() {
   };
   return (
     <KeyboardAvoidingView style={ui.flex} behavior="height">
+      <View style={[ui.dock, { borderTopWidth: 0 }]}>
+        <View style={ui.row}>
+          {['시간', '역할', '추가조건', '검토'].map((label, index) => (
+            <View key={label} style={ui.flex}>
+              <Chip
+                title={`${label}${
+                  (index === 0 && draft.availability.length > 0) ||
+                  (index === 1 && draft.roles.length > 0) ||
+                  (index === 3 && !dirty)
+                    ? ' ✓'
+                    : ''
+                }`}
+                selected={step === index}
+                onPress={() => {
+                  if (!app.busy) {
+                    go(index);
+                  }
+                }}
+              />
+            </View>
+          ))}
+        </View>
+      </View>
       <ScrollView
         ref={scroll}
         onContentSizeChange={() => {
@@ -63,11 +90,17 @@ function ConditionEditor() {
         contentContainerStyle={ui.content}
       >
         <View>
+          <Text style={ui.eyebrow}>{step + 1} / 4 단계</Text>
           <Text style={ui.heading}>{me.name}님의 조건</Text>
           <Text style={ui.muted}>
             {locked
               ? '확정된 조건입니다.'
-              : '가능한 시간과 역할을 선택하고 조건을 검토해 주세요.'}
+              : [
+                  '가능한 시간을 칠해 주세요.',
+                  '맡을 수 있는 역할을 골라 주세요.',
+                  '선호와 동반조건은 필요한 만큼만 입력해요.',
+                  '입력을 확인한 뒤 미리보기를 거쳐 제출해요.',
+                ][step]}
           </Text>
         </View>
         {(locked || saved) && (
@@ -82,18 +115,10 @@ function ConditionEditor() {
             }
           />
         )}
-        <View style={ui.section}>
+        <View style={[ui.section, { display: step === 0 ? 'flex' : 'none' }]}>
           <View style={ui.card}>
-            <Text style={ui.heading}>가능한 시간</Text>
-            <Button
-              title={details ? '상세 조건 접기' : '상세 조건 펼치기'}
-              secondary
-              onPress={() => {
-                setDetails(!details);
-                setTimeMode('availability');
-              }}
-            />
-            {details && repository.mode === 'http' && (
+            <Text style={ui.heading}>01 가능한 시간</Text>
+            {repository.mode === 'http' && (
               <View style={ui.wrap}>
                 {(
                   [
@@ -112,6 +137,10 @@ function ConditionEditor() {
                 ))}
               </View>
             )}
+            <Text style={ui.small}>
+              현재 선택한 종류의 시간만 칠하거나 지워요. 불가 시간은 가능
+              시간보다 우선합니다.
+            </Text>
             <TimeGrid
               label={
                 {
@@ -170,9 +199,9 @@ function ConditionEditor() {
             />
           </View>
         </View>
-        <View style={ui.section}>
+        <View style={[ui.section, { display: step === 1 ? 'flex' : 'none' }]}>
           <View style={ui.card}>
-            <Text style={ui.heading}>할 수 있는 역할 · 필수</Text>
+            <Text style={ui.heading}>02 할 수 있는 역할</Text>
             <Text style={ui.muted}>가능한 역할을 모두 선택하세요.</Text>
             <View style={ui.wrap}>
               {m.roles.map(role => (
@@ -206,13 +235,7 @@ function ConditionEditor() {
                   ['rolePreferences', '가능하면 맡기'],
                 ] as const
               ).map(([key, label]) => (
-                <View
-                  key={key}
-                  style={{
-                    display:
-                      details || key === 'requiredRoles' ? 'flex' : 'none',
-                  }}
-                >
+                <View key={key}>
                   <Text style={ui.muted}>{label}</Text>
                   <View style={ui.wrap}>
                     {m.roles.map(role => (
@@ -238,9 +261,9 @@ function ConditionEditor() {
             </View>
           )}
         </View>
-        <View style={[ui.section, { display: details ? 'flex' : 'none' }]}>
+        <View style={[ui.section, { display: step === 2 ? 'flex' : 'none' }]}>
           <View style={ui.card}>
-            <Text style={ui.heading}>선호와 동반조건</Text>
+            <Text style={ui.heading}>03 선호와 동반조건</Text>
             <View style={ui.wrap}>
               {(
                 [
@@ -385,16 +408,21 @@ function ConditionEditor() {
             disabled={locked}
           />
         </View>
-        <View style={ui.section}>
+        <View style={[ui.section, { display: step === 3 ? 'flex' : 'none' }]}>
           <View style={ui.card}>
-            <Text style={ui.heading}>제출 전 확인</Text>
+            <Text style={ui.heading}>04 제출 전 확인</Text>
             <Text style={ui.muted}>
-              입력한 시간과 역할을 확인해 주세요. 상세 조건도 제출에 함께
-              반영됩니다.
+              시간이나 역할을 수정하려면 위의 단계를 눌러 주세요. AI로 반영한
+              값도 함께 확인해 주세요.
             </Text>
             <Text style={ui.text}>
               가능 시간 ·{' '}
               {draft.availability.map(intervalLabel).join(', ') || '미입력'}
+            </Text>
+            <Text style={ui.text}>
+              불가 시간 ·{' '}
+              {(draft.unavailable ?? []).map(intervalLabel).join(', ') ||
+                '없음'}
             </Text>
             <Text style={ui.text}>
               가능 역할 · {draft.roles.join(', ') || '미입력'}
@@ -402,61 +430,45 @@ function ConditionEditor() {
             <Text style={ui.text}>
               필수 역할 · {draft.requiredRoles?.join(', ') || '없음'}
             </Text>
-            <Disclosure title="상세 조건 요약">
-              <Text style={ui.text}>
-                불가 시간 ·{' '}
-                {(draft.unavailable ?? []).map(intervalLabel).join(', ') ||
-                  '없음'}
+            <Text style={ui.text}>
+              불가 역할 · {draft.roleUnavailable?.join(', ') || '없음'}
+            </Text>
+            <Text style={ui.text}>
+              선호 역할 · {draft.rolePreferences?.join(', ') || '없음'}
+            </Text>
+            <Text style={ui.text}>
+              시간 선호 ·{' '}
+              {
+                { balanced: '상관없음', early: '이른 시간', late: '늦은 시간' }[
+                  draft.preference
+                ]
+              }
+            </Text>
+            {(draft.timePreferences ?? []).map((t, i) => (
+              <Text key={i} style={ui.text}>
+                {t.kind === 'available' ? '선호' : '회피'} · {intervalLabel(t)}
               </Text>
+            ))}
+            {!!draft.companionId && (
               <Text style={ui.text}>
-                가능 역할 · {draft.roles.join(', ') || '미입력'}
+                함께 필수 ·{' '}
+                {m.participants.find(p => p.id === draft.companionId)?.name}
               </Text>
-              <Text style={ui.text}>
-                필수 역할 · {draft.requiredRoles?.join(', ') || '없음'}
+            )}
+            {(draft.companionRequirements ?? []).map((c, i) => (
+              <Text key={i} style={ui.text}>
+                {m.participants.find(p => p.id === c.participantId)?.name} ·{' '}
+                {c.relation === 'together' ? '함께' : '따로'} ·{' '}
+                {c.strength === 'required' ? '필수' : '선호'}
               </Text>
-              <Text style={ui.text}>
-                불가 역할 · {draft.roleUnavailable?.join(', ') || '없음'}
-              </Text>
-              <Text style={ui.text}>
-                선호 역할 · {draft.rolePreferences?.join(', ') || '없음'}
-              </Text>
-              <Text style={ui.text}>
-                시간 선호 ·{' '}
-                {
-                  {
-                    balanced: '상관없음',
-                    early: '이른 시간',
-                    late: '늦은 시간',
-                  }[draft.preference]
-                }
-              </Text>
-              {(draft.timePreferences ?? []).map((t, i) => (
-                <Text key={i} style={ui.text}>
-                  {t.kind === 'available' ? '선호' : '회피'} ·{' '}
-                  {intervalLabel(t)}
-                </Text>
-              ))}
-              {!!draft.companionId && (
-                <Text style={ui.text}>
-                  함께 필수 ·{' '}
-                  {m.participants.find(p => p.id === draft.companionId)?.name}
-                </Text>
-              )}
-              {(draft.companionRequirements ?? []).map((c, i) => (
-                <Text key={i} style={ui.text}>
-                  {m.participants.find(p => p.id === c.participantId)?.name} ·{' '}
-                  {c.relation === 'together' ? '함께' : '따로'} ·{' '}
-                  {c.strength === 'required' ? '필수' : '선호'}
-                </Text>
-              ))}
-              {!!draft.note && <Text style={ui.text}>메모 · {draft.note}</Text>}
-            </Disclosure>
+            ))}
+            {!!draft.note && <Text style={ui.text}>메모 · {draft.note}</Text>}
           </View>
           {draft.aiDraftId && (
             <View style={ui.card}>
               <Text style={ui.muted}>
-                AI에서 가져온 시간·역할·동반조건을 상세 조건에서 수정한 뒤
-                확인해 주세요.
+                AI에서 가져온 시간·역할·동반조건을 각 단계에서 수정한 뒤 확인해
+                주세요.
               </Text>
               <Chip
                 title="확인사항을 해결하고 입력을 검토했어요"
@@ -536,43 +548,61 @@ function ConditionEditor() {
             : '저장된 조건을 확인하고 있어요'}
         </Text>
         <View style={ui.row}>
+          {step > 0 && (
+            <Button
+              title="이전"
+              secondary
+              disabled={!!app.busy}
+              onPress={() => go(step - 1)}
+            />
+          )}
           <View style={ui.flex}>
-            {!locked && (
+            {step < 3 ? (
               <Button
-                testID={preview ? 'submit-conditions' : 'preview-change'}
                 title={
-                  app.busy ||
-                  (preview
-                    ? me.submitted === false
-                      ? '조건 제출하기'
-                      : '변경 적용 · 재조율 시작'
-                    : '조건 미리보기')
+                  ['역할로 다음', '추가조건으로 다음', '검토로 다음'][step]
                 }
-                disabled={
-                  !!app.busy ||
-                  !dirty ||
-                  (!!draft.aiDraftId && !draft.ambiguitiesResolved)
-                }
-                onPress={() => {
-                  Keyboard.dismiss();
-                  if (preview) {
-                    void app.apply(draft, preview.revision).then(ok => {
-                      if (ok) {
-                        setPreview(null);
-                        setSaved(true);
-                        scroll.current?.scrollTo({ y: 0, animated: true });
-                      }
-                    });
-                  } else {
-                    void app.preview(draft).then(result => {
-                      if (result) {
-                        revealPreview.current = true;
-                        setPreview(result);
-                      }
-                    });
-                  }
-                }}
+                disabled={!!app.busy}
+                onPress={() => go(step + 1)}
               />
+            ) : (
+              !locked && (
+                <Button
+                  testID={preview ? 'submit-conditions' : 'preview-change'}
+                  title={
+                    app.busy ||
+                    (preview
+                      ? me.submitted === false
+                        ? '조건 제출하기'
+                        : '변경 적용 · 재조율 시작'
+                      : '조건 미리보기')
+                  }
+                  disabled={
+                    !!app.busy ||
+                    !dirty ||
+                    (!!draft.aiDraftId && !draft.ambiguitiesResolved)
+                  }
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    if (preview) {
+                      void app.apply(draft, preview.revision).then(ok => {
+                        if (ok) {
+                          setPreview(null);
+                          setSaved(true);
+                          scroll.current?.scrollTo({ y: 0, animated: true });
+                        }
+                      });
+                    } else {
+                      void app.preview(draft).then(result => {
+                        if (result) {
+                          revealPreview.current = true;
+                          setPreview(result);
+                        }
+                      });
+                    }
+                  }}
+                />
+              )
             )}
           </View>
         </View>
