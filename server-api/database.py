@@ -43,7 +43,7 @@ def make_engine():
     url = os.getenv("DATABASE_URL")
     if url:
         return create_engine(url, **({"connect_args": {"check_same_thread": False}, "poolclass": StaticPool} if url == "sqlite://" else {}))
-    return create_engine(URL.create("postgresql+psycopg", username=os.environ["DB_USER"], password=os.environ["DB_PASSWORD"], host=os.getenv("DB_HOST", "postgres"), port=int(os.getenv("DB_PORT", "5432")), database=os.environ["DB_NAME"]), pool_pre_ping=True)
+    return create_engine(URL.create("postgresql+psycopg", username=os.environ["DB_USER"], password=os.environ["DB_PASSWORD"], host=os.getenv("DB_HOST", "172.19.0.1"), port=int(os.getenv("DB_PORT", "5432")), database=os.environ["DB_NAME"]), pool_pre_ping=True)
 
 
 _engine = None

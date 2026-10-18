@@ -16,41 +16,20 @@ services:
     networks:
       - mash-net
 
-  # 2. FastAPI (Caddy만 내부망에서 접속)
+  # 2. FastAPI (Caddy만 내부망에서 접속; DB는 외부 PostgreSQL)
   server-api:
     build: ./server-api
     container_name: backend-api
     restart: unless-stopped
     environment:
-      DB_USER: ${POSTGRES_USER:-mashlab}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-mashlab}
-      DB_NAME: ${POSTGRES_DB:-mashlab}
-      DB_HOST: postgres
-      DB_PORT: "5432"
+      DB_USER: ${DB_USER:-mashlab}
+      DB_PASSWORD: ${DB_PASSWORD:-mashlab}
+      DB_NAME: ${DB_NAME:-mashlab}
+      DB_HOST: ${DB_HOST:-172.19.0.1}
+      DB_PORT: ${DB_PORT:-5432}
+      DATABASE_URL: ${DATABASE_URL:-}
     expose:
       - "8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - mash-net
-
-  # 3. PostgreSQL
-  postgres:
-    image: postgres:18-alpine
-    container_name: mashlab-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-mashlab}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mashlab}
-      POSTGRES_DB: ${POSTGRES_DB:-mashlab}
-    volumes:
-      - postgres_data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mashlab} -d ${POSTGRES_DB:-mashlab}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
     networks:
       - mash-net
 
@@ -121,12 +100,9 @@ services:
     image: prometheuscommunity/postgres-exporter:latest
     container_name: postgres-exporter
     environment:
-      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-mashlab}:${POSTGRES_PASSWORD:-mashlab}@postgres:5432/${POSTGRES_DB:-mashlab}?sslmode=disable"
+      DATA_SOURCE_NAME: "postgresql://${DB_USER:-mashlab}:${DB_PASSWORD:-mashlab}@${DB_HOST:-172.19.0.1}:${DB_PORT:-5432}/${DB_NAME:-mashlab}?sslmode=disable"
     networks:
       - mash-net
-    depends_on:
-      postgres:
-        condition: service_healthy
     restart: unless-stopped
 
 networks:
@@ -135,10 +111,8 @@ networks:
   monitoring-net:
     driver: bridge
 
-# 컨테이너가 꺼져도 데이터가 날아가지 않도록 하드디스크에 영구 저장
 volumes:
   caddy_data:
   caddy_config:
-  postgres_data:
   prometheus_data:
   grafana_data:

@@ -31,7 +31,7 @@ def resolve_database_url() -> str:
         "postgresql+psycopg",
         username=user,
         password=password,
-        host=os.getenv("DB_HOST", "postgres"),
+        host=os.getenv("DB_HOST", "172.19.0.1"),
         port=int(os.getenv("DB_PORT", "5432")),
         database=name,
     ).render_as_string(hide_password=False)
