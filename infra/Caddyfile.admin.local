@@ -1,0 +1,12 @@
+# Local HTTPS only. Trust the development CA yourself; never bypass browser warnings.
+https://localhost:8443 {
+    tls internal
+    handle /admin-api/* {
+        reverse_proxy 127.0.0.1:8000 {
+            header_up X-Admin-Client-IP {remote_host}
+        }
+    }
+    handle {
+        reverse_proxy 127.0.0.1:5179
+    }
+}
