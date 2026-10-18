@@ -1,23 +1,23 @@
 import React from 'react';
 import { RefreshControl, ScrollView, Text, View } from 'react-native';
 import { useApp } from '../state/store';
-import { consentLabel, planLabel } from '../domain/model';
+import { consentLabel } from '../domain/model';
 import { useNavigation } from '@react-navigation/native';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Button } from '../ui/components';
 import { Timeline } from '../ui/Timeline';
 import { MeetingActions } from '../ui/MeetingActions';
+import { Disclosure } from '../ui/Disclosure';
 import { colors, ui } from '../ui/theme';
 export function OverviewScreen() {
   const app = useApp();
-  const navigation =
-    useNavigation<
-      BottomTabNavigationProp<{
-        현황: undefined;
-        '내 조건': undefined;
-        담당표: undefined;
-      }>
-    >();
+  const navigation = useNavigation<
+    BottomTabNavigationProp<{
+      현황: undefined;
+      '내 조건': undefined;
+      담당표: undefined;
+    }>
+  >();
   const m = app.meeting!;
   const count = m.participants.filter(
     p =>
@@ -62,13 +62,23 @@ export function OverviewScreen() {
           {m.duration}분 | {m.round === 0 ? '조건 수집' : `${m.round}차 조율`}
         </Text>
       </View>
-      <MeetingActions />
+      <Disclosure title="초대 코드 · 모임 관리">
+        <MeetingActions />
+      </Disclosure>
       <View style={ui.summary}>
         <Text style={ui.eyebrow}>지금 할 일</Text>
         <Text style={ui.heading}>
           {m.status === 'finalized'
             ? '함께 정한 일정이 확정됐어요'
-            : planLabel[m.plan.status]}
+            : needsInput
+            ? '조건을 제출해 주세요'
+            : m.plan.status === 'feasible'
+            ? '새 담당표를 확인해 주세요'
+            : count < m.participants.length
+            ? '다른 참가자를 기다리는 중'
+            : m.hostId === app.actorId
+            ? '조건이 모였어요. 담당표를 배정해 주세요'
+            : '방장의 배정을 기다리는 중'}
         </Text>
         <Button
           title={nextTitle}
@@ -104,73 +114,78 @@ export function OverviewScreen() {
           </Text>
         </View>
       </View>
-      <View style={ui.card}>
-        <Text style={ui.heading}>한눈에 보는 가능시간</Text>
-        <Timeline key={m.id} meeting={m} />
-      </View>
-      <View style={ui.card}>
-        <Text style={ui.heading}>참가자 {m.participants.length}명</Text>
-        {m.participants.map(p => (
-          <View
-            key={p.id}
-            style={[ui.row, { justifyContent: 'space-between' }]}
-          >
-            <View style={ui.flex}>
-              <Text style={ui.text}>
-                {p.name}
-                {p.id === m.hostId ? ' · 방장' : ''}
-                {p.id === app.actorId ? ' · 나' : ''}
-              </Text>
-              <Text style={ui.small}>
-                {p.conditions.roles.join(' · ') || '역할 미입력'}
-              </Text>
-              <Text style={ui.small}>
-                {p.submitted === undefined
-                  ? ''
-                  : p.submitted
-                  ? `제출 완료 · v${p.conditionVersion}`
-                  : '아직 제출하지 않았어요'}
-              </Text>
-              {!!p.conditions.requiredRoles?.length && (
-                <Text style={ui.small}>
-                  필수: {p.conditions.requiredRoles.join(', ')}
-                </Text>
-              )}
-              {!!p.conditions.roleUnavailable?.length && (
-                <Text style={ui.small}>
-                  불가: {p.conditions.roleUnavailable.join(', ')}
-                </Text>
-              )}
-              {!!p.conditions.rolePreferences?.length && (
-                <Text style={ui.small}>
-                  선호: {p.conditions.rolePreferences.join(', ')}
-                </Text>
-              )}
-            </View>
-            <Text
-              style={{
-                fontSize: 12,
-                color: p.consent === 'agreed' ? colors.primary : colors.muted,
-              }}
+      <Disclosure title="참가자 조건 · 가능시간 · 조율 기록">
+        <View style={ui.card}>
+          <Text style={ui.heading}>한눈에 보는 가능시간</Text>
+          <Timeline key={m.id} meeting={m} />
+        </View>
+        <View style={ui.card}>
+          <Text style={ui.heading}>참가자 {m.participants.length}명</Text>
+          {m.participants.map(p => (
+            <View
+              key={p.id}
+              style={[ui.row, { justifyContent: 'space-between' }]}
             >
-              {p.consentRound !== m.round
-                ? '재동의 필요'
-                : consentLabel[p.consent]}
-            </Text>
-          </View>
-        ))}
-      </View>
-      <View style={ui.card}>
-        <Text style={ui.heading}>조율 기록</Text>
-        {m.history
-          .slice(-5)
-          .reverse()
-          .map((h, i) => (
-            <Text key={`${i}-${h}`} style={ui.muted}>
-              • {h}
-            </Text>
+              <View style={ui.flex}>
+                <Text style={ui.text}>
+                  {p.name}
+                  {p.id === m.hostId ? ' · 방장' : ''}
+                  {p.id === app.actorId ? ' · 나' : ''}
+                </Text>
+                <Text style={ui.small}>
+                  {p.conditions.roles.join(' · ') || '역할 미입력'}
+                </Text>
+                <Text style={ui.small}>
+                  {p.submitted === undefined
+                    ? ''
+                    : p.submitted
+                    ? `제출 완료 · v${p.conditionVersion}`
+                    : '아직 제출하지 않았어요'}
+                </Text>
+                {!!p.conditions.requiredRoles?.length && (
+                  <Text style={ui.small}>
+                    필수: {p.conditions.requiredRoles.join(', ')}
+                  </Text>
+                )}
+                {!!p.conditions.roleUnavailable?.length && (
+                  <Text style={ui.small}>
+                    불가: {p.conditions.roleUnavailable.join(', ')}
+                  </Text>
+                )}
+                {!!p.conditions.rolePreferences?.length && (
+                  <Text style={ui.small}>
+                    선호: {p.conditions.rolePreferences.join(', ')}
+                  </Text>
+                )}
+              </View>
+              <Text
+                style={{
+                  fontSize: 12,
+                  color:
+                    p.consent === 'agreed' && p.consentRound === m.round
+                      ? colors.primary
+                      : colors.muted,
+                }}
+              >
+                {p.consentRound !== m.round
+                  ? '재동의 필요'
+                  : consentLabel[p.consent]}
+              </Text>
+            </View>
           ))}
-      </View>
+        </View>
+        <View style={ui.card}>
+          <Text style={ui.heading}>조율 기록</Text>
+          {m.history
+            .slice(-5)
+            .reverse()
+            .map((h, i) => (
+              <Text key={`${i}-${h}`} style={ui.muted}>
+                • {h}
+              </Text>
+            ))}
+        </View>
+      </Disclosure>
       <Button
         title="현황 새로고침"
         secondary

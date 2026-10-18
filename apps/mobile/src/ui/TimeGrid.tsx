@@ -1,5 +1,5 @@
-import React, { useRef, useState } from 'react';
-import { Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { ScrollView, Text, View } from 'react-native';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import { Interval } from '../domain/model';
 import {
@@ -30,7 +30,24 @@ export function TimeGrid({
   label?: string;
 }) {
   const [date, setDate] = useState(dates[0]);
-  const [band, setBand] = useState(1);
+  const viewport = useRef<React.ComponentRef<typeof ScrollView>>(null);
+  const offset = useRef(0);
+  const pointer = useRef({ x: 0, y: 0 });
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [drawing, setDrawing] = useState(false);
+  const stop = () => {
+    if (timer.current) {
+      clearInterval(timer.current);
+      timer.current = null;
+    }
+  };
+  useEffect(
+    () => () => {
+      stop();
+      onDrawing(false);
+    },
+    [onDrawing],
+  );
   const [erase, setErase] = useState(false);
   const width = useRef(300);
   const stroke = useRef<{
@@ -39,12 +56,11 @@ export function TimeGrid({
     last: number;
     erase: boolean;
   } | null>(null);
-  const current = useRef({ value, date, band, erase, onChange });
-  current.current = { value, date, band, erase, onChange };
+  const current = useRef({ value, date, erase, onChange });
+  current.current = { value, date, erase, onChange };
   const selected = intervalsToSlots(value, date);
   const hit = (x: number, y: number) =>
-    current.current.band * 12 +
-    Math.min(3, Math.max(0, Math.floor(y / 48))) * 3 +
+    Math.min(15, Math.max(0, Math.floor((y + offset.current) / 48))) * 3 +
     Math.min(2, Math.max(0, Math.floor(x / (width.current / 3))));
   const publish = (slots: number[]) => {
     const c = current.current;
@@ -54,19 +70,42 @@ export function TimeGrid({
     ]);
   };
   const pan = usePanGesture({
-    minDistance: 0,
+    activateAfterLongPress: 300,
     maxPointers: 1,
     enabled: !disabled,
     disableReanimated: true,
-    onBegin: e => {
+    onActivate: e => {
       const c = current.current;
       const start = hit(e.x, e.y);
       const base = intervalsToSlots(c.value, c.date);
       stroke.current = { base, start, last: start, erase: c.erase };
       onDrawing(true);
+      setDrawing(true);
+      pointer.current = { x: e.x, y: e.y };
+      stop();
+      timer.current = setInterval(() => {
+        const { x, y } = pointer.current;
+        const delta = y < 40 ? -16 : y > 280 ? 16 : 0;
+        if (!delta || !stroke.current) {
+          return;
+        }
+        offset.current = Math.max(0, Math.min(448, offset.current + delta));
+        viewport.current?.scrollTo({ y: offset.current, animated: false });
+        const slot = hit(x, y);
+        stroke.current.last = slot;
+        publish(
+          paintSlots(
+            stroke.current.base,
+            stroke.current.start,
+            slot,
+            stroke.current.erase,
+          ),
+        );
+      }, 80);
       publish(paintSlots(base, start, start, c.erase));
     },
     onUpdate: e => {
+      pointer.current = { x: e.x, y: e.y };
       const s = stroke.current;
       const slot = hit(e.x, e.y);
       if (s && s.last !== slot) {
@@ -75,6 +114,8 @@ export function TimeGrid({
       }
     },
     onFinalize: () => {
+      stop();
+      setDrawing(false);
       stroke.current = null;
       onDrawing(false);
     },
@@ -90,21 +131,15 @@ export function TimeGrid({
               key={d}
               title={d.slice(5).replace('-', '/')}
               selected={d === date}
-              onPress={() => setDate(d)}
+              onPress={() => {
+                setDate(d);
+                offset.current = 0;
+                viewport.current?.scrollTo({ y: 0, animated: false });
+              }}
             />
           ))}
         </View>
       )}
-      <View style={ui.wrap}>
-        {['00–06', '06–12', '12–18', '18–24'].map((label, i) => (
-          <Chip
-            key={label}
-            title={label}
-            selected={band === i}
-            onPress={() => setBand(i)}
-          />
-        ))}
-      </View>
       <View style={ui.wrap}>
         <Chip
           title="＋ 칠하기"
@@ -118,72 +153,87 @@ export function TimeGrid({
         />
         <Text style={ui.small}>한 칸 30분</Text>
       </View>
+      <Text style={ui.small}>
+        밀어서 스크롤 · 길게 누른 뒤 끌어서 {erase ? '지우기' : '선택'} ·
+        가장자리에서 자동 스크롤
+      </Text>
       <GestureDetector gesture={pan}>
-        <View
-          testID="time-grid"
-          collapsable={false}
-          onLayout={e => {
-            width.current = e.nativeEvent.layout.width;
-          }}
-          style={{
-            flexDirection: 'row',
-            flexWrap: 'wrap',
-            borderRadius: 12,
-            overflow: 'hidden',
-            opacity: disabled ? 0.5 : 1,
-          }}
-        >
-          {Array.from({ length: 12 }, (_, index) => {
-            const slot = band * 12 + index;
-            const active = selected.includes(slot);
-            return (
-              <View
-                key={slot}
-                accessible
-                accessibilityRole="checkbox"
-                accessibilityLabel={`${label} · ${date} ${timeLabel(
-                  slot * 30,
-                )}부터 30분`}
-                accessibilityState={{ checked: active, disabled: !!disabled }}
-                accessibilityActions={[
-                  { name: 'activate', label: '선택 변경' },
-                ]}
-                onAccessibilityAction={() => {
-                  if (!disabled) {
-                    publish(paintSlots(selected, slot, slot, active));
-                  }
-                }}
-                style={{
-                  width: '33.3333%',
-                  height: 48,
-                  borderWidth: 1,
-                  borderColor: colors.white,
-                  backgroundColor: active ? tone : colors.bg,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Text
-                  style={{
-                    color: active ? colors.white : colors.muted,
-                    fontSize: 13,
-                    fontWeight: '600',
-                  }}
-                >
-                  {active ? '✓ ' : ''}
-                  {timeLabel(slot * 30)}
-                </Text>
-              </View>
-            );
-          })}
+        <View collapsable={false} style={{ height: 320 }}>
+          <ScrollView
+            ref={viewport}
+            nestedScrollEnabled
+            scrollEnabled={!drawing}
+            scrollEventThrottle={16}
+            onScroll={e => {
+              offset.current = e.nativeEvent.contentOffset.y;
+            }}
+          >
+            <View
+              testID="time-grid"
+              collapsable={false}
+              onLayout={e => {
+                width.current = e.nativeEvent.layout.width;
+              }}
+              style={{
+                flexDirection: 'row',
+                flexWrap: 'wrap',
+                borderRadius: 12,
+                overflow: 'hidden',
+                opacity: disabled ? 0.5 : 1,
+              }}
+            >
+              {Array.from({ length: 48 }, (_, index) => {
+                const slot = index;
+                const active = selected.includes(slot);
+                return (
+                  <View
+                    key={slot}
+                    accessible
+                    accessibilityRole="checkbox"
+                    accessibilityLabel={`${label} · ${date} ${timeLabel(
+                      slot * 30,
+                    )}부터 30분`}
+                    accessibilityState={{
+                      checked: active,
+                      disabled: !!disabled,
+                    }}
+                    accessibilityActions={[
+                      { name: 'activate', label: '선택 변경' },
+                    ]}
+                    onAccessibilityAction={() => {
+                      if (!disabled) {
+                        publish(paintSlots(selected, slot, slot, active));
+                      }
+                    }}
+                    style={{
+                      width: '33.3333%',
+                      height: 48,
+                      borderWidth: 1,
+                      borderColor: colors.white,
+                      backgroundColor: active ? tone : colors.bg,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: active ? colors.white : colors.muted,
+                        fontSize: 13,
+                        fontWeight: '600',
+                      }}
+                    >
+                      {active ? '✓ ' : ''}
+                      {timeLabel(slot * 30)}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          </ScrollView>
         </View>
       </GestureDetector>
-      <Text style={ui.muted}>
-        손가락을 끌어 연속 시간을 선택하세요. 다른 구간도 이어서 추가할 수
-        있어요.
-      </Text>
       <View style={ui.summary}>
-        <Text style={ui.heading}>{label} 시간 요약</Text>
+        <Text style={ui.small}>{label} · 선택한 시간</Text>
         <Text
           accessibilityLiveRegion="polite"
           testID="selected-intervals"

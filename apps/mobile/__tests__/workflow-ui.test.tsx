@@ -42,7 +42,7 @@ const press = async (title: string) => {
   expect(button.props.disabled).not.toBe(true);
   await act(async () => button.props.onPress());
 };
-test('step navigation preserves edits; preview does not submit and changing an input invalidates preview', async () => {
+test('collapsing details preserves edits; preview does not submit and changing an input invalidates preview', async () => {
   const m = mockState.meeting;
   mockState.preview.mockResolvedValue({
     revision: m.revision,
@@ -53,17 +53,15 @@ test('step navigation preserves edits; preview does not submit and changing an i
   await act(async () => {
     tree = Renderer.create(<ConditionsScreen />);
   });
-  await press('역할로 다음');
-  await press('추가조건으로 다음');
+  await press('상세 조건 펼치기');
   const note = () =>
     tree.root
       .findAllByType(Field)
       .find(f => f.props.label === '추가 확인 메모')!;
   await act(async () => note().props.onChangeText('메모 유지 확인'));
-  await press('이전');
-  await press('추가조건으로 다음');
+  await press('상세 조건 접기');
+  await press('상세 조건 펼치기');
   expect(note().props.value).toBe('메모 유지 확인');
-  await press('검토로 다음');
   await press('조건 미리보기');
   expect(mockState.preview).toHaveBeenCalledWith(
     expect.objectContaining({ note: '메모 유지 확인' }),
@@ -74,9 +72,9 @@ test('step navigation preserves edits; preview does not submit and changing an i
       .findAllByType(Button)
       .some(b => b.props.testID === 'submit-conditions'),
   ).toBe(true);
-  await press('이전');
+  await press('상세 조건 접기');
+  await press('상세 조건 펼치기');
   await act(async () => note().props.onChangeText('변경된 메모'));
-  await press('검토로 다음');
   expect(
     tree.root
       .findAllByType(Button)
@@ -108,4 +106,40 @@ test('a participant cannot see host finalization, and an old round agreement sti
   ).toBe(false);
   await press('이번 담당표에 동의');
   expect(mockState.consent).toHaveBeenCalledWith('agreed');
+});
+
+test('submission stays unconfirmed after a server failure, then confirms only on success', async () => {
+  const m = mockState.meeting;
+  mockState.preview.mockResolvedValue({
+    revision: m.revision,
+    before: m.plan,
+    after: m.plan,
+    changes: [],
+  });
+  mockState.apply.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+  await act(async () => {
+    tree = Renderer.create(<ConditionsScreen />);
+  });
+  await press('상세 조건 펼치기');
+  const field = tree.root
+    .findAllByType(Field)
+    .find(f => f.props.label === '추가 확인 메모')!;
+  await act(async () => field.props.onChangeText('서버 확인 테스트'));
+  await press('조건 미리보기');
+  await press('변경 적용 · 재조율 시작');
+  expect(
+    tree.root
+      .findAllByType(Button)
+      .some(b => b.props.testID === 'submit-conditions'),
+  ).toBe(true);
+  await press('변경 적용 · 재조율 시작');
+  expect(mockState.apply).toHaveBeenCalledWith(
+    expect.objectContaining({ note: '서버 확인 테스트' }),
+    m.revision,
+  );
+  expect(
+    tree.root
+      .findAllByType(Button)
+      .some(b => b.props.testID === 'submit-conditions'),
+  ).toBe(false);
 });
