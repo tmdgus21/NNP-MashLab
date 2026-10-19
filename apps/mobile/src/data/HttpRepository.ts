@@ -9,6 +9,7 @@ import {
 } from '../domain/model';
 import { Repository } from './RepositoryPort';
 import { SessionVault } from './sessionTypes';
+import { MeetingDeletedError } from './MeetingDeletedError';
 
 // Wire DTOs use `code`; the app and Mock use `roomCode` exclusively.
 // Validate the server field before mapping: never accept a Mock-shaped response
@@ -56,11 +57,18 @@ export class HttpRepository implements Repository {
         },
       );
       if (!response.ok) {
+        if (response.status === 410) {
+          const active = await this.vault?.read();
+          if (active) {await this.vault?.remove?.(active.meetingId);}
+          throw new MeetingDeletedError();
+        }
         const messages: Record<number, string> = {
           401: '로그인이 필요합니다.',
           403: '이 작업을 할 권한이 없습니다.',
           404: '모임을 찾을 수 없습니다.',
           409: '다른 변경이 있습니다. 새로고침 후 다시 시도해 주세요.',
+          410: '방장이 삭제한 모임입니다.',
+          405: '현재 서버는 이 기능을 지원하지 않습니다. 서버 업데이트가 필요합니다.',
           422: '조건 입력값을 확인해 주세요.',
         };
         let detail: unknown;
@@ -111,6 +119,10 @@ export class HttpRepository implements Repository {
       'GET',
       serverMeetingSchema,
     );
+  }
+  async deleteMeeting(id: string, _actor: string, expectedRevision: number) {
+    await this.request(`/meetings/${encodeURIComponent(id)}`, 'DELETE', z.object({deleted: z.literal(true)}), {expectedRevision});
+    await this.vault?.remove?.(id);
   }
   preview(
     id: string,

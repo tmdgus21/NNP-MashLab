@@ -65,11 +65,11 @@ export function WelcomeScreen() {
             },
           ]}
         >
-          <Text style={[ui.eyebrow, { color: '#AEE0D2' }]}>CONDITIONAL OK</Text>
+          <Text style={[ui.eyebrow, { color: '#DEDBFF' }]}>CONDITIONAL OK</Text>
           <Text style={[ui.title, { color: colors.white, fontSize: 32 }]}>
             우리 모두의 조건,{'\n'}하나의 좋은 일정.
           </Text>
-          <Text style={{ color: '#D9EFE8', lineHeight: 22 }}>
+          <Text style={{ color: '#EAE7FF', lineHeight: 22 }}>
             가능한 시간과 역할을 모으면{'\n'}함께 동의할 수 있는 담당표가
             만들어져요.
           </Text>

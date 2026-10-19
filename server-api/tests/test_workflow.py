@@ -81,6 +81,27 @@ class WorkflowTests(unittest.TestCase):
             for proposal in proposals:
                 self.assertEqual(len(list(db.scalars(select(ConsentRow).where(ConsentRow.proposal_id==proposal.id)))),2)
 
+    def test_host_delete_revokes_access_and_is_retryable(self):
+        path = '/v1/meetings/' + self.id
+        body = {'expectedRevision': self.get()['revision']}
+        self.assertEqual(self.client.request('DELETE', path, json=body).status_code, 401)
+        self.assertEqual(self.client.request('DELETE', path, json=body, headers=self.headers(self.guest)).status_code, 403)
+        outsider = self.client.post('/v1/meetings', json=CONFIG).json()
+        self.assertEqual(self.client.request('DELETE', path, json=body, headers=self.headers(outsider)).status_code, 403)
+        self.assertEqual(self.client.request('DELETE', path, json={'expectedRevision': 1}, headers=self.headers(self.host)).status_code, 409)
+        for _ in range(2):
+            result = self.client.request('DELETE', path, json=body, headers=self.headers(self.host))
+            self.assertEqual(result.status_code, 200, result.text)
+            self.assertEqual(result.json(), {'deleted': True})
+        for actor in [self.host, self.guest]:
+            headers = self.headers(actor)
+            self.assertEqual(self.client.get(path, headers=headers).status_code, 410)
+            self.assertEqual(self.client.get('/v1/session', headers=headers).status_code, 410)
+            self.assertEqual(self.client.get(path + '/proposals', headers=headers).status_code, 410)
+            self.assertEqual(self.client.put(path + '/conditions', json=body | {'conditions': conditions(['진행'])}, headers=headers).status_code, 410)
+        self.assertEqual(self.client.post('/v1/meetings/join', json={'code':self.host['meeting']['code'], 'name':'새참여자'}).status_code, 404)
+        self.assertEqual(self.client.get('/v1/meetings/' + outsider['meeting']['id'], headers=self.headers(outsider)).status_code, 200)
+
     def test_idempotent_entry_and_public_invite(self):
         from uuid import uuid4
         headers={'Idempotency-Key':str(uuid4())}

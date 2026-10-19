@@ -8,7 +8,7 @@ python3 infra/backup_database.py
 previous=$(docker inspect backend-api --format '{{.Image}}')
 "${compose[@]}" build server-api
 "${compose[@]}" run --rm --no-deps -e DATABASE_URL=sqlite:// server-api python -m unittest discover -s tests -v
-"${compose[@]}" run --rm --no-deps server-api python database.py
+"${compose[@]}" run --rm --no-deps server-api alembic -c alembic.ini upgrade head
 "${compose[@]}" up -d --no-deps server-api
 for attempt in {1..30}; do
   if docker exec backend-api python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=2)"; then

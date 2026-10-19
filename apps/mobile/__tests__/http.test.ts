@@ -127,3 +127,19 @@ test.each([
   );
   await expect(r.get('id')).rejects.toThrow(String(message));
 });
+
+test('delete authenticates, sends revision and only clears saved session on confirmed success', async () => {
+  const remove = jest.fn();
+  const vault = {read: jest.fn(), save: jest.fn(), remove};
+  const fetcher = jest.fn().mockResolvedValue({ok: false, status: 405, json: async () => ({})});
+  const repo = new HttpRepository('https://example.test/v1', async () => 'host-session', fetcher, vault);
+  await expect(repo.deleteMeeting('a/b', 'untrusted', 9)).rejects.toThrow('서버 업데이트');
+  expect(remove).not.toHaveBeenCalled();
+  fetcher.mockResolvedValueOnce({ok: true, json: async () => ({deleted: true})});
+  await repo.deleteMeeting('a/b', 'untrusted', 9);
+  expect(fetcher.mock.calls[1][0]).toBe('https://example.test/v1/meetings/a%2Fb');
+  expect(fetcher.mock.calls[1][1].method).toBe('DELETE');
+  expect(JSON.parse(fetcher.mock.calls[1][1].body)).toEqual({expectedRevision: 9});
+  expect(fetcher.mock.calls[1][1].headers.Authorization).toBe('Bearer host-session');
+  expect(remove).toHaveBeenCalledWith('a/b');
+});

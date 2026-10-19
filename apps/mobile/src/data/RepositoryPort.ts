@@ -14,6 +14,7 @@ export interface Repository {
   create(input: CreateMeeting): Promise<Session>;
   join(roomCode: string, name: string): Promise<Session>;
   get(id: string): Promise<Meeting>;
+  deleteMeeting(id: string, actorId: string, expectedRevision: number): Promise<void>;
   preview(
     id: string,
     actorId: string,

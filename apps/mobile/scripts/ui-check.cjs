@@ -8,8 +8,10 @@ const serial = process.env.ANDROID_SERIAL || 'emulator-5554';
 const run = (...args) => execFileSync(adb, ['-s', serial, ...args], {encoding: 'utf8', timeout: 30000});
 const decode = s => s.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#10;/g, '\n').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 function dump() {
+  run('shell', 'rm', '-f', '/sdcard/conditionalok-ui.xml');
   run('shell', 'uiautomator', 'dump', '/sdcard/conditionalok-ui.xml');
   const xml = run('shell', 'cat', '/sdcard/conditionalok-ui.xml');
+  if (!xml.includes('<hierarchy')) throw new Error('Fresh UI hierarchy unavailable');
   fs.writeFileSync(path.join(out, 'ui-current.xml'), xml);
   return [...xml.matchAll(/<node\s+([^>]+)>?/g)].map(m => {
     const attributes = Object.fromEntries([...m[1].matchAll(/([\w-]+)="([^"]*)"/g)].map(a => [a[1], decode(a[2])]));
