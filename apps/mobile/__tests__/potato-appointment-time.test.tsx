@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pressable, Text, TextInput } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Renderer, { act } from 'react-test-renderer';
 import { CreateAppointmentStep3TimeScreen } from '../src/potato/screens/CreateAppointmentStep3TimeScreen';
@@ -9,6 +9,10 @@ import {
   mergeAppointmentTimeSlots,
   parseTimeRange,
 } from '../src/potato/services/appointmentTime';
+import {
+  findButton,
+  hasText as containsText,
+} from '../test-utils/potato-test-utils';
 import type {
   AppointmentCreationDraft,
   AppointmentCreationTimeSlot,
@@ -21,23 +25,6 @@ function slot(
   endTimeMinutes: number,
 ): AppointmentCreationTimeSlot {
   return { id, date, startTimeMinutes, endTimeMinutes };
-}
-
-function findButton(
-  tree: Renderer.ReactTestRenderer,
-  label: string,
-): Renderer.ReactTestInstance {
-  return tree.root
-    .findAllByType(Pressable)
-    .find(button =>
-      button.findAllByType(Text).some(text => text.props.children === label),
-    )!;
-}
-
-function containsText(tree: Renderer.ReactTestRenderer, text: string): boolean {
-  return tree.root
-    .findAllByType(Text)
-    .some(element => element.props.children === text);
 }
 
 function setTimeInput(
@@ -192,6 +179,10 @@ test('step three edits, deletes, preserves draft and restores state after back n
   });
   expect(latestDraft.timeSlots).toEqual([]);
 
+  await setTimeInput(tree, '시작 시', '09');
+  await setTimeInput(tree, '시작 분', '00');
+  await setTimeInput(tree, '종료 시', '10');
+  await setTimeInput(tree, '종료 분', '00');
   await act(async () => {
     tree.root.findByProps({ accessibilityLabel: '시간 추가' }).props.onPress();
   });
@@ -223,6 +214,221 @@ test('step three edits, deletes, preserves draft and restores state after back n
     }),
   );
   expect(onBack).toHaveBeenCalledTimes(1);
+  await act(async () => tree.unmount());
+});
+
+test('next proceeds with saved slots when the new time inputs are empty', async () => {
+  const savedSlots = [
+    slot('first-day', '2026-10-31', 540, 600),
+    slot('next-day', '2026-11-01', 840, 960),
+  ];
+  const initialDraft: AppointmentCreationDraft = {
+    title: '저녁 약속',
+    category: '식사',
+    duration: '2시간',
+    location: '서울',
+    invitedFriends: ['친구 ID'],
+    selectedCalendarDate: '2026-10-31',
+    timeInput: {
+      startHour: '',
+      startMinute: '',
+      endHour: '',
+      endMinute: '',
+    },
+    timeSlots: savedSlots,
+  };
+  const onRequestStep4 = jest.fn();
+  let tree!: Renderer.ReactTestRenderer;
+
+  await act(async () => {
+    tree = Renderer.create(
+      <SafeAreaProvider>
+        <CreateAppointmentStep3TimeScreen
+          draft={initialDraft}
+          onDraftChange={jest.fn()}
+          onBack={jest.fn()}
+          onRequestStep4={onRequestStep4}
+        />
+      </SafeAreaProvider>,
+    );
+  });
+
+  await act(async () => findButton(tree, '다음').props.onPress());
+  expect(onRequestStep4).toHaveBeenCalledWith(initialDraft);
+  expect(onRequestStep4.mock.calls[0][0].timeSlots).toEqual(savedSlots);
+  expect(onRequestStep4.mock.calls[0][0]).toMatchObject({
+    title: '저녁 약속',
+    invitedFriends: ['친구 ID'],
+  });
+
+  await act(async () => tree.unmount());
+});
+
+test('next without saved slots asks the user to add a time', async () => {
+  const onRequestStep4 = jest.fn();
+  let tree!: Renderer.ReactTestRenderer;
+
+  await act(async () => {
+    tree = Renderer.create(
+      <SafeAreaProvider>
+        <CreateAppointmentStep3TimeScreen
+          draft={{
+            selectedCalendarDate: '2026-10-31',
+            timeInput: {
+              startHour: '',
+              startMinute: '',
+              endHour: '',
+              endMinute: '',
+            },
+          }}
+          onDraftChange={jest.fn()}
+          onBack={jest.fn()}
+          onRequestStep4={onRequestStep4}
+        />
+      </SafeAreaProvider>,
+    );
+  });
+
+  await act(async () => findButton(tree, '다음').props.onPress());
+  expect(onRequestStep4).not.toHaveBeenCalled();
+  expect(
+    containsText(
+      tree,
+      '시간 추가 버튼으로 가능한 시간을 먼저 저장해주세요.',
+    ),
+  ).toBe(true);
+
+  await act(async () => tree.unmount());
+});
+
+test('next reports incomplete pending input without changing saved slots', async () => {
+  const savedSlot = slot('saved', '2026-10-31', 540, 600);
+  const draft: AppointmentCreationDraft = {
+    selectedCalendarDate: '2026-10-31',
+    timeInput: {
+      startHour: '09',
+      startMinute: '',
+      endHour: '',
+      endMinute: '',
+    },
+    timeSlots: [savedSlot],
+  };
+  const onDraftChange = jest.fn();
+  const onRequestStep4 = jest.fn();
+  let tree!: Renderer.ReactTestRenderer;
+
+  await act(async () => {
+    tree = Renderer.create(
+      <SafeAreaProvider>
+        <CreateAppointmentStep3TimeScreen
+          draft={draft}
+          onDraftChange={onDraftChange}
+          onBack={jest.fn()}
+          onRequestStep4={onRequestStep4}
+        />
+      </SafeAreaProvider>,
+    );
+  });
+
+  await act(async () => findButton(tree, '다음').props.onPress());
+  expect(onRequestStep4).not.toHaveBeenCalled();
+  expect(onDraftChange).not.toHaveBeenCalled();
+  expect(containsText(tree, '시작과 종료 시간을 입력해주세요.')).toBe(true);
+  expect(draft.timeSlots).toEqual([savedSlot]);
+
+  await act(async () => tree.unmount());
+});
+
+test('repeated next presses never duplicate saved slots', async () => {
+  const savedSlots = [
+    slot('first-day', '2026-10-31', 540, 600),
+    slot('next-day', '2026-11-01', 840, 960),
+  ];
+  const draft: AppointmentCreationDraft = {
+    timeSlots: savedSlots,
+    timeInput: {
+      startHour: '',
+      startMinute: '',
+      endHour: '',
+      endMinute: '',
+    },
+  };
+  const onRequestStep4 = jest.fn();
+  let tree!: Renderer.ReactTestRenderer;
+
+  await act(async () => {
+    tree = Renderer.create(
+      <SafeAreaProvider>
+        <CreateAppointmentStep3TimeScreen
+          draft={draft}
+          onDraftChange={jest.fn()}
+          onBack={jest.fn()}
+          onRequestStep4={onRequestStep4}
+        />
+      </SafeAreaProvider>,
+    );
+  });
+
+  const nextButton = findButton(tree, '다음');
+  await act(async () => nextButton.props.onPress());
+  await act(async () => nextButton.props.onPress());
+  expect(onRequestStep4).toHaveBeenCalledTimes(2);
+  expect(onRequestStep4.mock.calls.map(([nextDraft]) => nextDraft.timeSlots)).toEqual([
+    savedSlots,
+    savedSlots,
+  ]);
+
+  await act(async () => tree.unmount());
+});
+
+test('next saves an edited slot once and preserves slots on other dates', async () => {
+  const initialSlots = [
+    slot('edit-me', '2026-10-31', 540, 600),
+    slot('keep-me', '2026-11-01', 840, 960),
+  ];
+  const initialDraft: AppointmentCreationDraft = {
+    title: '저녁 약속',
+    invitedFriends: ['친구 ID'],
+    selectedCalendarDate: '2026-10-31',
+    editingTimeSlotId: 'edit-me',
+    timeInput: {
+      startHour: '10',
+      startMinute: '30',
+      endHour: '11',
+      endMinute: '30',
+    },
+    timeSlots: initialSlots,
+  };
+  const onDraftChange = jest.fn();
+  const onRequestStep4 = jest.fn();
+  let tree!: Renderer.ReactTestRenderer;
+
+  await act(async () => {
+    tree = Renderer.create(
+      <SafeAreaProvider>
+        <CreateAppointmentStep3TimeScreen
+          draft={initialDraft}
+          onDraftChange={onDraftChange}
+          onBack={jest.fn()}
+          onRequestStep4={onRequestStep4}
+        />
+      </SafeAreaProvider>,
+    );
+  });
+
+  await act(async () => findButton(tree, '다음').props.onPress());
+  const nextDraft = onRequestStep4.mock.calls[0][0] as AppointmentCreationDraft;
+  expect(nextDraft.timeSlots).toEqual([
+    slot('edit-me', '2026-10-31', 630, 690),
+    slot('keep-me', '2026-11-01', 840, 960),
+  ]);
+  expect(nextDraft).toMatchObject({
+    title: '저녁 약속',
+    invitedFriends: ['친구 ID'],
+    editingTimeSlotId: undefined,
+  });
+  expect(onDraftChange).toHaveBeenCalledWith(nextDraft);
+
   await act(async () => tree.unmount());
 });
 
@@ -263,5 +469,45 @@ test('step three rejects equal and reversed times before adding or requesting th
       .findAllByType(Text)
       .some(text => text.props.children === '종료 시간은 시작 시간보다 늦어야 합니다.'),
   ).toBe(true);
+  await act(async () => tree.unmount());
+});
+
+test('step three uses a compact responsive calendar and keeps time entry available', async () => {
+  let tree!: Renderer.ReactTestRenderer;
+
+  await act(async () => {
+    tree = Renderer.create(
+      <SafeAreaProvider>
+        <CreateAppointmentStep3TimeScreen
+          draft={{
+            selectedCalendarDate: '2026-10-31',
+            timeInput: {
+              startHour: '09',
+              startMinute: '30',
+              endHour: '10',
+              endMinute: '00',
+            },
+            timeSlots: [slot('saved', '2026-10-31', 570, 600)],
+          }}
+          onDraftChange={jest.fn()}
+          onBack={jest.fn()}
+          onRequestStep4={jest.fn()}
+        />
+      </SafeAreaProvider>,
+    );
+  });
+
+  const dateCell = tree.root.findByProps({
+    accessibilityLabel: '2026년 10월 31일',
+  });
+  const cellStyle = StyleSheet.flatten(dateCell.props.style);
+  expect(cellStyle.height).toBeGreaterThanOrEqual(36);
+  expect(cellStyle.height).toBeLessThanOrEqual(42);
+  expect(cellStyle.aspectRatio).toBeUndefined();
+  expect(dateCell.props.accessibilityState.selected).toBe(true);
+  expect(tree.root.findAllByType(TextInput)).toHaveLength(4);
+  expect(findButton(tree, '다음')).toBeDefined();
+  expect(containsText(tree, '09:30 ~ 10:00')).toBe(true);
+
   await act(async () => tree.unmount());
 });

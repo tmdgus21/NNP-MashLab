@@ -1,11 +1,13 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
+  KeyboardAvoidingView,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SwipableCalendarWidget } from '../components/SwipableCalendarWidget';
@@ -42,6 +44,13 @@ const steps = [
 
 type TimeInputField = keyof AppointmentCreationTimeInput;
 
+const EMPTY_TIME_INPUT: AppointmentCreationTimeInput = {
+  startHour: '',
+  startMinute: '',
+  endHour: '',
+  endMinute: '',
+};
+
 function currentTimeInput(): AppointmentCreationTimeInput {
   const now = new Date();
   const startTime = Math.floor(now.getMinutes() / 10) * 10 + now.getHours() * 60;
@@ -69,6 +78,17 @@ function dateLabel(date: string): string {
   return `${year}년 ${month}월 ${day}일`;
 }
 
+function isValidTimeSlot(slot: AppointmentCreationTimeSlot): boolean {
+  return (
+    isValidDateKey(slot.date) &&
+    Number.isInteger(slot.startTimeMinutes) &&
+    Number.isInteger(slot.endTimeMinutes) &&
+    slot.startTimeMinutes >= 0 &&
+    slot.startTimeMinutes < slot.endTimeMinutes &&
+    slot.endTimeMinutes <= 24 * 60
+  );
+}
+
 function updateSlot(
   slots: readonly AppointmentCreationTimeSlot[],
   editingId: string | undefined,
@@ -89,11 +109,20 @@ export function CreateAppointmentStep3TimeScreen({
 }: CreateAppointmentStep3TimeScreenProps) {
   const [error, setError] = useState('');
   const idCounter = useRef(0);
+  const { height: windowHeight } = useWindowDimensions();
+  const calendarDayCellHeight = Math.max(
+    36,
+    Math.min(42, Math.round(windowHeight * 0.05)),
+  );
   const selectedDate = getSelectedDate(draft);
   const [selectedYear, selectedMonth, selectedDay] = selectedDate
     .split('-')
     .map(Number);
-  const timeInput = draft.timeInput ?? currentTimeInput();
+  const timeInput =
+    draft.timeInput ??
+    ((draft.timeSlots?.length ?? 0) > 0
+      ? EMPTY_TIME_INPUT
+      : currentTimeInput());
 
   const markedDates = useMemo(
     () =>
@@ -111,6 +140,7 @@ export function CreateAppointmentStep3TimeScreen({
       ...draft,
       selectedCalendarDate: formatDateKey(year, month, day),
       editingTimeSlotId: undefined,
+      timeInput: draft.editingTimeSlotId ? EMPTY_TIME_INPUT : draft.timeInput,
     });
     setError('');
   };
@@ -165,6 +195,7 @@ export function CreateAppointmentStep3TimeScreen({
       ...draft,
       timeSlots: updateSlot(draft.timeSlots ?? [], editingId, slot),
       editingTimeSlotId: undefined,
+      timeInput: EMPTY_TIME_INPUT,
     });
     setError('');
   };
@@ -187,7 +218,11 @@ export function CreateAppointmentStep3TimeScreen({
   };
 
   const cancelEdit = () => {
-    onDraftChange({ ...draft, editingTimeSlotId: undefined });
+    onDraftChange({
+      ...draft,
+      editingTimeSlotId: undefined,
+      timeInput: EMPTY_TIME_INPUT,
+    });
     setError('');
   };
 
@@ -203,51 +238,99 @@ export function CreateAppointmentStep3TimeScreen({
   };
 
   const continueToStep4 = () => {
-    const result = validateCurrentInput();
-    if (!result.valid) {
-      setError(result.message);
+    const savedSlots = draft.timeSlots ?? [];
+    const validSlots = savedSlots.filter(isValidTimeSlot);
+    const editingSlotId = draft.editingTimeSlotId;
+    const isEditing = !!editingSlotId;
+    const hasPendingInput =
+      isEditing ||
+      (!!draft.timeInput &&
+        Object.values(draft.timeInput).some(value => value.trim().length > 0));
+
+    if (hasPendingInput) {
+      const result = validateCurrentInput();
+      if (!result.valid) {
+        setError(result.message);
+        return;
+      }
+
+      if (
+        isEditing &&
+        !savedSlots.some(slot => slot.id === editingSlotId)
+      ) {
+        setError('수정할 시간 정보를 찾을 수 없습니다.');
+        return;
+      }
+
+      if (!isEditing) {
+        setError('입력한 시간은 아직 추가되지 않았습니다. + 버튼으로 저장해주세요.');
+        return;
+      }
+
+      const nextSlot: AppointmentCreationTimeSlot = {
+        id: editingSlotId!,
+        date: selectedDate,
+        ...result.value,
+      };
+      const updatedSlots = updateSlot(savedSlots, editingSlotId, nextSlot);
+      if (!updatedSlots.every(isValidTimeSlot)) {
+        setError('저장된 시간 정보를 확인해주세요.');
+        return;
+      }
+
+      const nextDraft: AppointmentCreationDraft = {
+        ...draft,
+        timeSlots: updatedSlots,
+        editingTimeSlotId: undefined,
+        timeInput: EMPTY_TIME_INPUT,
+      };
+      onDraftChange(nextDraft);
+      setError('');
+      onRequestStep4(nextDraft);
       return;
     }
 
-    const editingId = draft.editingTimeSlotId;
-    const nextSlot: AppointmentCreationTimeSlot = {
-      id: editingId ?? `time-slot-${Date.now()}-${idCounter.current++}`,
-      date: selectedDate,
-      ...result.value,
-    };
-    const nextDraft: AppointmentCreationDraft = {
-      ...draft,
-      timeSlots: updateSlot(draft.timeSlots ?? [], editingId, nextSlot),
-      editingTimeSlotId: undefined,
-    };
-    onDraftChange(nextDraft);
+    if (savedSlots.length === 0 || validSlots.length !== savedSlots.length) {
+      setError(
+        savedSlots.length === 0
+          ? '시간 추가 버튼으로 가능한 시간을 먼저 저장해주세요.'
+          : '저장된 시간 정보를 확인해주세요.',
+      );
+      return;
+    }
+
     setError('');
-    onRequestStep4(nextDraft);
+    onRequestStep4(draft);
   };
 
   return (
-    <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
-      <View style={styles.header}>
-        <Pressable
-          accessibilityLabel="이전 단계"
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={onBack}
-          style={styles.backButton}
-        >
-          <Text style={styles.backArrow}>〈</Text>
-        </Pressable>
-        <Text style={styles.wordmark}>
-          <Text style={styles.wordmarkPotato}>potato </Text>
-          <Text style={styles.wordmarkMeet}>meet</Text>
-        </Text>
-      </View>
-
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+    <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={styles.safeArea}>
+      <KeyboardAvoidingView
+        behavior="padding"
+        style={styles.keyboardAvoiding}
       >
+        <View style={styles.header}>
+          <Pressable
+            accessibilityLabel="이전 단계"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={onBack}
+            style={styles.backButton}
+          >
+            <Text style={styles.backArrow}>〈</Text>
+          </Pressable>
+          <Text style={styles.wordmark}>
+            <Text style={styles.wordmarkPotato}>potato </Text>
+            <Text style={styles.wordmarkMeet}>meet</Text>
+          </Text>
+        </View>
+
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={false}
+        >
         <View style={styles.stepIndicator}>
           {steps.map(step => {
             const active = step.number === '3';
@@ -295,6 +378,8 @@ export function CreateAppointmentStep3TimeScreen({
             month={selectedMonth}
             selectedDay={selectedDay}
             markedDates={markedDates}
+            compact
+            dayCellHeight={calendarDayCellHeight}
             onMonthChange={changeMonth}
             onDayChange={changeDate}
           />
@@ -406,10 +491,10 @@ export function CreateAppointmentStep3TimeScreen({
             })
           )}
         </View>
-      </ScrollView>
+        </ScrollView>
 
-      <View style={styles.footer}>
-        <Pressable
+        <View style={styles.footer}>
+          <Pressable
           accessibilityRole="button"
           onPress={onBack}
           style={({ pressed }) => [
@@ -418,8 +503,8 @@ export function CreateAppointmentStep3TimeScreen({
           ]}
         >
           <Text style={styles.backActionText}>이전</Text>
-        </Pressable>
-        <Pressable
+          </Pressable>
+          <Pressable
           accessibilityRole="button"
           onPress={continueToStep4}
           style={({ pressed }) => [
@@ -428,8 +513,9 @@ export function CreateAppointmentStep3TimeScreen({
           ]}
         >
           <Text style={styles.nextText}>다음</Text>
-        </Pressable>
-      </View>
+          </Pressable>
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -461,6 +547,9 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: potatoColors.background,
+  },
+  keyboardAvoiding: {
+    flex: 1,
   },
   header: {
     minHeight: 52,
@@ -499,7 +588,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     alignItems: 'flex-start',
     marginTop: 8,
-    marginBottom: 20,
+    marginBottom: 12,
   },
   stepItem: {
     minWidth: 62,
@@ -541,13 +630,13 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   calendarCard: {
-    padding: 16,
+    padding: 12,
     borderRadius: 18,
     backgroundColor: potatoColors.white,
     elevation: 2,
   },
   timeCard: {
-    marginTop: 16,
+    marginTop: 12,
     padding: 16,
     borderRadius: 16,
     backgroundColor: potatoColors.white,
@@ -629,7 +718,7 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
   slotSection: {
-    marginTop: 16,
+    marginTop: 12,
     gap: 8,
   },
   emptySlots: {

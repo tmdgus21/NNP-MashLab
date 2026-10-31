@@ -47,6 +47,19 @@ export function isValidDateKey(value: string): boolean {
   return day <= daysInMonth;
 }
 
+export function isValidAppointmentTimeSlot(
+  slot: AppointmentCreationTimeSlot,
+): boolean {
+  return (
+    isValidDateKey(slot.date) &&
+    Number.isInteger(slot.startTimeMinutes) &&
+    Number.isInteger(slot.endTimeMinutes) &&
+    slot.startTimeMinutes >= 0 &&
+    slot.startTimeMinutes < slot.endTimeMinutes &&
+    slot.endTimeMinutes <= 24 * 60
+  );
+}
+
 export function splitTimeMinutes(totalMinutes: number): TimeInputParts {
   const normalized = Math.min(24 * 60, Math.max(0, Math.trunc(totalMinutes)));
   return {

@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -232,19 +231,20 @@ export function HomeScreen({
               ))}
             </View>
           )}
-          <View style={styles.bottomSpacer} />
-        </ScrollView>
 
-        <Pressable
-          accessibilityRole="button"
-          onPress={onCreateAppointmentPress}
-          style={({ pressed }) => [
-            styles.createButton,
-            pressed && styles.createButtonPressed,
-          ]}
-        >
-          <Text style={styles.createButtonText}>+ 모임 만들기</Text>
-        </Pressable>
+          <View style={styles.createAction}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={onCreateAppointmentPress}
+              style={({ pressed }) => [
+                styles.createButton,
+                pressed && styles.createButtonPressed,
+              ]}
+            >
+              <Text style={styles.createButtonText}>+ 모임 만들기</Text>
+            </Pressable>
+          </View>
+        </ScrollView>
       </View>
 
       <CustomBottomBar
@@ -298,7 +298,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: 80,
+    paddingBottom: 12,
   },
   greeting: {
     marginTop: 16,
@@ -407,20 +407,17 @@ const styles = StyleSheet.create({
     color: '#666666',
     fontSize: 13,
   },
-  bottomSpacer: {
-    height: 20,
+  createAction: {
+    alignItems: 'flex-end',
+    paddingVertical: 10,
   },
   createButton: {
-    position: 'absolute',
-    right: 20,
-    bottom: 20,
-    width: 130,
-    height: 38,
+    minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 19,
+    paddingHorizontal: 18,
+    borderRadius: 22,
     backgroundColor: potatoColors.accentLight,
-    elevation: 6,
   },
   createButtonPressed: {
     opacity: 0.8,

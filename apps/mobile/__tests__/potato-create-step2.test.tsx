@@ -5,29 +5,16 @@ import Renderer, { act } from 'react-test-renderer';
 import { CreateAppointmentStep2InviteScreen } from '../src/potato/screens/CreateAppointmentStep2InviteScreen';
 import type { AppointmentCreationDraft } from '../src/potato/types/appointmentCreation';
 import type { PotatoFriend } from '../src/potato/types/friend';
+import {
+  findButton,
+  hasText as textExists,
+} from '../test-utils/potato-test-utils';
 
 const friends: PotatoFriend[] = [
   { id: 'friend-1', name: '민수' },
   { id: 'friend-2', name: '지훈' },
   { id: 'friend-3', name: '영희' },
 ];
-
-function findButton(
-  tree: Renderer.ReactTestRenderer,
-  label: string,
-): Renderer.ReactTestInstance {
-  return tree.root
-    .findAllByType(Pressable)
-    .find(button =>
-      button.findAllByType(Text).some(text => text.props.children === label),
-    )!;
-}
-
-function textExists(tree: Renderer.ReactTestRenderer, text: string): boolean {
-  return tree.root
-    .findAllByType(Text)
-    .some(element => element.props.children === text);
-}
 
 test('step two keeps friend selection and step one draft across back and re-entry', async () => {
   const initialDraft: AppointmentCreationDraft = {
@@ -104,7 +91,13 @@ test('step two keeps friend selection and step one draft across back and re-entr
     });
   };
 
-  expect(tree.root.findAllByProps({ accessibilityRole: 'checkbox' })).toHaveLength(3);
+  expect(
+    tree.root.findAll(
+      element =>
+        element.props.accessibilityRole === 'checkbox' &&
+        typeof element.props.onPress === 'function',
+    ),
+  ).toHaveLength(3);
   expect(
     tree.root
       .findAllByType(Text)
@@ -168,6 +161,113 @@ test('step three can be requested without selecting friends', async () => {
     );
   });
   await act(async () => findButton(tree, '다음').props.onPress());
+  expect(onRequestStep3).toHaveBeenCalledTimes(1);
+  await act(async () => tree.unmount());
+});
+
+test('friends with the same name are toggled and retained by stable IDs', async () => {
+  const sameNamedFriends: PotatoFriend[] = [
+    { id: 'person-a', name: '민수' },
+    { id: 'person-b', name: '민수' },
+  ];
+  let latestDraft: AppointmentCreationDraft = {
+    title: '동명이인 모임',
+    category: '식사',
+    duration: '90분',
+    location: '서울',
+  };
+  let tree!: Renderer.ReactTestRenderer;
+
+  const renderScreen = () => (
+    <SafeAreaProvider>
+      <CreateAppointmentStep2InviteScreen
+        friends={sameNamedFriends}
+        draft={latestDraft}
+        onBack={jest.fn()}
+        onDraftChange={draft => {
+          latestDraft = draft;
+        }}
+        onRequestStep3={jest.fn()}
+      />
+    </SafeAreaProvider>
+  );
+
+  await act(async () => {
+    tree = Renderer.create(renderScreen());
+  });
+
+  await act(async () =>
+    tree.root
+      .findByProps({ testID: 'friend-option-person-b' })
+      .props.onPress(),
+  );
+  expect(latestDraft.invitedFriendIds).toEqual(['person-b']);
+  expect(latestDraft.invitedFriendNameById).toEqual({ 'person-b': '민수' });
+  expect(latestDraft.invitedFriends).toEqual(['민수']);
+  expect(latestDraft.unresolvedInvitedFriendNames).toEqual([]);
+  expect(latestDraft.participants).toEqual([
+    {
+      id: 'person-b',
+      role: 'invitee',
+      invitationStatus: 'not_sent',
+      participationStatus: 'pending',
+    },
+  ]);
+  expect(latestDraft.availabilitySubmissions).toEqual([
+    { participantId: 'person-b', status: 'not_submitted' },
+  ]);
+
+  await act(async () => tree.update(renderScreen()));
+  await act(async () =>
+    tree.root
+      .findByProps({ testID: 'friend-option-person-b' })
+      .props.onPress(),
+  );
+  expect(latestDraft.invitedFriendIds).toEqual([]);
+  expect(latestDraft.invitedFriends).toEqual([]);
+  expect(latestDraft.participants).toEqual([]);
+  expect(latestDraft.availabilitySubmissions).toEqual([]);
+
+  await act(async () => tree.unmount());
+});
+
+test('legacy unique names are migrated to IDs before leaving step two', async () => {
+  const legacyDraft: AppointmentCreationDraft = {
+    title: '기존 모임',
+    category: '식사',
+    duration: '90분',
+    location: '서울',
+    invitedFriends: ['지훈'],
+  };
+  let latestDraft = legacyDraft;
+  const onRequestStep3 = jest.fn();
+  let tree!: Renderer.ReactTestRenderer;
+
+  await act(async () => {
+    tree = Renderer.create(
+      <SafeAreaProvider>
+        <CreateAppointmentStep2InviteScreen
+          friends={friends}
+          draft={legacyDraft}
+          onBack={jest.fn()}
+          onDraftChange={draft => {
+            latestDraft = draft;
+          }}
+          onRequestStep3={onRequestStep3}
+        />
+      </SafeAreaProvider>,
+    );
+  });
+
+  expect(
+    tree.root.findByProps({ testID: 'friend-option-friend-2' }).props
+      .accessibilityState.checked,
+  ).toBe(true);
+  await act(async () => findButton(tree, '다음').props.onPress());
+
+  expect(latestDraft.invitedFriendIds).toEqual(['friend-2']);
+  expect(latestDraft.invitedFriendNameById).toEqual({ 'friend-2': '지훈' });
+  expect(latestDraft.invitedFriends).toEqual(['지훈']);
   expect(onRequestStep3).toHaveBeenCalledTimes(1);
   await act(async () => tree.unmount());
 });

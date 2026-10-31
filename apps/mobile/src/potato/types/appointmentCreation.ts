@@ -1,4 +1,8 @@
 import type { PotatoAppointment } from './appointment';
+import type {
+  AppointmentParticipant,
+  ParticipantAvailabilitySubmission,
+} from './appointmentParticipants';
 
 export type AppointmentCreationStep1Values = Pick<
   PotatoAppointment,
@@ -21,10 +25,21 @@ export interface AppointmentCreationTimeInput {
 
 export interface AppointmentCreationDraft
   extends Partial<AppointmentCreationStep1Values> {
+  /** Legacy display-name selection. Use invitedFriendIds for identity. */
   invitedFriends?: string[];
+  invitedFriendIds?: string[];
+  invitedFriendNameById?: Record<string, string>;
+  unresolvedInvitedFriendNames?: string[];
+  participants?: AppointmentParticipant[];
+  availabilitySubmissions?: ParticipantAvailabilitySubmission[];
   timeSlots?: AppointmentCreationTimeSlot[];
   selectedCalendarDate?: string;
   timeInput?: AppointmentCreationTimeInput;
   editingTimeSlotId?: string;
   selectedAiRecommendationTime?: string;
+  organizerId?: string;
+  timeZone?: string;
+  appointmentId?: string;
+  clientAppointmentId?: string;
+  userRequest?: string;
 }

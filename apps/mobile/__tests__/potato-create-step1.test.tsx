@@ -1,20 +1,10 @@
 import React from 'react';
-import { Pressable, Text, TextInput } from 'react-native';
+import { Text, TextInput } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Renderer, { act } from 'react-test-renderer';
 import { CreateAppointmentStep1Screen } from '../src/potato/screens/CreateAppointmentStep1Screen';
 import type { AppointmentCreationDraft } from '../src/potato/types/appointmentCreation';
-
-function findButton(
-  tree: Renderer.ReactTestRenderer,
-  label: string,
-): Renderer.ReactTestInstance {
-  return tree.root
-    .findAllByType(Pressable)
-    .find(button =>
-      button.findAllByType(Text).some(text => text.props.children === label),
-    )!;
-}
+import { findButton } from '../test-utils/potato-test-utils';
 
 test('step one preserves parent draft and validates before requesting step two', async () => {
   let draft: AppointmentCreationDraft = {};

@@ -1,9 +1,9 @@
 import React from 'react';
-import { Text, Pressable } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Renderer, { act } from 'react-test-renderer';
 import { HomeScreen } from '../src/potato/screens/HomeScreen';
 import type { PotatoAppointment } from '../src/potato/types/appointment';
+import { findButton, hasText } from '../test-utils/potato-test-utils';
 
 function localDateKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -20,12 +20,6 @@ function appointment(id: string, title: string, date: string): PotatoAppointment
     date,
     invitedFriends: [],
   };
-}
-
-function hasText(tree: Renderer.ReactTestInstance, text: string): boolean {
-  return tree.root
-    .findAllByType(Text)
-    .some(element => element.props.children === text);
 }
 
 test('calendar selection filters local appointments and exposes navigation callbacks', async () => {
@@ -79,18 +73,8 @@ test('calendar selection filters local appointments and exposes navigation callb
   ).toBe(true);
 
   await act(async () => {
-    tree.root
-      .findAllByType(Pressable)
-      .find(element =>
-        element.findAllByType(Text).some(child => child.props.children === '+ 모임 만들기'),
-      )!
-      .props.onPress();
-    tree.root
-      .findAllByType(Pressable)
-      .find(element =>
-        element.findAllByType(Text).some(child => child.props.children === '모임만들기'),
-      )!
-      .props.onPress();
+    findButton(tree, '+ 모임 만들기').props.onPress();
+    findButton(tree, '모임만들기').props.onPress();
   });
   expect(onCreate).toHaveBeenCalledTimes(1);
   expect(onTabSelected).toHaveBeenCalledWith('create_step1');

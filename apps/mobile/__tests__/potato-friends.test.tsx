@@ -1,14 +1,9 @@
 import React from 'react';
-import { Pressable, Text, TextInput } from 'react-native';
+import { TextInput } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Renderer, { act } from 'react-test-renderer';
 import { FriendsScreen } from '../src/potato/screens/FriendsScreen';
-
-function hasText(tree: Renderer.ReactTestRenderer, text: string): boolean {
-  return tree.root
-    .findAllByType(Text)
-    .some(element => element.props.children === text);
-}
+import { findButton, hasText } from '../test-utils/potato-test-utils';
 
 test('friend list supports local add, selection, deletion and empty state', async () => {
   const onSelectionChange = jest.fn();
@@ -30,19 +25,16 @@ test('friend list supports local add, selection, deletion and empty state', asyn
     tree.root.findByType(TextInput).props.onChangeText('새 친구');
   });
   await act(async () => {
-    tree.root
-      .findAllByType(Pressable)
-      .find(button =>
-        button.findAllByType(Text).some(text => text.props.children === '추가'),
-      )!
-      .props.onPress();
+    findButton(tree, '추가').props.onPress();
   });
   expect(hasText(tree, '새 친구')).toBe(true);
   expect(hasText(tree, '등록된 친구가 없습니다.')).toBe(false);
 
-  const friendCheckbox = tree.root.findByProps({
-    accessibilityRole: 'checkbox',
-  });
+  const friendCheckbox = tree.root.findAll(
+    element =>
+      element.props.accessibilityRole === 'checkbox' &&
+      typeof element.props.onPress === 'function',
+  )[0];
   await act(async () => friendCheckbox.props.onPress());
   expect(friendCheckbox.props.accessibilityState.checked).toBe(true);
   expect(onSelectionChange).toHaveBeenLastCalledWith([

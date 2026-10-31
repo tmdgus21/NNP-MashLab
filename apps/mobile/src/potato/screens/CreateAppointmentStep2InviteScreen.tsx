@@ -7,6 +7,10 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  getSelectedFriendIds,
+  updateInvitedFriendSelection,
+} from '../services/appointmentParticipants';
 import { potatoColors } from '../theme/colors';
 import type { AppointmentCreationDraft } from '../types/appointmentCreation';
 import type { PotatoFriend } from '../types/friend';
@@ -33,20 +37,35 @@ export function CreateAppointmentStep2InviteScreen({
   onDraftChange,
   onRequestStep3,
 }: CreateAppointmentStep2InviteScreenProps) {
-  const selectedFriends = draft.invitedFriends ?? [];
+  const selectedFriendIds = getSelectedFriendIds(draft, friends);
 
   const toggleFriend = (friend: PotatoFriend) => {
-    const nextSelectedFriends = selectedFriends.includes(friend.name)
-      ? selectedFriends.filter(name => name !== friend.name)
-      : [...selectedFriends, friend.name];
-    onDraftChange({
-      ...draft,
-      invitedFriends: nextSelectedFriends,
-    });
+    const nextSelectedFriendIds = new Set(selectedFriendIds);
+    if (nextSelectedFriendIds.has(friend.id)) {
+      nextSelectedFriendIds.delete(friend.id);
+    } else {
+      nextSelectedFriendIds.add(friend.id);
+    }
+    onDraftChange(
+      updateInvitedFriendSelection(
+        draft,
+        [...nextSelectedFriendIds],
+        friends,
+      ),
+    );
+  };
+
+  const requestStep3 = () => {
+    if (draft.invitedFriendIds === undefined) {
+      onDraftChange(
+        updateInvitedFriendSelection(draft, selectedFriendIds, friends),
+      );
+    }
+    onRequestStep3();
   };
 
   return (
-    <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
+    <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={styles.safeArea}>
       <View style={styles.header}>
         <Pressable
           accessibilityLabel="이전 단계"
@@ -123,7 +142,7 @@ export function CreateAppointmentStep2InviteScreen({
             showsVerticalScrollIndicator
           >
             {friends.map(friend => {
-              const selected = selectedFriends.includes(friend.name);
+              const selected = selectedFriendIds.includes(friend.id);
               return (
                 <Pressable
                   accessibilityLabel={`${friend.name} 선택`}
@@ -132,6 +151,7 @@ export function CreateAppointmentStep2InviteScreen({
                   key={friend.id}
                   onPress={() => toggleFriend(friend)}
                   style={styles.friendRow}
+                  testID={`friend-option-${friend.id}`}
                 >
                   <View style={styles.friendIdentity}>
                     <View style={styles.avatar}>
@@ -171,7 +191,7 @@ export function CreateAppointmentStep2InviteScreen({
         </Pressable>
         <Pressable
           accessibilityRole="button"
-          onPress={onRequestStep3}
+          onPress={requestStep3}
           style={({ pressed }) => [
             styles.nextButton,
             pressed && styles.pressed,

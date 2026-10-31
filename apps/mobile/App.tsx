@@ -27,6 +27,7 @@ import { INVITE_BASE_URL } from './src/config/runtime.generated';
 const Tab = createBottomTabNavigator();
 import { NavigationIcon } from './src/ui/NavigationIcon';
 import { InvitationSheet } from './src/ui/InvitationSheet';
+import { PotatoMeetDevPreview } from './src/potato/PotatoMeetDevPreview';
 function Content() {
   const app = useApp();
   const { fontScale } = useWindowDimensions();
@@ -189,7 +190,7 @@ export default function App() {
     <GestureHandlerRootView style={ui.flex}>
       <SafeAreaProvider>
         <StatusBar barStyle="dark-content" />
-        <Content />
+        {__DEV__ ? <PotatoMeetDevPreview /> : <Content />}
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

@@ -13,6 +13,8 @@ interface SwipableCalendarWidgetProps {
   month: number;
   selectedDay: number;
   markedDates: ReadonlySet<string>;
+  compact?: boolean;
+  dayCellHeight?: number;
   onMonthChange: (year: number, month: number) => void;
   onDayChange: (year: number, month: number, day: number) => void;
 }
@@ -32,6 +34,8 @@ export function SwipableCalendarWidget({
   month,
   selectedDay,
   markedDates,
+  compact = false,
+  dayCellHeight,
   onMonthChange,
   onDayChange,
 }: SwipableCalendarWidgetProps) {
@@ -82,7 +86,7 @@ export function SwipableCalendarWidget({
   );
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, compact && styles.compactContainer]}>
       <View style={styles.monthHeader}>
         <Pressable
           accessibilityLabel="이전 달"
@@ -106,7 +110,12 @@ export function SwipableCalendarWidget({
           <Text style={styles.monthArrowText}>〉</Text>
         </Pressable>
       </View>
-      <View style={styles.weekdayRow}>
+      <View
+        style={[
+          styles.weekdayRow,
+          compact && styles.compactWeekdayRow,
+        ]}
+      >
         {weekdays.map((weekday, index) => (
           <Text
             key={weekday}
@@ -136,7 +145,13 @@ export function SwipableCalendarWidget({
               accessibilityState={{ selected }}
               key={index}
               onPress={() => onDayChange(cellYear, cellMonth, cell.day)}
-              style={styles.dayCell}
+              style={[
+                styles.dayCell,
+                dayCellHeight !== undefined && {
+                  height: dayCellHeight,
+                  aspectRatio: undefined,
+                },
+              ]}
             >
               <View
                 style={[
@@ -173,6 +188,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#FFFDF9',
   },
+  compactContainer: {
+    padding: 8,
+  },
   monthHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -203,6 +221,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     textAlign: 'center',
+  },
+  compactWeekdayRow: {
+    marginTop: 6,
+    marginBottom: 4,
   },
   sunday: {
     color: '#D32F2F',

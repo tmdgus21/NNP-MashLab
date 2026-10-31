@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import {
   Keyboard,
+  KeyboardAvoidingView,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -116,121 +116,124 @@ export function CreateAppointmentStep1Screen({
   };
 
   return (
-    <SafeAreaView
-      edges={['top', 'left', 'right']}
-      style={styles.safeArea}
-    >
-      <View style={styles.header}>
-        <Pressable
-          accessibilityLabel="이전 화면"
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={onBackClick}
-          style={styles.backButton}
-        >
-          <Text style={styles.backArrow}>〈</Text>
-        </Pressable>
-        <Text style={styles.wordmark}>
-          <Text style={styles.wordmarkPotato}>potato </Text>
-          <Text style={styles.wordmarkMeet}>meet</Text>
-        </Text>
-      </View>
-
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+    <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={styles.safeArea}>
+      <KeyboardAvoidingView
+        behavior="padding"
+        style={styles.keyboardAvoiding}
       >
-        <View style={styles.stepIndicator}>
-          {steps.map(step => {
-            const active = step.number === '1';
-            return (
-              <View
-                accessibilityLabel={`${step.number}단계 ${step.title}${active ? ', 현재 단계' : ''}`}
-                key={step.number}
-                style={styles.stepItem}
-              >
+        <View style={styles.header}>
+          <Pressable
+            accessibilityLabel="이전 화면"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={onBackClick}
+            style={styles.backButton}
+          >
+            <Text style={styles.backArrow}>〈</Text>
+          </Pressable>
+          <Text style={styles.wordmark}>
+            <Text style={styles.wordmarkPotato}>potato </Text>
+            <Text style={styles.wordmarkMeet}>meet</Text>
+          </Text>
+        </View>
+
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.stepIndicator}>
+            {steps.map(step => {
+              const active = step.number === '1';
+              return (
                 <View
-                  style={[
-                    styles.stepNumber,
-                    active
-                      ? styles.activeStepNumber
-                      : styles.inactiveStepNumber,
-                  ]}
+                  accessibilityLabel={`${step.number}단계 ${step.title}${active ? ', 현재 단계' : ''}`}
+                  key={step.number}
+                  style={styles.stepItem}
                 >
-                  <Text
+                  <View
                     style={[
-                      styles.stepNumberText,
+                      styles.stepNumber,
                       active
-                        ? styles.activeStepNumberText
-                        : styles.inactiveStepNumberText,
+                        ? styles.activeStepNumber
+                        : styles.inactiveStepNumber,
                     ]}
                   >
-                    {step.number}
+                    <Text
+                      style={[
+                        styles.stepNumberText,
+                        active
+                          ? styles.activeStepNumberText
+                          : styles.inactiveStepNumberText,
+                      ]}
+                    >
+                      {step.number}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.stepTitle,
+                      active ? styles.activeStepTitle : styles.inactiveStepTitle,
+                    ]}
+                  >
+                    {step.title}
                   </Text>
                 </View>
-                <Text
-                  style={[
-                    styles.stepTitle,
-                    active ? styles.activeStepTitle : styles.inactiveStepTitle,
-                  ]}
-                >
-                  {step.title}
-                </Text>
+              );
+            })}
+          </View>
+
+          <View style={styles.formCard}>
+            <Text style={styles.formTitle}>모임 정보</Text>
+            {fields.map((field, index) => (
+              <View
+                key={field.key}
+                style={index === 0 ? styles.firstField : styles.field}
+              >
+                <Text style={styles.fieldLabel}>{field.label}</Text>
+                <AuthTextInput
+                  accessibilityLabel={field.accessibilityLabel}
+                  autoCapitalize={field.autoCapitalize}
+                  containerStyle={styles.inputContainer}
+                  onChangeText={value => changeField(field.key, value)}
+                  placeholder={field.placeholder}
+                  returnKeyType={index === fields.length - 1 ? 'done' : 'next'}
+                  value={draft[field.key] ?? ''}
+                />
               </View>
-            );
-          })}
-        </View>
+            ))}
+            {!!error && (
+              <Text accessibilityLiveRegion="assertive" style={styles.error}>
+                {error}
+              </Text>
+            )}
+          </View>
+        </ScrollView>
 
-        <View style={styles.formCard}>
-          <Text style={styles.formTitle}>모임 정보</Text>
-          {fields.map((field, index) => (
-            <View
-              key={field.key}
-              style={index === 0 ? styles.firstField : styles.field}
-            >
-              <Text style={styles.fieldLabel}>{field.label}</Text>
-              <AuthTextInput
-                accessibilityLabel={field.accessibilityLabel}
-                autoCapitalize={field.autoCapitalize}
-                containerStyle={styles.inputContainer}
-                onChangeText={value => changeField(field.key, value)}
-                placeholder={field.placeholder}
-                returnKeyType={index === fields.length - 1 ? 'done' : 'next'}
-                value={draft[field.key] ?? ''}
-              />
-            </View>
-          ))}
-          {!!error && (
-            <Text accessibilityLiveRegion="assertive" style={styles.error}>
-              {error}
-            </Text>
-          )}
+        <View style={styles.footer}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={onCancelClick}
+            style={({ pressed }) => [
+              styles.cancelButton,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.cancelText}>취소</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={continueToStep2}
+            style={({ pressed }) => [
+              styles.nextButton,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.nextText}>다음</Text>
+          </Pressable>
         </View>
-      </ScrollView>
-
-      <View style={styles.footer}>
-        <Pressable
-          accessibilityRole="button"
-          onPress={onCancelClick}
-          style={({ pressed }) => [
-            styles.cancelButton,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={styles.cancelText}>취소</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          onPress={continueToStep2}
-          style={({ pressed }) => [
-            styles.nextButton,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={styles.nextText}>다음</Text>
-        </Pressable>
-      </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -239,6 +242,9 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: potatoColors.background,
+  },
+  keyboardAvoiding: {
+    flex: 1,
   },
   header: {
     minHeight: 52,
