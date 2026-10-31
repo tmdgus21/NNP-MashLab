@@ -13,6 +13,7 @@ services:
       - caddy_config:/config
     depends_on:
       - server-api
+      - admin-web
     networks:
       - mash-net
 
@@ -28,8 +29,24 @@ services:
       DB_HOST: ${DB_HOST:-172.19.0.1}
       DB_PORT: ${DB_PORT:-5432}
       DATABASE_URL: ${DATABASE_URL:-}
+      ADMIN_ENABLED: ${ADMIN_ENABLED:-0}
+      ADMIN_ORIGIN: ${ADMIN_ORIGIN:-https://oranganman.site}
+      ADMIN_SECRET: ${ADMIN_SECRET:-}
+      ADMIN_TRUSTED_PROXY_CIDRS: ${ADMIN_TRUSTED_PROXY_CIDRS:-}
+      ADMIN_SMTP_HOST: ${ADMIN_SMTP_HOST:-}
+      ADMIN_SMTP_PORT: ${ADMIN_SMTP_PORT:-587}
+      ADMIN_SMTP_USER: ${ADMIN_SMTP_USER:-}
+      ADMIN_SMTP_PASSWORD: ${ADMIN_SMTP_PASSWORD:-}
+      ADMIN_SMTP_FROM: ${ADMIN_SMTP_FROM:-}
     expose:
       - "8000"
+    networks:
+      - mash-net
+
+  admin-web:
+    build: ./ops-dashboard
+    container_name: admin-web
+    restart: unless-stopped
     networks:
       - mash-net
 
