@@ -1,5 +1,13 @@
-oranganman.site  {
-    reverse_proxy server-api:8000
+oranganman.site {
+    @api path /admin-api/* /v1/* /rooms /rooms/* /ai/* /join /join/* /downloads /downloads/* /.well-known/* /metrics /docs /docs/* /openapi.json /redoc
+    handle @api {
+        reverse_proxy server-api:8000 {
+            header_up X-Admin-Client-IP {remote_host}
+        }
+    }
+    handle {
+        reverse_proxy admin-web:80
+    }
 }
 
 grafana.oranganman.site {
