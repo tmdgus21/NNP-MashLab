@@ -12,6 +12,12 @@ from database import initialize
 from workflow import db_session, new_meeting, router as workflow_router, join_meeting
 from workflow_models import CreateMeeting, JoinMeeting
 from public_routes import router as public_router
+from admin.auth import router as admin_auth_router
+from admin.routes import router as admin_router
+from admin.security import enabled as admin_enabled
+from admin.lifecycle import sweep
+import logging
+
 
 
 class RoleInput(BaseModel):
@@ -38,7 +44,22 @@ async def lifespan(app):
             if attempt == 29:
                 raise
             await asyncio.sleep(2)
-    yield
+    task = None
+    if admin_enabled():
+        # Explicit migration must already be applied; never create admin tables here.
+        await asyncio.to_thread(sweep)
+        async def expiry_worker():
+            while True:
+                await asyncio.sleep(60)
+                try: await asyncio.to_thread(sweep)
+                except Exception: logging.getLogger(__name__).error('Lifecycle sweep failed; retrying next interval')
+        task = asyncio.create_task(expiry_worker())
+    try: yield
+    finally:
+        if task:
+            task.cancel()
+            try: await task
+            except asyncio.CancelledError: pass
 
 
 app = FastAPI(lifespan=lifespan)
@@ -46,6 +67,21 @@ Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 app.include_router(ai_router)
 app.include_router(workflow_router)
 app.include_router(public_router)
+app.include_router(admin_auth_router)
+app.include_router(admin_router)
+
+@app.middleware('http')
+async def admin_lifecycle_checks(request, call_next):
+    if admin_enabled() and (request.url.path.startswith(('/v1/', '/admin-api/', '/rooms'))):
+        try: await asyncio.to_thread(sweep)
+        except Exception:
+            return JSONResponse(status_code=503, content={'detail':'관리 데이터 준비 상태를 확인해 주세요.'})
+    response = await call_next(request)
+    if request.url.path.startswith('/admin-api/'):
+        response.headers['Cache-Control'] = 'no-store'
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+    return response
+
 
 
 @app.exception_handler(IntegrityError)

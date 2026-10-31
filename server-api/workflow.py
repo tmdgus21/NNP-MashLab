@@ -11,6 +11,8 @@ from sqlalchemy import select
 from ai_conditions import ParseConditionRequest, parse_condition
 from database import AIDraft, ConsentRow, Member, Proposal, Room, RoomEvent, Submission, now, session, uid
 from optimizer import solve
+from admin import lifecycle
+from admin.security import enabled as admin_enabled
 from workflow_models import Conditions, ConsentInput, CreateMeeting, JoinMeeting, ParseInput, Revision, Submit
 
 router = APIRouter(prefix="/v1", tags=["Persistent meetings"])
@@ -49,6 +51,7 @@ def creation_identity(db, key, scope, request):
         room = db.scalar(select(Room).where(Room.id == existing.room_id).with_for_update())
         if room.status == "deleted":
             fail(410, "방장이 삭제한 모임입니다.")
+        lifecycle.check(db, room)
         return token, key_hash, fingerprint, {"meeting": meeting_view(db, room), "actorId": existing.id, "token": token}
     return token, key_hash, fingerprint, None
 
@@ -75,6 +78,7 @@ def access(db, room_id, authorization, expected=None, host=False, mutable=False,
         if allow_deleted:
             return room, member
         fail(410, "방장이 삭제한 모임입니다.")
+    lifecycle.check(db, room, write=mutable or expected is not None)
     if mutable and room.status == "finalized":
         fail(409, "이미 최종 확정된 모임입니다.")
     if expected is not None and expected != room.revision:
@@ -86,12 +90,22 @@ def members(db, room):
     return list(db.scalars(select(Member).where(Member.room_id == room.id).order_by(Member.created_at, Member.id)))
 
 
-def latest_submission(db, member_id):
-    return db.scalar(select(Submission).where(Submission.member_id == member_id).order_by(Submission.version.desc()).limit(1))
+def latest_submission(db, member_id, current=True):
+    query = select(Submission).where(Submission.member_id == member_id)
+    if current and admin_enabled():
+        from admin.models import Lifecycle
+        member = db.get(Member, member_id)
+        life = db.get(Lifecycle, member.room_id)
+        if life and life.starts_at: query = query.where(Submission.created_at >= life.starts_at)
+    return db.scalar(query.order_by(Submission.version.desc()).limit(1))
 
 
 def latest_proposal(db, room):
-    return db.scalar(select(Proposal).where(Proposal.room_id == room.id).order_by(Proposal.round.desc()).limit(1))
+    query = select(Proposal).where(Proposal.room_id == room.id)
+    if admin_enabled():
+        life = lifecycle.ensure(db, room)
+        query = query.where(Proposal.round > life.base_round)
+    return db.scalar(query.order_by(Proposal.round.desc()).limit(1))
 
 
 def event(db, room, message):
@@ -132,6 +146,7 @@ def new_meeting(db, request, request_key=None):
     db.add(room)
     db.flush()
     db.add(Member(id=member_id, room_id=room_id, nickname=request.name, token_hash=token_hash(token), request_key_hash=key_hash, request_hash=fingerprint))
+    if admin_enabled(): lifecycle.ensure(db, room)
     event(db, room, "모임이 생성됐습니다.")
     return {"meeting": meeting_view(db, room), "actorId": member_id, "token": token}
 
@@ -153,6 +168,7 @@ def join_meeting(request: JoinMeeting, db=Depends(db_session), idempotency_key: 
         _, _, _, replay = creation_identity(db, idempotency_key, "join", request)
         if replay:
             return replay
+    lifecycle.check(db, room, write=True)
     if room.status == "finalized":
         fail(409, "확정된 모임에는 참가할 수 없습니다.")
     existing = members(db, room)
@@ -233,7 +249,7 @@ def preview(room_id: str, request: Submit, authorization: str | None = Header(de
 def submit(room_id: str, request: Submit, authorization: str | None = Header(default=None), db=Depends(db_session)):
     room, member = access(db, room_id, authorization, request.expectedRevision, mutable=True)
     validate_conditions(db, room, member, request.conditions)
-    previous = latest_submission(db, member.id)
+    previous = latest_submission(db, member.id, current=False)
     db.add(Submission(member_id=member.id, version=previous.version + 1 if previous else 1, confirmed=request.conditions.model_dump(), ai_draft_id=request.conditions.aiDraftId))
     room.dirty, room.status = True, "collecting"
     room.revision += 1
@@ -297,6 +313,7 @@ def finalize(room_id: str, request: Revision, authorization: str | None = Header
         assignment["status"] = "confirmed"
     proposal.plan = plan
     room.status, room.revision = "finalized", room.revision + 1
+    if admin_enabled(): lifecycle.expire(db, room)
     event(db, room, f"방장이 {proposal.round}차 담당표를 최종 확정했습니다.")
     return meeting_view(db, room)
 
@@ -358,3 +375,21 @@ async def parse_for_member(room_id: str, request: ParseInput, authorization: str
 def proposals(room_id: str, authorization: str | None = Header(default=None), db=Depends(db_session)):
     access(db, room_id, authorization)
     return [{"id": p.id, "round": p.round, "sourceRevision": p.source_revision, "solverStatus": p.solver_status, "plan": p.plan, "finalized": p.finalized_at is not None} for p in db.scalars(select(Proposal).where(Proposal.room_id == room_id).order_by(Proposal.round))]
+
+
+class Extension(Revision):
+    dates: list[str]
+    reason: str
+
+@router.post('/meetings/{room_id}/extensions')
+def host_extension(room_id: str, request: Extension, authorization: str | None = Header(default=None), idempotency_key: str | None = Header(default=None), db=Depends(db_session)):
+    if not admin_enabled(): fail(404, '연장 기능이 활성화되지 않았습니다.')
+    member = identity(db, authorization)
+    room = db.scalar(select(Room).where(Room.id == room_id).with_for_update())
+    if not room or member.room_id != room_id or room.host_id != member.id: fail(403, '현재 방장만 연장할 수 있습니다.')
+    if not idempotency_key or not 16 <= len(idempotency_key) <= 100 or not 5 <= len(request.reason.strip()) <= 1000 or not 1 <= len(request.dates) <= 7: fail(422, '새 날짜, 사유와 요청 식별자가 필요합니다.')
+    try:
+        from datetime import date
+        dates = sorted(set(date.fromisoformat(d).isoformat() for d in request.dates))
+    except ValueError: fail(422, '날짜 형식을 확인하세요.')
+    return lifecycle.extend(db, room, dates, request.expectedRevision, idempotency_key, member.id, request.reason)
