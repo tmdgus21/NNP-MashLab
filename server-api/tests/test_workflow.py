@@ -9,7 +9,7 @@ from sqlalchemy import select
 import database as database_module
 database_module._engine = None
 from main import app
-from database import AIDraft, ConsentRow, Member, Proposal, Submission, initialize, session
+from database import AIDraft, ConsentRow, Member, Proposal, RoomEvent, Submission, initialize, session
 from models import ConditionAvailableSlot, ConditionRolePreference, ProposalAssignment, ProposalConditionInput
 from workflow_models import Conditions, CreateMeeting
 from optimizer import solve
@@ -134,6 +134,25 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(one.json(),two.json())
         self.assertEqual(self.client.get('/join',params={'code':join['code']}).status_code,200)
         self.assertEqual(self.client.get('/join',params={'code':'invalid'}).status_code,422)
+
+    def test_member_events_flush_actor_before_room_event_fk(self):
+        """Regression: room_events.actor_member_id must reference an inserted room_members row."""
+        created=self.client.post('/v1/meetings',json=CONFIG)
+        self.assertEqual(created.status_code,201,created.text)
+        host_id=created.json()['actorId']
+        room_id=created.json()['meeting']['id']
+        joined=self.client.post('/v1/meetings/join',json={'code':created.json()['meeting']['code'],'name':'FK검증'})
+        self.assertEqual(joined.status_code,201,joined.text)
+        guest_id=joined.json()['actorId']
+        with session() as db:
+            created_event=db.scalar(select(RoomEvent).where(RoomEvent.room_id==room_id,RoomEvent.event_type=='ROOM_CREATED'))
+            joined_event=db.scalar(select(RoomEvent).where(RoomEvent.room_id==room_id,RoomEvent.event_type=='MEMBER_JOINED'))
+            self.assertIsNotNone(created_event)
+            self.assertIsNotNone(joined_event)
+            self.assertEqual(created_event.actor_member_id,host_id)
+            self.assertEqual(joined_event.actor_member_id,guest_id)
+            self.assertIsNotNone(db.get(Member,created_event.actor_member_id))
+            self.assertIsNotNone(db.get(Member,joined_event.actor_member_id))
 
     def test_auth_self_only_and_conflicts(self):
         self.assertEqual(self.client.get('/v1/meetings/'+self.id).status_code,401)

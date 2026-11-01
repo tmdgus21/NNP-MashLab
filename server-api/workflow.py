@@ -193,6 +193,8 @@ def new_meeting(db, request, request_key=None, account_authorization=None):
             request_hash=fingerprint,
         )
     )
+    # room_events.actor_member_id FK requires room_members row first (PostgreSQL)
+    db.flush()
     sync_room_roles(db, room, settings.get("roles") or [], settings.get("roleNeeds"))
     if admin_enabled():
         lifecycle.ensure(db, room)
@@ -260,6 +262,8 @@ def join_meeting(
             request_hash=fingerprint,
         )
     )
+    # room_events.actor_member_id FK requires room_members row first (PostgreSQL)
+    db.flush()
     room.dirty, room.status = True, "collecting"
     room.lifecycle_status = "COLLECTING_CONDITIONS"
     room.revision += 1
