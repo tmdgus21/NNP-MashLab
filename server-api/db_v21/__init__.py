@@ -11,6 +11,7 @@ from db_v21.models import (  # noqa: F401 — register metadata
     ConditionAvailableSlot,
     ConditionRolePreference,
     ConditionSubmission,
+    IdempotencyRecord,
     PasswordResetToken,
     Proposal,
     ProposalAssignment,
@@ -18,7 +19,6 @@ from db_v21.models import (  # noqa: F401 — register metadata
     ProposalConsent,
     Room,
     RoomControl,
-    RoomCycleArchive,
     RoomEvent,
     RoomMember,
     RoomRole,
@@ -50,5 +50,5 @@ __all__ = [
     "RoomEvent",
     "AdminOtp",
     "AdminRateLimit",
-    "RoomCycleArchive",
+    "IdempotencyRecord",
 ]

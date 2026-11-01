@@ -4,8 +4,8 @@ from db_v21.models.admin import (
     AdminOtp,
     AdminRateLimit,
     Announcement,
+    IdempotencyRecord,
     RoomControl,
-    RoomCycleArchive,
     ServiceControl,
 )
 from db_v21.models.ai import AiDraft
@@ -45,5 +45,5 @@ __all__ = [
     "RoomEvent",
     "AdminOtp",
     "AdminRateLimit",
-    "RoomCycleArchive",
+    "IdempotencyRecord",
 ]

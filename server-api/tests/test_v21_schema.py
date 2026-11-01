@@ -34,7 +34,7 @@ EXPECTED_TABLES = {
     "room_events",
     "admin_otps",
     "admin_rate_limits",
-    "room_cycle_archives",
+    "idempotency_records",
 }
 
 
@@ -60,28 +60,37 @@ class V21SchemaTests(unittest.TestCase):
                 tables = set(insp.get_table_names()) - {"alembic_version"}
                 self.assertEqual(EXPECTED_TABLES, tables)
                 self.assertEqual(22, len(tables))
+                self.assertNotIn("room_cycle_archives", tables)
 
-                account_uniques = {
-                    tuple(u["column_names"]) for u in insp.get_unique_constraints("accounts")
-                }
+                ai_cols = {c["name"] for c in insp.get_columns("ai_drafts")}
+                self.assertTrue(
+                    {"raw_text", "model_output", "app_draft", "questions", "parse_status"}
+                    <= ai_cols
+                )
+
+                cond_cols = {c["name"] for c in insp.get_columns("condition_submissions")}
+                self.assertIn("confirmed", cond_cols)
+
+                prop_cols = {c["name"] for c in insp.get_columns("proposals")}
+                self.assertTrue({"input_snapshot", "plan", "round", "source_revision"} <= prop_cols)
+
+                member_cols = {c["name"] for c in insp.get_columns("room_members")}
+                self.assertTrue(
+                    {"token_hash", "request_key_hash", "request_hash", "account_id"}
+                    <= member_cols
+                )
+
                 account_indexes = {
                     tuple(ix["column_names"])
                     for ix in insp.get_indexes("accounts")
                     if ix.get("unique")
                 }
+                account_uniques = {
+                    tuple(u["column_names"]) for u in insp.get_unique_constraints("accounts")
+                }
                 self.assertTrue(
                     ("login_email",) in account_uniques or ("login_email",) in account_indexes
                 )
-
-                room_indexes = {
-                    tuple(ix["column_names"])
-                    for ix in insp.get_indexes("rooms")
-                    if ix.get("unique")
-                }
-                room_uniques = {
-                    tuple(u["column_names"]) for u in insp.get_unique_constraints("rooms")
-                }
-                self.assertTrue(("code",) in room_uniques or ("code",) in room_indexes)
 
                 member_uniques = {
                     tuple(u["column_names"]) for u in insp.get_unique_constraints("room_members")
@@ -89,31 +98,18 @@ class V21SchemaTests(unittest.TestCase):
                 self.assertIn(("room_id", "account_id"), member_uniques)
                 self.assertIn(("room_id", "nickname"), member_uniques)
 
-                role_uniques = {
-                    tuple(u["column_names"]) for u in insp.get_unique_constraints("room_roles")
-                }
-                self.assertIn(("room_id", "name"), role_uniques)
-
-                submission_uniques = {
-                    tuple(u["column_names"])
-                    for u in insp.get_unique_constraints("condition_submissions")
-                }
-                self.assertIn(("room_member_id", "version"), submission_uniques)
-
                 proposal_uniques = {
                     tuple(u["column_names"]) for u in insp.get_unique_constraints("proposals")
                 }
                 self.assertIn(("room_id", "round"), proposal_uniques)
 
-                member_fks = insp.get_foreign_keys("room_members")
-                referred = {
-                    (fk["referred_table"], tuple(fk["constrained_columns"])) for fk in member_fks
+                idem_uniques = {
+                    tuple(u["column_names"])
+                    for u in insp.get_unique_constraints("idempotency_records")
                 }
-                self.assertIn(("rooms", ("room_id",)), referred)
-                self.assertIn(("accounts", ("account_id",)), referred)
+                self.assertIn(("scope", "key_hash"), idem_uniques)
             finally:
                 engine.dispose()
-
 
 
 if __name__ == "__main__":

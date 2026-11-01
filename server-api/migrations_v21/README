@@ -1,8 +1,12 @@
-Alembic history for schema v2.1 (+ admin security extras).
+Alembic history for schema v2.1 (+ admin security / idempotency extras).
 
-Parallel to legacy `migrations/` (ok_*). Use:
+Head: `20261101_0002`  
+Parallel to legacy `migrations/` (ok_*). Status overview: `docs/db-schema-status.md`.
 
-  alembic -c alembic.v21.ini upgrade head
+```sh
+alembic -c alembic.v21.ini upgrade head
+alembic -c alembic.v21.ini current
+```
 
 Do not point production deploy at this chain until cutover is approved
-(see infra/alembic-v21-cutover.md).
+(see `infra/alembic-v21-cutover.md`).

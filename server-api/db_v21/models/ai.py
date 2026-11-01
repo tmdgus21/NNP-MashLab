@@ -1,7 +1,7 @@
-"""AI draft — raw text and parse status only (v2.1)."""
+"""AI drafts — raw text, parse status, and JSON payloads (restored from ok_ai_drafts)."""
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Text
+from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from db_v21.base import Base, now, uid
@@ -21,5 +21,8 @@ class AiDraft(Base):
         ForeignKey("room_members.id", ondelete="CASCADE"), index=True
     )
     raw_text: Mapped[str] = mapped_column(Text)
+    model_output: Mapped[dict] = mapped_column(JSON, default=dict)
+    app_draft: Mapped[dict] = mapped_column(JSON, default=dict)
+    questions: Mapped[list] = mapped_column(JSON, default=list)
     parse_status: Mapped[str] = mapped_column(String(20), default="PENDING")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

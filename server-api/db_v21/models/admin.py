@@ -1,8 +1,11 @@
-"""Admin controls, audit, announcements, and security extras (OTP/rate/cycles)."""
+"""Admin controls, audit, announcements, OTP/rate limits, and idempotency ledger.
+
+No room_cycles / room_cycle_archives: one event per room; re-assignment uses proposals.round.
+Admin extension and other non-join mutations use idempotency_records.
+"""
 from datetime import datetime
 
 from sqlalchemy import (
-    JSON,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -99,7 +102,7 @@ class Announcement(Base):
 
 
 class AdminOtp(Base):
-    """Preserved from ok_admin_otps — not in core 19 tables."""
+    """Preserved from ok_admin_otps."""
 
     __tablename__ = "admin_otps"
 
@@ -114,7 +117,7 @@ class AdminOtp(Base):
 
 
 class AdminRateLimit(Base):
-    """Preserved from ok_admin_rate_limits — not in core 19 tables."""
+    """Preserved from ok_admin_rate_limits."""
 
     __tablename__ = "admin_rate_limits"
 
@@ -123,23 +126,21 @@ class AdminRateLimit(Base):
     reset: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
-class RoomCycleArchive(Base):
-    """Preserved from ok_room_cycles — admin cycle snapshots."""
+class IdempotencyRecord(Base):
+    """Duplicate-request ledger for non-join mutations (admin extend, etc.).
 
-    __tablename__ = "room_cycle_archives"
+    Replaces ok_room_cycles request_key/request_hash pairing without multi-event cycles.
+    """
+
+    __tablename__ = "idempotency_records"
     __table_args__ = (
-        UniqueConstraint("room_id", "cycle", name="uq_room_cycle_archives_room_cycle"),
-        UniqueConstraint(
-            "room_id", "request_key", name="uq_room_cycle_archives_room_request"
-        ),
+        UniqueConstraint("scope", "key_hash", name="uq_idempotency_records_scope_key"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
-    room_id: Mapped[str] = mapped_column(
-        ForeignKey("rooms.id", ondelete="CASCADE"), index=True
-    )
-    cycle: Mapped[int] = mapped_column(Integer)
-    request_key: Mapped[str] = mapped_column(String(100))
+    scope: Mapped[str] = mapped_column(String(64))
+    key_hash: Mapped[str] = mapped_column(String(64))
     request_hash: Mapped[str] = mapped_column(String(64))
-    snapshot: Mapped[dict] = mapped_column(JSON)
+    resource_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    resource_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

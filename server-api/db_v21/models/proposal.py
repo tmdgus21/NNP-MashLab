@@ -1,7 +1,16 @@
-"""Proposals, condition inputs, assignments, consents."""
+"""Proposals with JSON snapshots + normalized inputs/assignments/consents.
+
+Storage rule:
+- `input_snapshot` / `plan` preserve the exact solver input/output for audit and replay.
+- `proposal_condition_inputs` / `proposal_assignments` are the relational view used for
+  queries and integrity. They MUST match the same write that produced the JSON.
+- Re-assignment increments `round` (UNIQUE per room). Prior rows stay; mark old proposals
+  INVALIDATED instead of deleting.
+"""
 from datetime import datetime
 
 from sqlalchemy import (
+    JSON,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -36,6 +45,8 @@ class Proposal(Base):
     )
     round: Mapped[int] = mapped_column(Integer)
     source_revision: Mapped[int] = mapped_column(Integer)
+    input_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    plan: Mapped[dict] = mapped_column(JSON, default=dict)
     solver_status: Mapped[str] = mapped_column(String(20), default="PENDING")
     proposal_status: Mapped[str] = mapped_column(String(40), default="PROPOSED")
     created_by_member_id: Mapped[str | None] = mapped_column(

@@ -1,10 +1,15 @@
-"""Rooms, members, roles."""
+"""Rooms, members, roles.
+
+Idempotency for create/join mirrors ok_members: request_key_hash + request_hash on
+room_members. Same key with different payload → 409; same key+payload → replay.
+"""
 from datetime import datetime
 
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -52,6 +57,8 @@ class RoomMember(Base):
     __table_args__ = (
         UniqueConstraint("room_id", "account_id", name="uq_room_members_room_account"),
         UniqueConstraint("room_id", "nickname", name="uq_room_members_room_nickname"),
+        Index("ix_room_members_request_key_hash", "request_key_hash", unique=True),
+        Index("ix_room_members_token_hash", "token_hash", unique=True),
         CheckConstraint(
             "room_role IN ('OWNER', 'MEMBER')",
             name="ck_room_members_room_role",
@@ -72,6 +79,11 @@ class RoomMember(Base):
     nickname: Mapped[str] = mapped_column(String(30))
     room_role: Mapped[str] = mapped_column(String(20), default="MEMBER")
     membership_status: Mapped[str] = mapped_column(String(20), default="ACTIVE")
+    # Meeting-scoped bearer token (workflow compatibility with ok_members.token_hash)
+    token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Idempotency for create/join (from ok_members)
+    request_key_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    request_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     left_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
