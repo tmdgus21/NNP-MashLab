@@ -68,15 +68,26 @@ The CP-SAT adapter is local-only and accepts an injected snapshot and revision
 
   ## Optional local Qwen proposal adapter
 
-  `QwenProposalAgent` parses reschedule requests into validated proposals and
-  exposes only the read-only meeting tools declared in `llama_cpp.py`. It does
-  not optimize, persist candidates, approve changes, or finalize meetings.
+  `QwenProposalAgent` asks Qwen for a compact, schema-validated intent
+  extraction—not a complete domain change object. A deterministic builder
+  translates explicit intent fields (including absolute or relative duration)
+  into domain changes, then the existing authorization and proposal validator
+  checks them. The agent exposes only the read-only meeting tools declared in
+  `llama_cpp.py`. It does not optimize, persist candidates, approve changes, or
+  finalize meetings.
   `LocalProposalApprovalAdapter` is a non-durable test adapter; a proposal must
   be explicitly confirmed before it changes the local input snapshot.
   Duration changes and exact time-window removal are distinct operations.
   Schema or domain validation failure triggers at most one constrained
-  regeneration with the error code and allowed change types; another failure
+  regeneration with the error code and allowed intent types; another failure
   raises `PROPOSAL_RETRY_EXHAUSTED` without mutating the snapshot.
+  The retry repeats the original request and retains prior read-only tool results.
+  Generation requests are capped by `max_tokens` (default 512). Diagnostic logs
+  contain only prompt/schema/context character counts, request/tool counts,
+  retry count, response-format request status, and safe error codes—not user
+  request text, model output, or tool contents. Character counts are not token
+  counts, and sending `response_format=json_schema` does not itself prove the
+  server enforced it.
 
   The adapter defaults to the local SSH tunnel
   `http://127.0.0.1:18081` and model ID `potato-qwen-test`. It refuses

@@ -57,8 +57,14 @@ from clock-time constraints:
 The deterministic validator rejects any removal that does not match an
 existing exact condition. If schema or domain validation fails, the local
 adapter may request one corrected draft, supplying only the error code and
-permitted change types. The retry cannot relax validation; a second failure
+permitted intent types. The retry cannot relax validation; a second failure
 terminates with an explicit error and leaves the snapshot unchanged.
+The model returns a compact `RescheduleIntentExtraction`; deterministic code
+builds the domain change from typed intent fields before running the existing
+proposal validator. Generation is bounded with `max_tokens`. Local diagnostics
+record character counts and request/tool/retry counts only; they do not record
+the request text, model response, or tool contents. Requesting JSON Schema
+output is not proof that the serving runtime enforced the schema.
 
 The model cannot call the internal deterministic tools below. Implementations
 may expose the three read-only context tools above, then must validate every

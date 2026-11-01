@@ -93,6 +93,48 @@ def _llm_response(content: str):
     }
 
 
+def _intent_output(proposal_output: dict[str, Any]) -> dict[str, Any]:
+    intents = []
+    for change in proposal_output.get("changes", ()):
+        intent = {
+            "kind": change["kind"],
+            "operation": None,
+            "minutes": None,
+            "dates": None,
+            "date": None,
+            "minute": None,
+            "start_minute": None,
+            "end_minute": None,
+            "participant_id": None,
+            "slots": None,
+        }
+        if change["kind"] == "SET_DURATION":
+            intent["operation"] = change.get("operation", "SET")
+            intent["minutes"] = change.get(
+                "minutes", change.get("duration_minutes")
+            )
+        elif change["kind"] == "SET_MEETING_DATES":
+            intent["dates"] = change["dates"]
+        else:
+            for name in (
+                "date",
+                "minute",
+                "start_minute",
+                "end_minute",
+                "participant_id",
+                "slots",
+            ):
+                if name in change:
+                    intent[name] = change[name]
+        intents.append(intent)
+    return {
+        "base_input_revision": proposal_output.get("base_input_revision", 7),
+        "intents": intents,
+        "ambiguities": proposal_output.get("ambiguities", []),
+        "summary": proposal_output.get("summary", "Fixture intent"),
+    }
+
+
 def _tool_call(name: str, arguments: str):
     return {
         "choices": [
@@ -132,7 +174,7 @@ class ScriptedClient:
 
 
 def _fixture_agent(output: dict[str, Any], *, client=None, snapshot=None):
-    serialized = json.dumps(output, ensure_ascii=False)
+    serialized = json.dumps(_intent_output(output), ensure_ascii=False)
     scripted = client or ScriptedClient([_llm_response(serialized)])
     meeting = snapshot or sample_snapshot()
     return QwenProposalAgent(scripted, LocalSnapshotReadTools(meeting)), scripted, meeting
@@ -225,20 +267,24 @@ def test_fixture_duration_change_is_applied_only_after_confirmation():
 
 
 @pytest.mark.parametrize(
-    ("request_text", "duration_minutes"),
+    ("request_text", "operation", "minutes", "duration_minutes"),
     [
-        ("소요시간을 45분으로 줄여줘", 45),
-        ("모임 시간을 30분 늘려줘", 90),
+        ("소요시간을 45분으로 줄여줘", "SET", 45, 45),
+        ("모임 시간을 30분 늘려줘", "INCREASE", 30, 90),
     ],
 )
 def test_fixture_duration_language_maps_to_set_duration(
-    request_text, duration_minutes
+    request_text, operation, minutes, duration_minutes
 ):
     snapshot = sample_snapshot()
     output = {
         "base_input_revision": snapshot.input_revision,
         "changes": [
-            {"kind": "SET_DURATION", "duration_minutes": duration_minutes}
+            {
+                "kind": "SET_DURATION",
+                "operation": operation,
+                "minutes": minutes,
+            }
         ],
         "ambiguities": [],
         "summary": f"소요시간을 {duration_minutes}분으로 변경합니다.",
@@ -254,7 +300,7 @@ def test_fixture_duration_language_maps_to_set_duration(
     assert proposal.changes[0].kind == "SET_DURATION"
     assert proposal.changes[0].duration_minutes == duration_minutes
     assert snapshot.model_dump(mode="json") == snapshot_before
-    assert "소요시간을 45분으로 줄여줘" in client.requests[0]["messages"][0]["content"]
+    assert request_text in client.requests[0]["messages"][0]["content"]
     assert "REMOVE_TIME_WINDOW" in client.requests[0]["messages"][0]["content"]
 
 
@@ -336,6 +382,37 @@ def test_fixture_explicit_clock_window_removal_uses_existing_condition():
     assert change.end_minute == 21 * 60
 
 
+def test_fixture_date_intent_cannot_add_a_date_outside_the_snapshot():
+    snapshot = sample_snapshot()
+    output = {
+        "base_input_revision": snapshot.input_revision,
+        "changes": [
+            {
+                "kind": "SET_MEETING_DATES",
+                "dates": [(SAMPLE_DATE + timedelta(days=1)).isoformat()],
+            }
+        ],
+        "ambiguities": [],
+        "summary": "허용된 날짜 목록 밖의 날짜로 변경합니다.",
+    }
+    invalid_response = _llm_response(
+        json.dumps(_intent_output(output), ensure_ascii=False)
+    )
+    client = ScriptedClient([invalid_response, invalid_response])
+    agent, _, _ = _fixture_agent(output, client=client, snapshot=snapshot)
+    snapshot_before = snapshot.model_dump(mode="json")
+
+    with pytest.raises(ProposalValidationError) as error:
+        agent.propose(
+            "다음 날짜로 바꿔줘", snapshot, _actor(), today=TODAY
+        )
+
+    assert error.value.code == "PROPOSAL_RETRY_EXHAUSTED"
+    assert error.value.__cause__.code == "INVALID_MEETING_DATES"
+    assert len(client.requests) == 2
+    assert snapshot.model_dump(mode="json") == snapshot_before
+
+
 def test_domain_validation_failure_regenerates_once_with_error_feedback():
     snapshot = sample_snapshot()
     invalid_output = {
@@ -359,8 +436,12 @@ def test_domain_validation_failure_regenerates_once_with_error_feedback():
     }
     client = ScriptedClient(
         [
-            _llm_response(json.dumps(invalid_output, ensure_ascii=False)),
-            _llm_response(json.dumps(corrected_output, ensure_ascii=False)),
+            _llm_response(
+                json.dumps(_intent_output(invalid_output), ensure_ascii=False)
+            ),
+            _llm_response(
+                json.dumps(_intent_output(corrected_output), ensure_ascii=False)
+            ),
         ]
     )
     agent, _, _ = _fixture_agent(corrected_output, client=client, snapshot=snapshot)
@@ -380,10 +461,11 @@ def test_domain_validation_failure_regenerates_once_with_error_feedback():
     assert proposal.changes[0].kind == "SET_DURATION"
     assert proposal.changes[0].duration_minutes == 45
     assert retry_feedback["validationError"]["code"] == "CONDITION_NOT_FOUND"
-    assert set(retry_feedback["allowedChangeTypes"]) == set(
-        agent.ALLOWED_CHANGE_TYPES
+    assert retry_feedback["originalRequest"] == "소요시간을 45분으로 줄여줘"
+    assert set(retry_feedback["allowedIntentTypes"]) == set(
+        agent.ALLOWED_INTENT_TYPES
     )
-    assert "do not" in retry_feedback["instruction"]
+    assert "do not" in retry_feedback["instruction"].lower()
     assert snapshot.model_dump(mode="json") == snapshot_before
     assert snapshot.input_revision == revision_before
     assert snapshot.consent_round == consent_round_before
@@ -400,7 +482,9 @@ def test_schema_validation_failure_regenerates_once():
     client = ScriptedClient(
         [
             _llm_response("not valid JSON"),
-            _llm_response(json.dumps(corrected_output, ensure_ascii=False)),
+            _llm_response(
+                json.dumps(_intent_output(corrected_output), ensure_ascii=False)
+            ),
         ]
     )
     agent, _, _ = _fixture_agent(corrected_output, client=client, snapshot=snapshot)
@@ -413,6 +497,38 @@ def test_schema_validation_failure_regenerates_once():
     assert proposal.status == ProposalStatus.PROPOSED
     assert proposal.changes[0].kind == "SET_DURATION"
     assert retry_feedback["validationError"]["code"] == "INVALID_MODEL_OUTPUT"
+
+
+def test_empty_intent_is_retried_and_fails_closed_when_repeated():
+    empty_extraction = {
+        "base_input_revision": 7,
+        "intents": [],
+        "ambiguities": [],
+        "summary": "Reschedule meeting to reduce duration to 45 minutes.",
+    }
+    client = ScriptedClient(
+        [
+            _llm_response(json.dumps(empty_extraction)),
+            _llm_response(json.dumps(empty_extraction)),
+        ]
+    )
+    agent, _, snapshot = _fixture_agent({}, client=client)
+    snapshot_before = snapshot.model_dump(mode="json")
+
+    with pytest.raises(ProposalValidationError) as error:
+        agent.propose(
+            "소요시간을 45분으로 줄여줘",
+            snapshot,
+            _actor(),
+            today=TODAY,
+        )
+
+    assert error.value.code == "PROPOSAL_RETRY_EXHAUSTED"
+    assert error.value.__cause__.code == "EMPTY_PROPOSAL"
+    retry_payload = json.loads(client.requests[1]["messages"][-1]["content"])
+    assert retry_payload["originalRequest"] == "소요시간을 45분으로 줄여줘"
+    assert len(client.requests) == 2
+    assert snapshot.model_dump(mode="json") == snapshot_before
 
 
 def test_second_validation_failure_exits_without_applying_proposal():
@@ -431,7 +547,7 @@ def test_second_validation_failure_exits_without_applying_proposal():
         "summary": "존재하는지 확인되지 않은 시간창을 삭제합니다.",
     }
     invalid_response = _llm_response(
-        json.dumps(invalid_output, ensure_ascii=False)
+        json.dumps(_intent_output(invalid_output), ensure_ascii=False)
     )
     client = ScriptedClient([invalid_response, invalid_response])
     agent, _, _ = _fixture_agent(invalid_output, client=client, snapshot=snapshot)
@@ -758,7 +874,7 @@ def test_qwen_uses_only_read_tools_and_json_schema_response():
     client = ScriptedClient(
         [
             _tool_call("get_meeting_constraints", "{}"),
-            _llm_response(json.dumps(output)),
+            _llm_response(json.dumps(_intent_output(output))),
         ]
     )
     agent, _, _ = _fixture_agent(output, client=client, snapshot=snapshot)
@@ -777,6 +893,91 @@ def test_qwen_uses_only_read_tools_and_json_schema_response():
     }
     assert client.requests[0]["response_schema"]["additionalProperties"] is False
     assert client.requests[1]["messages"][-1]["role"] == "tool"
+    original_user_message = next(
+        message
+        for message in client.requests[1]["messages"]
+        if message["role"] == "user"
+    )
+    assert json.loads(original_user_message["content"])["request"] == "45분으로 줄여줘"
+
+
+def test_structured_intent_schema_is_required_compact_and_output_is_bounded(
+    monkeypatch,
+):
+    schema = QwenProposalAgent._response_schema()
+    intent_schema = schema["$defs"]["RescheduleIntent"]
+    intent_fields = set(intent_schema["properties"])
+    client = LlamaCppClient(
+        LlamaCppConfig(
+            base_url="http://127.0.0.1:18081",
+            model="potato-qwen-test",
+            max_tokens=384,
+        )
+    )
+    sent = {}
+
+    def request(path, *, payload=None, timeout_seconds=None):
+        sent.update(payload or {})
+        return {"choices": [{"message": {"role": "assistant", "content": "{}"}}]}
+
+    monkeypatch.setattr(client, "_request", request)
+    client.chat(
+        [{"role": "user", "content": "fixture"}],
+        tools=[],
+        response_schema=schema,
+        timeout_seconds=1,
+    )
+
+    assert set(schema["required"]) == {
+        "base_input_revision",
+        "intents",
+        "ambiguities",
+        "summary",
+    }
+    assert set(intent_schema["required"]) == intent_fields
+    assert len(json.dumps(schema)) < 3000
+    assert sent["max_tokens"] == 384
+    assert sent["response_format"]["type"] == "json_schema"
+    assert sent["response_format"]["json_schema"]["strict"] is True
+    assert sent["response_format"]["json_schema"]["schema"] == schema
+
+
+def test_qwen_diagnostic_log_excludes_request_and_tool_content(caplog):
+    private_request = "SENSITIVE_USER_TEXT 소요시간을 45분으로 줄여줘"
+    private_tool_value = "SENSITIVE_MEETING_TITLE"
+    output = {
+        "base_input_revision": 7,
+        "changes": [{"kind": "SET_DURATION", "duration_minutes": 45}],
+        "ambiguities": [],
+        "summary": "45분으로 변경합니다.",
+    }
+
+    class PrivateTools(LocalSnapshotReadTools):
+        def get_meeting_constraints(self):
+            constraints = super().get_meeting_constraints()
+            constraints["title"] = private_tool_value
+            return constraints
+
+    client = ScriptedClient(
+        [
+            _tool_call("get_meeting_constraints", "{}"),
+            _llm_response(json.dumps(_intent_output(output))),
+        ]
+    )
+    agent = QwenProposalAgent(client, PrivateTools(sample_snapshot()))
+
+    with caplog.at_level("INFO", logger="potato_agent.llama_cpp"):
+        proposal = agent.propose(private_request, sample_snapshot(), _actor(), today=TODAY)
+
+    assert proposal.status == ProposalStatus.PROPOSED
+    assert private_request not in caplog.text
+    assert private_tool_value not in caplog.text
+    assert agent.last_diagnostics is not None
+    assert agent.last_diagnostics["model_requests"] == 2
+    assert agent.last_diagnostics["tool_calls"] == 1
+    assert agent.last_diagnostics["max_tokens"] == 512
+    assert agent.last_diagnostics["json_schema_requested"] is True
+    assert "response_schema_chars" in caplog.text
 
 
 def test_qwen_returns_multiple_tool_results_with_matching_call_ids():
@@ -819,7 +1020,7 @@ def test_qwen_returns_multiple_tool_results_with_matching_call_ids():
                     }
                 ]
             },
-            _llm_response(json.dumps(output)),
+            _llm_response(json.dumps(_intent_output(output))),
         ]
     )
     agent, _, _ = _fixture_agent(output, client=client, snapshot=snapshot)

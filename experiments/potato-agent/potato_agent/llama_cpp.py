@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import logging
 import os
 import queue
 import socket
@@ -26,10 +27,11 @@ from potato_agent.qwen_proposals import (
     ProposalActor,
     ProposalValidationError,
     RescheduleProposal,
-    RescheduleProposalDraft,
-    parse_proposal_payload,
-    validate_proposal,
+    build_proposal_from_intents,
+    parse_intent_payload,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class ThinkingMode(StrEnum):
@@ -47,6 +49,7 @@ class LlamaCppConfig(BaseModel):
     total_timeout_seconds: float = Field(default=60.0, gt=0, le=600)
     tool_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
     max_tool_calls: int = Field(default=3, ge=0, le=8)
+    max_tokens: int = Field(default=512, ge=64, le=4096)
     max_response_bytes: int = Field(default=1_000_000, ge=1024, le=4_000_000)
 
 
@@ -535,10 +538,11 @@ class LlamaCppClient:
             "tool_choice": "auto",
             "stream": False,
             "temperature": 0,
+            "max_tokens": self.config.max_tokens,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
-                    "name": "reschedule_proposal",
+                    "name": "reschedule_intent_extraction",
                     "strict": True,
                     "schema": response_schema,
                 },
@@ -557,7 +561,8 @@ class LlamaCppClient:
 class QwenProposalAgent:
     SYSTEM_PROMPT = (
         "You interpret a user's meeting reschedule request. Return only the "
-        "requested RescheduleProposalDraft JSON. You may call only the provided "
+        "requested RescheduleIntentExtraction JSON. Extract intent only; do not "
+        "construct domain change objects. You may call only the provided "
         "read-only tools to inspect current meeting context. Never optimize, "
         "create candidates, change availability for another person, approve, "
         "finalize, or claim a change was applied. Do not infer a participant ID "
@@ -578,9 +583,15 @@ class QwenProposalAgent:
         "current duration is not already in the context. Use only values "
         "explicitly requested by the user or present in the read-only meeting "
         "context. If the requested date, time, duration, or condition cannot "
-        "be determined exactly, return ambiguities instead of guessing."
+        "be determined exactly, return ambiguities instead of guessing. The "
+        "intent schema has a flat intent object: include every schema key and "
+        "set fields not used by that intent to null. For example, an exact "
+        "45-minute duration is kind=SET_DURATION, operation=SET, minutes=45; "
+        "an increase of 30 minutes is kind=SET_DURATION, operation=INCREASE, "
+        "minutes=30. An ambiguous request uses intents=[] and a non-empty "
+        "ambiguities list. Never return both empty intents and empty ambiguities."
     )
-    ALLOWED_CHANGE_TYPES = (
+    ALLOWED_INTENT_TYPES = (
         "SET_MEETING_DATES",
         "SET_START_TIME",
         "SET_END_TIME",
@@ -608,10 +619,13 @@ class QwenProposalAgent:
             client.config.max_tool_calls if max_tool_calls is None else max_tool_calls
         )
         self._tool_calls_for_request = 0
+        self.last_diagnostics: dict[str, int | bool | str] | None = None
 
     @staticmethod
     def _response_schema() -> dict[str, Any]:
-        return RescheduleProposalDraft.model_json_schema()
+        from potato_agent.qwen_proposals import RescheduleIntentExtraction
+
+        return RescheduleIntentExtraction.model_json_schema()
 
     @staticmethod
     def _extract_message(response: dict[str, Any]) -> dict[str, Any]:
@@ -655,6 +669,7 @@ class QwenProposalAgent:
         self._tool_calls_for_request = 0
         self.dispatcher.call_count = 0
         deadline = time.monotonic() + self.total_timeout_seconds
+        response_schema = self._response_schema()
         participant_context = [
             {
                 "participantId": participant.participant_id,
@@ -680,9 +695,33 @@ class QwenProposalAgent:
             },
         ]
         validation_retry_used = False
+        model_requests = 0
+        response_chars = 0
+        tool_result_chars = 0
+        model_input_chars = 0
+        tool_definition_chars = len(
+            json.dumps(ReadOnlyToolDispatcher.definitions(), ensure_ascii=False)
+        )
 
         for _ in range(self.max_tool_calls + 2):
-            response = self._chat(messages, deadline)
+            model_input_chars += len(json.dumps(messages, ensure_ascii=False))
+            try:
+                response = self._chat(messages, deadline)
+            except LlamaCppError as exc:
+                self._record_diagnostics(
+                    request_text=request_text,
+                    user_context=user_context,
+                    response_schema=response_schema,
+                    model_requests=model_requests + 1,
+                    response_chars=response_chars,
+                    tool_result_chars=tool_result_chars,
+                    model_input_chars=model_input_chars,
+                    tool_definition_chars=tool_definition_chars,
+                    retry_count=int(validation_retry_used),
+                    error_code=exc.code,
+                )
+                raise
+            model_requests += 1
             message = self._extract_message(response)
             tool_calls = message.get("tool_calls") or []
             if not isinstance(tool_calls, list):
@@ -695,14 +734,37 @@ class QwenProposalAgent:
                             "INVALID_MODEL_OUTPUT",
                             "The model returned no proposal JSON.",
                         )
-                    draft = parse_proposal_payload(
-                        content, base_revision=snapshot.input_revision
+                    response_chars += len(content)
+                    extraction = parse_intent_payload(content)
+                    proposal = build_proposal_from_intents(
+                        snapshot, actor, extraction, today=today
                     )
-                    return validate_proposal(
-                        snapshot, actor, draft, today=today
+                    self._record_diagnostics(
+                        request_text=request_text,
+                        user_context=user_context,
+                        response_schema=response_schema,
+                        model_requests=model_requests,
+                        response_chars=response_chars,
+                        tool_result_chars=tool_result_chars,
+                        model_input_chars=model_input_chars,
+                        tool_definition_chars=tool_definition_chars,
+                        retry_count=int(validation_retry_used),
                     )
+                    return proposal
                 except ProposalValidationError as exc:
                     if validation_retry_used:
+                        self._record_diagnostics(
+                            request_text=request_text,
+                            user_context=user_context,
+                            response_schema=response_schema,
+                            model_requests=model_requests,
+                            response_chars=response_chars,
+                            tool_result_chars=tool_result_chars,
+                            model_input_chars=model_input_chars,
+                            tool_definition_chars=tool_definition_chars,
+                            retry_count=1,
+                            error_code="PROPOSAL_RETRY_EXHAUSTED",
+                        )
                         raise ProposalValidationError(
                             "PROPOSAL_RETRY_EXHAUSTED",
                             "The proposal remained invalid after one correction attempt "
@@ -724,15 +786,20 @@ class QwenProposalAgent:
                                     "validationError": {
                                         "code": exc.code,
                                     },
-                                    "allowedChangeTypes": self.ALLOWED_CHANGE_TYPES,
+                                    "originalRequest": request_text,
+                                    "allowedIntentTypes": self.ALLOWED_INTENT_TYPES,
                                     "instruction": (
-                                        "Generate the proposal again using only the "
-                                        "original request and authoritative meeting "
-                                        "context. Correct the validation error; do not "
-                                        "relax or bypass validation and do not invent "
-                                        "dates, times, participants, or conditions. "
-                                        "If the request cannot be represented safely, "
-                                        "return an empty changes list with a specific "
+                                        "Extract the user's intent again in the "
+                                        "RescheduleIntentExtraction schema. Use the "
+                                        "originalRequest above and available tool "
+                                        "results. For a duration change, return a "
+                                        "SET_DURATION intent with an explicit SET, "
+                                        "INCREASE, or DECREASE operation and minutes. "
+                                        "Do not emit an empty intent list when the "
+                                        "request states a supported change. Do not "
+                                        "relax validation or invent dates, times, "
+                                        "participants, or conditions. If the intent "
+                                        "is genuinely unclear, return a specific "
                                         "ambiguity."
                                     ),
                                 },
@@ -771,17 +838,68 @@ class QwenProposalAgent:
                     ),
                 )
                 self._tool_calls_for_request += 1
+                tool_result = json.dumps(result, ensure_ascii=False)
+                tool_result_chars += len(tool_result)
                 messages.append(
                     {
                         "role": "tool",
                         "tool_call_id": call_id,
-                        "content": json.dumps(result, ensure_ascii=False),
+                        "content": tool_result,
                     }
                 )
 
+        self._record_diagnostics(
+            request_text=request_text,
+            user_context=user_context,
+            response_schema=response_schema,
+            model_requests=model_requests,
+            response_chars=response_chars,
+            tool_result_chars=tool_result_chars,
+            model_input_chars=model_input_chars,
+            tool_definition_chars=tool_definition_chars,
+            retry_count=int(validation_retry_used),
+        )
         raise LlamaCppError(
             "TOOL_CALL_LIMIT", "The model did not return a proposal within the tool-call limit."
         )
+
+    def _record_diagnostics(
+        self,
+        *,
+        request_text: str,
+        user_context: dict[str, Any],
+        response_schema: dict[str, Any],
+        model_requests: int,
+        response_chars: int,
+        tool_result_chars: int,
+        model_input_chars: int,
+        tool_definition_chars: int,
+        retry_count: int,
+        error_code: str | None = None,
+    ) -> None:
+        diagnostics: dict[str, int | bool | str] = {
+            "system_prompt_chars": len(self.SYSTEM_PROMPT),
+            "user_request_chars": len(request_text),
+            "initial_context_chars": len(
+                json.dumps(user_context, ensure_ascii=False)
+            ),
+            "response_schema_chars": len(
+                json.dumps(response_schema, ensure_ascii=False)
+            ),
+            "tool_definition_chars": tool_definition_chars,
+            "model_input_chars": model_input_chars,
+            "max_tokens": self.client.config.max_tokens,
+            "model_requests": model_requests,
+            "tool_calls": self._tool_calls_for_request,
+            "tool_result_chars": tool_result_chars,
+            "response_chars": response_chars,
+            "regenerations": retry_count,
+            "json_schema_requested": True,
+        }
+        if error_code is not None:
+            diagnostics["error_code"] = error_code
+        self.last_diagnostics = diagnostics
+        _LOGGER.info("Qwen proposal diagnostics: %s", diagnostics)
 
 
 def build_proposal_agent(
