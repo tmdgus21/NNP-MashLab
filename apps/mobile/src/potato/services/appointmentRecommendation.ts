@@ -1,4 +1,5 @@
 import {
+  isValidDateKey,
   isValidAppointmentTimeSlot,
   mergeAppointmentTimeSlots,
 } from './appointmentTime';
@@ -12,6 +13,9 @@ import type {
   AppointmentAvailabilityInput,
   RecommendationInvalidField,
   RecommendationMissingField,
+  AppointmentRecommendationAgentSnapshot,
+  AppointmentRecommendationCandidate,
+  AppointmentRecommendationType,
 } from '../types/appointmentRecommendation';
 
 export type AvailabilitySubmissionResult =
@@ -23,6 +27,168 @@ export type AvailabilitySubmissionResult =
       valid: false;
       reason: 'participant_id' | 'time_zone' | 'time_slots' | 'timestamp';
     };
+
+function isStringArray(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.every(item => typeof item === 'string' && item.trim().length > 0)
+  );
+}
+
+function isValidTimeZone(value: string): boolean {
+  try {
+    Intl.DateTimeFormat('en-US', { timeZone: value }).format(0);
+    return true;
+  } catch (error) {
+    if (error instanceof RangeError) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+export function isVerifiedAppointmentRecommendationCandidate(
+  value: unknown,
+  sourceRevision: string | undefined,
+  recommendationType: AppointmentRecommendationType,
+  requiredAttendeeIds: readonly string[] = [],
+  expectedParticipantIds: readonly string[] = [],
+): value is AppointmentRecommendationCandidate {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as Partial<AppointmentRecommendationCandidate>;
+  const explanation = candidate.explanation;
+  if (
+    typeof candidate.candidateId !== 'string' ||
+    !candidate.candidateId.trim() ||
+    typeof candidate.date !== 'string' ||
+    !isValidDateKey(candidate.date) ||
+    !Number.isInteger(candidate.startMinute) ||
+    !Number.isInteger(candidate.endMinute) ||
+    candidate.startMinute! < 0 ||
+    candidate.startMinute! >= candidate.endMinute! ||
+    candidate.endMinute! > 24 * 60 ||
+    typeof candidate.timeZone !== 'string' ||
+    !isValidTimeZone(candidate.timeZone) ||
+    candidate.recommendationType !== recommendationType ||
+    !isStringArray(candidate.attendeeIds) ||
+    !isStringArray(candidate.unavailableIds) ||
+    new Set(candidate.attendeeIds).size !== candidate.attendeeIds.length ||
+    new Set(candidate.unavailableIds).size !==
+      candidate.unavailableIds.length ||
+    candidate.attendeeIds.some(id => candidate.unavailableIds!.includes(id)) ||
+    candidate.verified !== true ||
+    !sourceRevision ||
+    candidate.sourceRevision !== sourceRevision ||
+    !explanation ||
+    typeof explanation.agentSummary !== 'string' ||
+    !explanation.agentSummary.trim() ||
+    (explanation.optimizerSummary !== undefined &&
+      typeof explanation.optimizerSummary !== 'string')
+  ) {
+    return false;
+  }
+
+  if (!requiredAttendeeIds.every(id => candidate.attendeeIds!.includes(id))) {
+    return false;
+  }
+
+  const representedParticipantIds = [
+    ...candidate.attendeeIds,
+    ...candidate.unavailableIds,
+  ];
+  if (
+    expectedParticipantIds.length > 0 &&
+    (representedParticipantIds.some(
+      id => !expectedParticipantIds.includes(id),
+    ) ||
+      expectedParticipantIds.some(
+        id => !representedParticipantIds.includes(id),
+      ))
+  ) {
+    return false;
+  }
+
+  return recommendationType === 'ALL_AVAILABLE'
+    ? candidate.unavailableIds.length === 0 &&
+        expectedParticipantIds.every(id => candidate.attendeeIds!.includes(id))
+    : candidate.unavailableIds.length > 0;
+}
+
+export interface DisplayableRecommendationCandidates {
+  recommendationType: AppointmentRecommendationType;
+  candidates: AppointmentRecommendationCandidate[];
+}
+
+export function getDisplayableRecommendationCandidates(
+  snapshot: AppointmentRecommendationAgentSnapshot,
+  currentSourceRevision?: string,
+  expectedParticipantIds: readonly string[] = [],
+): DisplayableRecommendationCandidates | undefined {
+  if (!snapshot.agentRunId) {
+    return undefined;
+  }
+  const candidates = snapshot.candidates ?? [];
+  const requiredAttendeeIds = snapshot.requiredAttendeeIds ?? [];
+  const validFor = (type: AppointmentRecommendationType) =>
+    candidates
+      .filter(candidate =>
+        isVerifiedAppointmentRecommendationCandidate(
+          candidate,
+          currentSourceRevision,
+          type,
+          requiredAttendeeIds,
+          expectedParticipantIds,
+        ),
+      )
+      .slice(0, 3);
+
+  if (snapshot.status === 'ALL_AVAILABLE') {
+    const allAvailable = validFor('ALL_AVAILABLE');
+    return allAvailable.length > 0
+      ? { recommendationType: 'ALL_AVAILABLE', candidates: allAvailable }
+      : undefined;
+  }
+
+  if (snapshot.status === 'PARTIAL_ALTERNATIVE') {
+    const allAvailable = validFor('ALL_AVAILABLE');
+    if (allAvailable.length > 0) {
+      return {
+        recommendationType: 'ALL_AVAILABLE',
+        candidates: allAvailable,
+      };
+    }
+
+    if (snapshot.allAvailableExhausted !== true) {
+      return undefined;
+    }
+    const partial = validFor('PARTIAL_ALTERNATIVE');
+    return partial.length > 0
+      ? { recommendationType: 'PARTIAL_ALTERNATIVE', candidates: partial }
+      : undefined;
+  }
+
+  if (snapshot.status === 'AWAITING_APPROVAL') {
+    const allAvailable = validFor('ALL_AVAILABLE');
+    if (allAvailable.length > 0) {
+      return {
+        recommendationType: 'ALL_AVAILABLE',
+        candidates: allAvailable,
+      };
+    }
+
+    if (snapshot.allAvailableExhausted === true) {
+      const partial = validFor('PARTIAL_ALTERNATIVE');
+      return partial.length > 0
+        ? { recommendationType: 'PARTIAL_ALTERNATIVE', candidates: partial }
+        : undefined;
+    }
+  }
+
+  return undefined;
+}
 
 function isValidIsoTimestamp(value: string): boolean {
   return (
@@ -41,8 +207,8 @@ export function parseAppointmentDurationMinutes(
   const value = hourMatch
     ? Number(hourMatch[1]) * 60
     : minuteMatch
-      ? Number(minuteMatch[1])
-      : Number.NaN;
+    ? Number(minuteMatch[1])
+    : Number.NaN;
 
   return Number.isSafeInteger(value) && value > 0 ? value : null;
 }
@@ -63,8 +229,7 @@ export function createParticipantAvailabilitySubmission(
   if (
     (input.submittedAt !== undefined &&
       !isValidIsoTimestamp(input.submittedAt)) ||
-    (input.updatedAt !== undefined &&
-      !isValidIsoTimestamp(input.updatedAt))
+    (input.updatedAt !== undefined && !isValidIsoTimestamp(input.updatedAt))
   ) {
     return { valid: false, reason: 'timestamp' };
   }
@@ -113,7 +278,9 @@ export function prepareAppointmentAiRecommendation(
 
   const savedOrganizerIds = (draft.participants ?? [])
     .filter(
-      (participant): participant is Extract<
+      (
+        participant,
+      ): participant is Extract<
         AppointmentParticipant,
         { role: 'organizer' }
       > => participant.role === 'organizer',
@@ -128,10 +295,7 @@ export function prepareAppointmentAiRecommendation(
   if (!organizerId) {
     missingFields.add('organizerId');
   }
-  if (
-    draft.organizerId !== undefined &&
-    !draft.organizerId.trim()
-  ) {
+  if (draft.organizerId !== undefined && !draft.organizerId.trim()) {
     invalidFields.add('organizerId');
   }
   const timeZone = draft.timeZone?.trim();
@@ -151,18 +315,18 @@ export function prepareAppointmentAiRecommendation(
 
   const savedInviteeIds = (draft.participants ?? [])
     .filter(
-      (participant): participant is Extract<
-        AppointmentParticipant,
-        { role: 'invitee' }
-      > => participant.role === 'invitee',
+      (
+        participant,
+      ): participant is Extract<AppointmentParticipant, { role: 'invitee' }> =>
+        participant.role === 'invitee',
     )
     .map(participant => participant.id);
   const friendIds =
     draft.invitedFriendIds !== undefined
       ? [...new Set(draft.invitedFriendIds)]
       : (draft.invitedFriends?.length ?? 0) === 0
-        ? [...new Set(savedInviteeIds)]
-        : [];
+      ? [...new Set(savedInviteeIds)]
+      : [];
   if (
     draft.invitedFriendIds === undefined &&
     (draft.invitedFriends?.length ?? 0) > 0
@@ -199,11 +363,9 @@ export function prepareAppointmentAiRecommendation(
     if (
       !participant.id.trim() ||
       participantById.has(participant.id) ||
-      (participant.role === 'organizer' &&
-        participant.id !== organizerId) ||
+      (participant.role === 'organizer' && participant.id !== organizerId) ||
       (participant.role === 'invitee' && !friendIds.includes(participant.id)) ||
-      (participant.role === 'invitee' &&
-        participant.id === organizerId)
+      (participant.role === 'invitee' && participant.id === organizerId)
     ) {
       invalidFields.add('participants');
     } else {
@@ -237,10 +399,7 @@ export function prepareAppointmentAiRecommendation(
     }
   }
 
-  const submissionsById = new Map<
-    string,
-    ParticipantAvailabilitySubmission
-  >();
+  const submissionsById = new Map<string, ParticipantAvailabilitySubmission>();
   for (const submission of draft.availabilitySubmissions ?? []) {
     if (
       submissionsById.has(submission.participantId) ||
@@ -282,11 +441,10 @@ export function prepareAppointmentAiRecommendation(
       continue;
     }
     const savedSubmission = submissionsById.get(participant.id);
-    let submission: ParticipantAvailabilitySubmission =
-      savedSubmission ?? {
-        participantId: participant.id,
-        status: 'not_submitted',
-      };
+    let submission: ParticipantAvailabilitySubmission = savedSubmission ?? {
+      participantId: participant.id,
+      status: 'not_submitted',
+    };
     if (submission.status === 'submitted') {
       const validation = createParticipantAvailabilitySubmission({
         participantId: submission.participantId,

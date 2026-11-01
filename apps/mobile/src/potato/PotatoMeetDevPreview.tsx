@@ -15,6 +15,7 @@ import { CreateAppointmentStep1Screen } from './screens/CreateAppointmentStep1Sc
 import { CreateAppointmentStep2InviteScreen } from './screens/CreateAppointmentStep2InviteScreen';
 import { CreateAppointmentStep3TimeScreen } from './screens/CreateAppointmentStep3TimeScreen';
 import { CreateAppointmentStep4AdjustScreen } from './screens/CreateAppointmentStep4AdjustScreen';
+import { AiRecommendationScreen } from './screens/AiRecommendationScreen';
 import { FriendsScreen } from './screens/FriendsScreen';
 import { HomeScreen } from './screens/HomeScreen';
 import { LoginScreen } from './screens/LoginScreen';
@@ -24,7 +25,12 @@ import { potatoColors } from './theme/colors';
 import type { PotatoAppointment, PotatoTabRoute } from './types/appointment';
 import type { AppointmentCreationDraft } from './types/appointmentCreation';
 import { initialPotatoFriends } from './types/friend';
-import { getAppointmentRecommendationMessage } from './services/appointmentRecommendation';
+import { prepareAppointmentAiRecommendation } from './services/appointmentRecommendation';
+import {
+  appointmentRecommendationPreviewCases,
+  initialAppointmentRecommendationPreviewCase,
+} from './dev/appointmentRecommendationFixtures';
+import type { AppointmentAiRecommendationPreparation } from './types/appointmentRecommendation';
 
 type PreviewRoute =
   | 'login'
@@ -35,7 +41,8 @@ type PreviewRoute =
   | 'create_step1'
   | 'create_step2'
   | 'create_step3'
-  | 'create_step4';
+  | 'create_step4'
+  | 'ai_recommendation';
 
 const previewRoutes: ReadonlyArray<{ route: PreviewRoute; label: string }> = [
   { route: 'login', label: '로그인' },
@@ -47,7 +54,12 @@ const previewRoutes: ReadonlyArray<{ route: PreviewRoute; label: string }> = [
   { route: 'create_step2', label: '생성 2' },
   { route: 'create_step3', label: '생성 3' },
   { route: 'create_step4', label: '생성 4' },
+  { route: 'ai_recommendation', label: 'AI 추천' },
 ];
+
+const recommendationPreviewRoutes = Object.entries(
+  appointmentRecommendationPreviewCases,
+).map(([key, preview]) => ({ key, label: preview.label }));
 
 const previewAppointments: PotatoAppointment[] = [
   {
@@ -76,37 +88,45 @@ export function PotatoMeetDevPreview() {
   const [route, setRoute] = useState<PreviewRoute>('login');
   const [draft, setDraft] = useState<AppointmentCreationDraft>({});
   const [toolsExpanded, setToolsExpanded] = useState(true);
+  const [recommendationFixtureKey, setRecommendationFixtureKey] =
+    useState('waiting');
+  const [useRecommendationFixture, setUseRecommendationFixture] =
+    useState(true);
+  const [step4Preparation, setStep4Preparation] =
+    useState<AppointmentAiRecommendationPreparation>();
   const insets = useSafeAreaInsets();
 
   const handleAiPreparation = (preparation: RecommendationPreparation) => {
-    if (preparation.status === 'ready') {
-      Alert.alert(
-        '개발 프리뷰',
-        '추천 요청에 필요한 정보가 준비됐습니다. 실제 AI 호출이나 추천 결과는 제공하지 않습니다.',
-      );
-      return;
-    }
-
-    if (__DEV__) {
+    if (__DEV__ && preparation.status === 'needs_information') {
       console.info('AI recommendation preparation needs information', {
         missingFields: preparation.missingFields,
         invalidFields: preparation.invalidFields,
       });
     }
-    Alert.alert(
-      '추가 정보 필요',
-      getAppointmentRecommendationMessage(preparation),
-    );
+    setStep4Preparation(preparation);
+    setUseRecommendationFixture(false);
+    setRoute('ai_recommendation');
   };
+
+  const selectedRecommendationFixture =
+    appointmentRecommendationPreviewCases[recommendationFixtureKey] ??
+    initialAppointmentRecommendationPreviewCase;
+  const recommendationDraft = useRecommendationFixture
+    ? selectedRecommendationFixture.draft
+    : draft;
+  const recommendationPreparation: AppointmentAiRecommendationPreparation =
+    useRecommendationFixture
+      ? prepareAppointmentAiRecommendation(recommendationDraft)
+      : step4Preparation ??
+        prepareAppointmentAiRecommendation(recommendationDraft);
+  const recommendationSnapshot = useRecommendationFixture
+    ? selectedRecommendationFixture.snapshot
+    : { status: 'WAITING_FOR_INPUT' as const };
 
   const renderScreen = () => {
     switch (route) {
       case 'login':
-        return (
-          <LoginScreen
-            onSignUpPress={() => setRoute('signup')}
-          />
-        );
+        return <LoginScreen onSignUpPress={() => setRoute('signup')} />;
       case 'signup':
         return <SignUpScreen onLoginPress={() => setRoute('login')} />;
       case 'home':
@@ -185,6 +205,54 @@ export function PotatoMeetDevPreview() {
             onRequestAiRecommendation={handleAiPreparation}
           />
         );
+      case 'ai_recommendation':
+        return (
+          <AiRecommendationScreen
+            draft={recommendationDraft}
+            preparation={recommendationPreparation}
+            snapshot={recommendationSnapshot}
+            currentSourceRevision={
+              useRecommendationFixture
+                ? selectedRecommendationFixture.currentSourceRevision
+                : undefined
+            }
+            developmentFixture={useRecommendationFixture}
+            onBack={() => {
+              setRoute('create_step4');
+            }}
+            onStartRecommendation={() => {
+              Alert.alert(
+                'AI 서버 미연결',
+                '요청 데이터는 준비됐지만 실제 AI 추천 요청은 전송되지 않았습니다.',
+              );
+            }}
+            onReschedule={() => {
+              Alert.alert(
+                'AI 서버 미연결',
+                '재조율 요청은 전송되지 않았습니다.',
+              );
+            }}
+            onCandidateSelected={() => undefined}
+            onRequestApproval={() => {
+              Alert.alert(
+                'AI 서버 미연결',
+                '승인 요청은 전송되지 않았으며 일정도 확정되지 않았습니다.',
+              );
+            }}
+            onRetry={() => {
+              Alert.alert(
+                'AI 서버 미연결',
+                '재시도 요청은 전송되지 않았습니다.',
+              );
+            }}
+            onCancel={() => {
+              Alert.alert(
+                'AI 서버 미연결',
+                '실행 취소 요청을 전송할 수 없습니다.',
+              );
+            }}
+          />
+        );
     }
   };
 
@@ -197,11 +265,9 @@ export function PotatoMeetDevPreview() {
         ]}
       >
         <View style={styles.panelHeader}>
-          <Text
-            numberOfLines={1}
-            style={styles.previewTitle}
-          >
-            개발 프리뷰 · {previewRoutes.find(item => item.route === route)?.label}
+          <Text numberOfLines={1} style={styles.previewTitle}>
+            개발 프리뷰 ·{' '}
+            {previewRoutes.find(item => item.route === route)?.label}
           </Text>
           <Pressable
             accessibilityRole="button"
@@ -231,7 +297,13 @@ export function PotatoMeetDevPreview() {
                     accessibilityRole="button"
                     accessibilityState={{ selected }}
                     key={item.route}
-                    onPress={() => setRoute(item.route)}
+                    onPress={() => {
+                      if (item.route === 'ai_recommendation') {
+                        setUseRecommendationFixture(true);
+                        setStep4Preparation(undefined);
+                      }
+                      setRoute(item.route);
+                    }}
                     testID={`dev-preview-route-${item.route}`}
                     style={[
                       styles.routeButton,
@@ -250,6 +322,41 @@ export function PotatoMeetDevPreview() {
                 );
               })}
             </ScrollView>
+            {route === 'ai_recommendation' && (
+              <ScrollView
+                horizontal
+                contentContainerStyle={styles.routeList}
+                showsHorizontalScrollIndicator={false}
+              >
+                {recommendationPreviewRoutes.map(item => {
+                  const selected = recommendationFixtureKey === item.key;
+                  return (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      key={item.key}
+                      onPress={() => {
+                        setRecommendationFixtureKey(item.key);
+                        setUseRecommendationFixture(true);
+                      }}
+                      style={[
+                        styles.routeButton,
+                        selected && styles.selectedRouteButton,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.routeLabel,
+                          selected && styles.selectedRouteLabel,
+                        ]}
+                      >
+                        {item.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            )}
           </>
         )}
       </View>
