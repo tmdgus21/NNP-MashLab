@@ -1,7 +1,7 @@
 # Schema v2.1 (`db_v21`)
 
 Application ORM. `server-api/models.py` re-exports these models with legacy field
-aliases for `workflow.py` / `admin/*`. Target database name: `mashlab_v21`.
+aliases for `workflow.py` / `admin/*`. Production target database name: `potato_server_v2`.
 
 ## Table count
 

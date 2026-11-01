@@ -1,71 +1,83 @@
-# Alembic v2.1 cutover (empty DB replace — no data migration)
+# Alembic v2.1 cutover / production deploy prep
 
-Parallel to legacy `ok_*` ([alembic-cutover.md](alembic-cutover.md)).  
-**Do not drop or reset the production database without explicit operator approval.**
+**Do not drop or reset any database without explicit operator approval.**  
+**Do not merge to `main` or restart production until cutover is approved.**
 
 ## Databases
 
-| Role | Name |
-|------|------|
-| Current production | `mashpotato-server-db` |
-| New target (empty) | `mashlab_v21` |
+| Role | Name | Notes |
+|------|------|-------|
+| Legacy production (keep) | `mashpotato-server-db` | `ok_*` schema — **do not migrate with v21** |
+| v2.1 production target | `potato_server_v2` | Empty / new PG 18 DB for FastAPI v2.1 |
 
-## What is in the repo
+`infra/deploy.sh` refuses `DB_NAME=mashpotato-server-db` and requires `DB_NAME=potato_server_v2`.
+
+## Repo wiring (develop)
 
 | Path | Role |
 |------|------|
-| `server-api/db_v21/` | SQLAlchemy models (22 tables) |
-| `server-api/models.py` | App entry — re-exports `db_v21` with legacy aliases |
-| `server-api/workflow.py` / `admin/*` | **Ported** to v2.1 |
-| `server-api/alembic.v21.ini` | Alembic config |
-| `server-api/migrations_v21/` | `0001` → `0002` → `0003` → **`0004` (head)** |
-| `server-api/tests/test_v21_schema.py` | Disposable sqlite upgrade + inspector |
+| `server-api/Dockerfile` | `COPY . .` + build-time assert for `alembic.v21.ini` / `migrations_v21` / `db_v21` |
+| `docker-compose.yml` | Passes `DB_NAME`, `DB_*`, `DATABASE_URL` into `server-api` |
+| `docker-compose.ai.yml` | Loads `.env.database` (host secrets) |
+| `infra/deploy.sh` | Backup → unittest → **`alembic -c alembic.v21.ini upgrade head`** → recreate API → healthcheck / image rollback |
+| `.github/workflows/gitmain.yml` | **Deploy only on `push` to `main`** |
 
-Legacy `deploy.sh` `alembic -c alembic.ini` remains on **ok_*** until cutover.
+Legacy `alembic.ini` / `migrations/` remain for history; deploy no longer runs them.
 
-## Schema decisions (final)
+## Pre-cutover checklist (operator)
 
-1. **Auth:** `accounts` + `account_sessions` + `password_reset_tokens`; nicknames on `room_members`.
-2. **Idempotency:** create/join on `room_members`; other scopes on `idempotency_records` (+ `payload`).
-3. **AI / condition / proposal JSON** restored with normalized companion tables.
-4. **No `room_cycles`:** extend uses idempotency ledger; cycle meta in `meeting_settings._lifecycle`.
-5. **API compat on rooms:** `progress_status`, `meeting_settings`, `dirty`, `current_round`, `host_member_id`.
+1. On Ubuntu PG 18 host: create empty DB `potato_server_v2` (no DROP of legacy DB).
+2. Backup legacy: `python3 infra/backup_database.py` with env still pointing at legacy **or** set `DB_NAME` temporarily for backup only — prefer backing up legacy explicitly before switching env.
+3. Point host `.env` / `.env.database` to:
+   - `DB_NAME=potato_server_v2`
+   - matching `DB_USER` / `DB_PASSWORD` / `DB_HOST` / `DB_PORT`
+   - `DATABASE_URL` empty **or** URL whose path is `/potato_server_v2`
+4. Confirm compose injects the name:
+   ```sh
+   docker compose -f docker-compose.yml -f docker-compose.ai.yml run --rm --no-deps server-api printenv DB_NAME
+   # → potato_server_v2
+   ```
+5. Optional dry-run migration (before main merge):
+   ```sh
+   docker compose … run --rm --no-deps server-api alembic -c alembic.v21.ini upgrade head
+   docker compose … run --rm --no-deps server-api alembic -c alembic.v21.ini current
+   # expect 20261101_0004
+   ```
 
-## Apply to empty `mashlab_v21` only
+## Deploy path (after `main` merge — not done in this prep)
 
-1. Backup production: `python3 infra/backup_database.py`
-2. Confirm `mashlab_v21` has **no application tables**.
-3. Run (session env — do not overwrite production `.env` yet):
+1. Push/merge to `main` → Actions `test` then `deploy` (main push only).
+2. `deploy.sh` on host:
+   - asserts `DB_NAME=potato_server_v2`
+   - backups current configured DB
+   - builds image (includes v21 Alembic files)
+   - runs unit tests with `DATABASE_URL=sqlite://`
+   - `alembic -c alembic.v21.ini upgrade head`
+   - `up -d --no-deps server-api`
+   - OpenAPI healthcheck; on failure retags previous image and restarts API (**schema changes already applied are kept**; no DROP)
+
+## Rollback
+
+| Layer | Action |
+|-------|--------|
+| App container | Automatic in `deploy.sh` on failed healthcheck (previous image) |
+| Manual app | `docker tag <previous> …` then `compose up -d --no-deps server-api` |
+| Database | Restore from `/home/linuxuser/conditional-ok-backups/postgres/*.dump` via `backup_database.py --verify-restore` drill / `pg_restore` into a **new** DB name — never overwrite legacy without approval |
+| Traffic | Keep Caddy pointing at API; do not delete `mashpotato-server-db` |
+
+## Anti-mix rules
+
+- v2.1 code + `alembic.v21.ini` → **only** `potato_server_v2`
+- Legacy `ok_*` + old app image → **only** `mashpotato-server-db`
+- Never run `alembic -c alembic.ini` against `potato_server_v2`
+- Never run `alembic -c alembic.v21.ini` against `mashpotato-server-db`
+
+## Local verification (non-prod)
 
 ```sh
 cd server-api
-export DATABASE_URL='postgresql+psycopg://USER:PASS@127.0.0.1:5432/mashlab_v21'
-alembic -c alembic.v21.ini upgrade head
-alembic -c alembic.v21.ini current   # expect 20261101_0004
-python -m unittest tests.test_v21_schema tests.test_workflow tests.test_admin tests.test_user_auth -v
+set DATABASE_URL=sqlite://
+set ADMIN_ENABLED=0
+python -m unittest discover -s tests -v
+python -m unittest tests.test_v21_schema -v
 ```
-
-## Production cutover (requires separate approval)
-
-1. Backup `mashpotato-server-db`.
-2. Ensure `mashlab_v21` is at head **`20261101_0004`**.
-3. Stop writes / drain traffic.
-4. Point root `.env` `DB_NAME` / `DATABASE_URL` to `mashlab_v21`.
-5. Switch deploy Alembic to v21:
-
-```sh
-# infra/deploy.sh (after approval)
-alembic -c alembic.v21.ini upgrade head
-```
-
-6. Redeploy FastAPI; verify meetings + admin OTP/session.
-7. Keep old DB for a retention window; **delete only after explicit approval**.
-
-## Done in code / still blocked on approval
-
-| Done | Needs approval |
-|------|----------------|
-| ORM + workflow/admin port | `alembic.v21.ini upgrade` on `mashlab_v21` |
-| Unit tests (sqlite) | Live `.env` `DB_NAME` switch |
-| Migration `0003` | `deploy.sh` → v21 Alembic |
-| | Data migration (none planned) / drop old DB |
