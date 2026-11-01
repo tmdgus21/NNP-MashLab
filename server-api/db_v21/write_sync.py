@@ -28,6 +28,18 @@ def _interval_bounds(date_str: str, start_min: int, end_min: int) -> tuple[datet
     return day + timedelta(minutes=int(start_min)), day + timedelta(minutes=int(end_min))
 
 
+def wall_clock_seoul(dt: datetime) -> datetime:
+    """Normalize a stored datetime to Asia/Seoul wall clock for assertions/display.
+
+    PostgreSQL TIMESTAMPTZ returns an aware instant — convert with astimezone.
+    SQLite strips tzinfo and keeps the written clock numbers; attach Seoul rather
+    than calling astimezone on naive values (that would treat them as local/UTC).
+    """
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=SEOUL)
+    return dt.astimezone(SEOUL)
+
+
 def sync_condition_normalized(db, submission: ConditionSubmission, confirmed: dict, room_id: str) -> None:
     """Derive slots/preferences from the same payload stored in `confirmed`."""
     db.execute(

@@ -154,16 +154,21 @@ class WorkflowTests(unittest.TestCase):
             self.assertIsNotNone(db.get(Member,created_event.actor_member_id))
             self.assertIsNotNone(db.get(Member,joined_event.actor_member_id))
 
-    def test_condition_slots_use_asia_seoul_wall_clock(self):
-        """09:00~12:00 input must persist as Asia/Seoul 09:00~12:00 on TIMESTAMPTZ columns."""
-        from zoneinfo import ZoneInfo
-        from db_v21.write_sync import _interval_bounds
-        seoul=ZoneInfo('Asia/Seoul')
+    def test_interval_bounds_emits_asia_seoul_offset(self):
+        """Unit: _interval_bounds builds aware KST (+09:00) wall-clock datetimes."""
+        from datetime import timedelta
+        from db_v21.write_sync import SEOUL, _interval_bounds
         start,end=_interval_bounds('2026-10-17',540,720)
-        self.assertEqual(start.astimezone(seoul).strftime('%Y-%m-%d %H:%M'),'2026-10-17 09:00')
-        self.assertEqual(end.astimezone(seoul).strftime('%Y-%m-%d %H:%M'),'2026-10-17 12:00')
         self.assertIsNotNone(start.tzinfo)
         self.assertIsNotNone(end.tzinfo)
+        self.assertEqual(start.utcoffset(),timedelta(hours=9))
+        self.assertEqual(end.utcoffset(),timedelta(hours=9))
+        self.assertEqual(start.astimezone(SEOUL).strftime('%Y-%m-%d %H:%M'),'2026-10-17 09:00')
+        self.assertEqual(end.astimezone(SEOUL).strftime('%Y-%m-%d %H:%M'),'2026-10-17 12:00')
+
+    def test_condition_slots_sqlite_roundtrip_seoul_wall_clock(self):
+        """SQLite drops tzinfo; wall-clock numbers must still read as KST 09:00~12:00."""
+        from db_v21.write_sync import wall_clock_seoul
         payload=conditions(['진행'])  # default availability is 09:00~12:00 (540~720)
         self.assertEqual(payload['availability'],[{'date':'2026-10-17','start':540,'end':720}])
         self.assertEqual(self.mutate('/conditions',method='put',conditions=payload).status_code,200)
@@ -171,8 +176,9 @@ class WorkflowTests(unittest.TestCase):
             submission=db.scalar(select(Submission).where(Submission.member_id==self.host['actorId']))
             slot=db.scalar(select(ConditionAvailableSlot).where(ConditionAvailableSlot.condition_submission_id==submission.id))
             self.assertIsNotNone(slot)
-            self.assertEqual(slot.starts_at.astimezone(seoul).strftime('%Y-%m-%d %H:%M'),'2026-10-17 09:00')
-            self.assertEqual(slot.ends_at.astimezone(seoul).strftime('%Y-%m-%d %H:%M'),'2026-10-17 12:00')
+            # CI host TZ is UTC; never call astimezone() on naive SQLite values.
+            self.assertEqual(wall_clock_seoul(slot.starts_at).strftime('%Y-%m-%d %H:%M'),'2026-10-17 09:00')
+            self.assertEqual(wall_clock_seoul(slot.ends_at).strftime('%Y-%m-%d %H:%M'),'2026-10-17 12:00')
 
     def test_auth_self_only_and_conflicts(self):
         self.assertEqual(self.client.get('/v1/meetings/'+self.id).status_code,401)
