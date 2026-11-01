@@ -1,0 +1,413 @@
+{
+  "summary": {
+    "boot_id": "eaa24c2b-c22a-4d06-ba13-08ea5b691e2d",
+    "model_pid": 972,
+    "passed": 10,
+    "total": 10,
+    "mean_seconds": 10.503,
+    "median_seconds": 7.196,
+    "min_seconds": 6.367,
+    "max_seconds": 27.078,
+    "first_request_seconds": 27.078,
+    "warm_mean_seconds": 8.661,
+    "memory_before": {
+      "VmHWM_KiB": 2767296,
+      "VmRSS_KiB": 2767296,
+      "VmSwap_KiB": 0
+    },
+    "memory_after": {
+      "VmHWM_KiB": 2826796,
+      "VmRSS_KiB": 2826796,
+      "VmSwap_KiB": 0
+    },
+    "sampled_peak_RSS_KiB": 2826796,
+    "sampled_mean_RSS_KiB": 2824969,
+    "memory_samples": 420
+  },
+  "results": [
+    {
+      "id": 1,
+      "category": "가능시간",
+      "request": {
+        "text": "오후 2시부터 오후 4시까지 가능해요.",
+        "meeting_date": "2026-10-17"
+      },
+      "expected": {
+        "availability": [
+          {
+            "date": "2026-10-17",
+            "start": "14:00",
+            "end": "16:00",
+            "kind": "available",
+            "strength": "required"
+          }
+        ],
+        "role_preferences": [],
+        "role_unavailable": [],
+        "companion_requirement": [],
+        "ambiguities": []
+      },
+      "actual": {
+        "availability": [
+          {
+            "date": "2026-10-17",
+            "start": "14:00",
+            "end": "16:00",
+            "kind": "available",
+            "strength": "required"
+          }
+        ],
+        "role_preferences": [],
+        "role_unavailable": [],
+        "companion_requirement": [],
+        "ambiguities": []
+      },
+      "http_status": 200,
+      "pass": true,
+      "seconds": 27.078
+    },
+    {
+      "id": 2,
+      "category": "불가능시간",
+      "request": {
+        "text": "14:00~16:00에는 참여가 불가능해요.",
+        "meeting_date": "2026-10-17"
+      },
+      "expected": {
+        "availability": [
+          {
+            "date": "2026-10-17",
+            "start": "14:00",
+            "end": "16:00",
+            "kind": "unavailable",
+            "strength": "required"
+          }
+        ],
+        "role_preferences": [],
+        "role_unavailable": [],
+        "companion_requirement": [],
+        "ambiguities": []
+      },
+      "actual": {
+        "availability": [
+          {
+            "date": "2026-10-17",
+            "start": "14:00",
+            "end": "16:00",
+            "kind": "unavailable",
+            "strength": "required"
+          }
+        ],
+        "role_preferences": [],
+        "role_unavailable": [],
+        "companion_requirement": [],
+        "ambiguities": []
+      },
+      "http_status": 200,
+      "pass": true,
+      "seconds": 10.391
+    },
+    {
+      "id": 3,
+      "category": "역할선호·역할불가",
+      "request": {
+        "text": "기록 역할을 선호해요. 촬영 역할은 못 해요.",
+        "meeting_date": "2026-10-17"
+      },
+      "expected": {
+        "availability": [],
+        "role_preferences": [
+          {
+            "role": "기록",
+            "strength": "preferred"
+          }
+        ],
+        "role_unavailable": [
+          "촬영"
+        ],
+        "companion_requirement": [],
+        "ambiguities": []
+      },
+      "actual": {
+        "availability": [],
+        "role_preferences": [
+          {
+            "role": "기록",
+            "strength": "preferred"
+          }
+        ],
+        "role_unavailable": [
+          "촬영"
+        ],
+        "companion_requirement": [],
+        "ambiguities": []
+      },
+      "http_status": 200,
+      "pass": true,
+      "seconds": 7.32
+    },
+    {
+      "id": 4,
+      "category": "필수역할",
+      "request": {
+        "text": "저는 반드시 진행 역할을 맡아야 해요.",
+        "meeting_date": "2026-10-17"
+      },
+      "expected": {
+        "availability": [],
+        "role_preferences": [
+          {
+            "role": "진행",
+            "strength": "required"
+          }
+        ],
+        "role_unavailable": [],
+        "companion_requirement": [],
+        "ambiguities": []
+      },
+      "actual": {
+        "availability": [],
+        "role_preferences": [
+          {
+            "role": "진행",
+            "strength": "required"
+          }
+        ],
+        "role_unavailable": [],
+        "companion_requirement": [],
+        "ambiguities": []
+      },
+      "http_status": 200,
+      "pass": true,
+      "seconds": 6.48
+    },
+    {
+      "id": 5,
+      "category": "필수동행",
+      "request": {
+        "text": "민지와 반드시 함께 참여해야 해요.",
+        "meeting_date": "2026-10-17"
+      },
+      "expected": {
+        "availability": [],
+        "role_preferences": [],
+        "role_unavailable": [],
+        "companion_requirement": [
+          {
+            "person": "민지",
+            "relation": "together",
+            "strength": "required"
+          }
+        ],
+        "ambiguities": []
+      },
+      "actual": {
+        "availability": [],
+        "role_preferences": [],
+        "role_unavailable": [],
+        "companion_requirement": [
+          {
+            "person": "민지",
+            "relation": "together",
+            "strength": "required"
+          }
+        ],
+        "ambiguities": []
+      },
+      "http_status": 200,
+      "pass": true,
+      "seconds": 7.071
+    },
+    {
+      "id": 6,
+      "category": "선호동행",
+      "request": {
+        "text": "민지와 가능하면 함께 참여하고 싶어요.",
+        "meeting_date": "2026-10-17"
+      },
+      "expected": {
+        "availability": [],
+        "role_preferences": [],
+        "role_unavailable": [],
+        "companion_requirement": [
+          {
+            "person": "민지",
+            "relation": "together",
+            "strength": "preferred"
+          }
+        ],
+        "ambiguities": []
+      },
+      "actual": {
+        "availability": [],
+        "role_preferences": [],
+        "role_unavailable": [],
+        "companion_requirement": [
+          {
+            "person": "민지",
+            "relation": "together",
+            "strength": "preferred"
+          }
+        ],
+        "ambiguities": []
+      },
+      "http_status": 200,
+      "pass": true,
+      "seconds": 6.859
+    },
+    {
+      "id": 7,
+      "category": "모호한 시간대",
+      "request": {
+        "text": "저녁쯤 가능해요.",
+        "meeting_date": "2026-10-17"
+      },
+      "expected": {
+        "availability": [],
+        "role_preferences": [],
+        "role_unavailable": [],
+        "companion_requirement": [],
+        "ambiguities": [
+          "저녁의 정확한 시작과 종료 시간을 알려주세요."
+        ]
+      },
+      "actual": {
+        "availability": [],
+        "role_preferences": [],
+        "role_unavailable": [],
+        "companion_requirement": [],
+        "ambiguities": [
+          "저녁의 정확한 시작과 종료 시간을 알려주세요."
+        ]
+      },
+      "http_status": 200,
+      "pass": true,
+      "seconds": 6.367
+    },
+    {
+      "id": 8,
+      "category": "선호시간",
+      "request": {
+        "text": "14:00~16:00 시간이 좋아요.",
+        "meeting_date": "2026-10-17"
+      },
+      "expected": {
+        "availability": [
+          {
+            "date": "2026-10-17",
+            "start": "14:00",
+            "end": "16:00",
+            "kind": "available",
+            "strength": "preferred"
+          }
+        ],
+        "role_preferences": [],
+        "role_unavailable": [],
+        "companion_requirement": [],
+        "ambiguities": []
+      },
+      "actual": {
+        "availability": [
+          {
+            "date": "2026-10-17",
+            "start": "14:00",
+            "end": "16:00",
+            "kind": "available",
+            "strength": "preferred"
+          }
+        ],
+        "role_preferences": [],
+        "role_unavailable": [],
+        "companion_requirement": [],
+        "ambiguities": []
+      },
+      "http_status": 200,
+      "pass": true,
+      "seconds": 10.432
+    },
+    {
+      "id": 9,
+      "category": "모호한 시각",
+      "request": {
+        "text": "3시쯤 가능해요.",
+        "meeting_date": "2026-10-17"
+      },
+      "expected": {
+        "availability": [],
+        "role_preferences": [],
+        "role_unavailable": [],
+        "companion_requirement": [],
+        "ambiguities": [
+          "3시쯤의 정확한 시작과 종료 시간을 알려주세요."
+        ]
+      },
+      "actual": {
+        "availability": [],
+        "role_preferences": [],
+        "role_unavailable": [],
+        "companion_requirement": [],
+        "ambiguities": [
+          "3시쯤의 정확한 시작과 종료 시간을 알려주세요."
+        ]
+      },
+      "http_status": 200,
+      "pass": true,
+      "seconds": 6.48
+    },
+    {
+      "id": 10,
+      "category": "복수가능시간",
+      "request": {
+        "text": "09:00~10:00, 15:00~16:00 두 구간에 참여 가능해요.",
+        "meeting_date": "2026-10-17"
+      },
+      "expected": {
+        "availability": [
+          {
+            "date": "2026-10-17",
+            "start": "09:00",
+            "end": "10:00",
+            "kind": "available",
+            "strength": "required"
+          },
+          {
+            "date": "2026-10-17",
+            "start": "15:00",
+            "end": "16:00",
+            "kind": "available",
+            "strength": "required"
+          }
+        ],
+        "role_preferences": [],
+        "role_unavailable": [],
+        "companion_requirement": [],
+        "ambiguities": []
+      },
+      "actual": {
+        "availability": [
+          {
+            "date": "2026-10-17",
+            "start": "09:00",
+            "end": "10:00",
+            "kind": "available",
+            "strength": "required"
+          },
+          {
+            "date": "2026-10-17",
+            "start": "15:00",
+            "end": "16:00",
+            "kind": "available",
+            "strength": "required"
+          }
+        ],
+        "role_preferences": [],
+        "role_unavailable": [],
+        "companion_requirement": [],
+        "ambiguities": []
+      },
+      "http_status": 200,
+      "pass": true,
+      "seconds": 16.549
+    }
+  ]
+}

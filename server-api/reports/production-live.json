@@ -1,0 +1,64 @@
+{
+  "checks": [
+    {
+      "check": "create retry returns same session",
+      "pass": true
+    },
+    {
+      "check": "8 digit code",
+      "pass": true
+    },
+    {
+      "check": "identity and host authorization",
+      "pass": true
+    },
+    {
+      "check": "real Qwen parse",
+      "pass": true
+    },
+    {
+      "check": "AI does not submit conditions",
+      "pass": true
+    },
+    {
+      "check": "concurrent changes serialize",
+      "pass": true
+    },
+    {
+      "check": "actual CP-SAT feasible plan",
+      "pass": true
+    },
+    {
+      "check": "all agreed does not auto finalize",
+      "pass": true
+    },
+    {
+      "check": "withdrawal blocks finalize",
+      "pass": true
+    },
+    {
+      "check": "new round invalidates consents",
+      "pass": true
+    },
+    {
+      "check": "host finalization persists",
+      "pass": true
+    },
+    {
+      "check": "infeasible has no fake assignments",
+      "pass": true
+    },
+    {
+      "check": "legacy rooms remains compatible",
+      "pass": true
+    },
+    {
+      "check": "public invitation",
+      "pass": true
+    }
+  ],
+  "qwen_seconds": 20.365,
+  "room_id": "b261e67d-671e-4a8a-a62d-ca37041350e3",
+  "code": "W9K7RBGS",
+  "status": "finalized"
+}

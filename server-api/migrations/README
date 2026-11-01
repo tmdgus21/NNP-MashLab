@@ -1,0 +1,10 @@
+Alembic migrations for the Conditional OK `ok_*` schema.
+
+Local:
+  alembic -c alembic.local.ini upgrade head
+
+Docker / compose (DB_* or DATABASE_URL already set):
+  alembic -c alembic.ini upgrade head
+
+Existing production DB (do not recreate tables):
+  alembic -c alembic.ini stamp head
