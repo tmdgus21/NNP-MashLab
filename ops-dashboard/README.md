@@ -5,7 +5,7 @@
 ## 로컬 실행
 
 1. **운영과 분리된 로컬 PostgreSQL**을 준비하고 `server-api/.env.admin.example`의 값을 프로세스 환경변수로 설정합니다. 앱은 이 파일을 자동 로드하지 않습니다. 기존 `DATABASE_URL`, `APP_SESSION_SECRET`도 로컬 값으로 설정합니다. SMTP는 STARTTLS를 지원하는 실제 SMTP 계정이 필요합니다. `ADMIN_SECRET`은 최소 32자의 암호학적 난수입니다. 저장소에 비밀값을 넣지 마세요.
-2. `server-api`에서 `python -m pip install -r requirements.txt`, `python -m database`, `python migrations/003_admin.py --apply`. **선택한 로컬 DB에만** 실행합니다. 관리자 마이그레이션은 앱 시작 시 자동 실행하지 않습니다.
+2. `server-api`에서 `python -m pip install -r requirements.txt`, DB 연결 확인 `python -m database`, 스키마는 `alembic -c alembic.v21.ini upgrade head` (**로컬/폐기 가능 DB만**; 운영 `potato_server_v2`는 deploy 경로). 관리자 테이블은 v2.1 마이그레이션에 포함됩니다. `migrations/legacy/003_admin.py`는 실행하지 마세요.
 3. `python -m admin.cli create 관리자이메일 --role SUPER_ADMIN --reason "최초 관리자 수동 등록"`. 비밀번호는 숨김 입력으로만 받습니다. 공개 등록 API는 없습니다. 다른 관리자는 기본 `VIEWER`로 등록합니다.
 4. `ADMIN_ENABLED=1`, `ADMIN_ORIGIN=https://localhost:8443`을 설정하고 기존 서버를 `uvicorn main:app --host 127.0.0.1 --port 8000`으로 실행합니다.
 5. 이 디렉터리에서 `npm ci`, `npm run dev -- --port 5179`. 저장소 루트에서 설치된 Caddy로 `caddy run --config infra/Caddyfile.admin.local`. 로컬 CA 신뢰 설정 후 `https://localhost:8443` 접속. 쿠키의 Secure 설정을 낮추는 개발 우회는 없습니다.
@@ -26,10 +26,10 @@
 - `POST /admin-api/rooms/{id}/actions`: disable/enable/transfer/extend/actual_end, 사유·expectedRevision 필수. 연장은 Idempotency-Key 필수. actual_end는 진행 회차의 시간대 포함 시각만 허용하며 과거 회차를 다시 열지 않습니다.
 - `GET /admin-api/accounts`, `POST /admin-api/accounts/{id}/actions`: role/freeze/unfreeze. 자기 권한/동결 변경 금지. `GET /admin-api/audit?page=1`: 30건씩 조회.
 - `POST /v1/meetings/{id}/extensions`: 현재 방장, 기존 revision·Bearer 인증, 새 dates/reason/Idempotency-Key. 날짜 경과 후에는 관리자 승인만 허용합니다. 기존 모바일의 주요 화면과 JSON 계약을 바꾸지 않았으므로 **모바일 연장 버튼은 별도 연결이 필요**합니다.
-- 기존 `ok_rooms/members/condition_submissions/proposals/consents/room_events` 보존. 추가 테이블: `ok_admin_accounts/otps/sessions/audit/rate_limits`, `ok_room_lifecycle`, `ok_room_cycles`.
-- 진행(status), 종료(state), 관리(management)를 분리. Asia/Seoul 예정일 다음 날 00:00 또는 더 늦은 실제 종료 시각. 확정 후 종료=CLOSED_CONFIRMED, 미확정=EXPIRED, 취소=CANCELLED. 개최 여부는 단정하지 않습니다.
+- v2.1 테이블: `rooms`, `room_members`, `condition_submissions`, `proposals`, `consents`, `room_events`, `accounts` / admin OTP·세션·감사·rate limit, `room_controls`, `room_cycle_archives` 등 (`db_v21`, `alembic.v21.ini`). 레거시 `ok_*` / `mashpotato-server-db`는 보관용이며 이 대시보드 경로에서 마이그레이션하지 않습니다.
+- 진행(`progress_status`), 종료(lifecycle), 관리(management)를 분리. Asia/Seoul 예정일 다음 날 00:00 또는 더 늦은 실제 종료 시각. 확정 후 종료=CLOSED_CONFIRMED, 미확정=EXPIRED, 취소=CANCELLED. 개최 여부는 단정하지 않습니다.
 - 60초 정기 검사와 API 만료 검사. room row lock, revision, 고유 회차·요청 키로 중복/경합 방어. 연장 시 코드·참여자·옛 기록 유지, 현재 조건·배정·동의 초기화. 기존 조건 재제출을 참석·조건 재확인으로 처리하며 **별도 참석/불참 선택 UI/API는 아직 없습니다**.
-- 배포 전 기존 백업 정책으로 `pg_dump -Fc` 백업 및 별도 DB 복구 리허설을 해야 합니다. 003은 additive/idempotent이며 기존 테이블 삭제·데이터 덮어쓰기 없이 기록을 추가합니다. 되돌릴 때 ADMIN_ENABLED=0 및 기본 Caddy로 복원하고 추가 테이블을 삭제하지 않습니다.
+- 배포 전 `pg_dump -Fc` 백업과 `python3 infra/backup_database.py --verify-restore`(격리 `v21_restore_check_*` DB에서 `rooms`·`alembic_version` 확인)를 권장합니다. 스키마는 Alembic v2.1이 소유합니다. 되돌릴 때 `ADMIN_ENABLED=0` 및 기본 Caddy로 복원하고 테이블을 임의 DROP하지 않습니다.
 
 ## 검증
 
