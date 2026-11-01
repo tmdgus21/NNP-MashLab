@@ -571,10 +571,15 @@ class QwenProposalAgent:
         "ambiguities and do not invent missing values. Times are integer minutes "
         "after midnight in Asia/Seoul. Interpret duration separately from a "
         "clock-time window: '소요시간을 45분으로 줄여줘' and '모임 시간을 "
-        "30분 늘려줘' change the meeting length and must use SET_DURATION with "
-        "duration_minutes only. They do not add, remove, or move a time window. "
+        "30분 늘려줘' change the meeting length and must use SET_DURATION. "
+        "SET_DURATION requires duration_minutes only; operation is optional and "
+        "defaults to SET. When operation is INCREASE or DECREASE, "
+        "duration_minutes is the requested delta, not the final length. These "
+        "requests do not add, remove, or move a time window. "
         "For example, if get_meeting_constraints reports a current duration of "
-        "60 minutes, '모임 시간을 30분 늘려줘' means SET_DURATION with 90. "
+        "60 minutes, '모임 시간을 30분 늘려줘' means SET_DURATION with "
+        "operation=INCREASE and duration_minutes=30. An exact 45-minute target "
+        "means SET_DURATION with duration_minutes=45 and no operation field. "
         "Use REMOVE_TIME_WINDOW only when the user explicitly asks to delete "
         "an existing exact time-window condition. Copy its date, startMinute, "
         "and endMinute exactly from get_meeting_constraints; never invent a "
@@ -583,13 +588,13 @@ class QwenProposalAgent:
         "current duration is not already in the context. Use only values "
         "explicitly requested by the user or present in the read-only meeting "
         "context. If the requested date, time, duration, or condition cannot "
-        "be determined exactly, return ambiguities instead of guessing. The "
-        "intent schema has a flat intent object: include every schema key and "
-        "set fields not used by that intent to null. For example, an exact "
-        "45-minute duration is kind=SET_DURATION, operation=SET, minutes=45; "
-        "an increase of 30 minutes is kind=SET_DURATION, operation=INCREASE, "
-        "minutes=30. An ambiguous request uses intents=[] and a non-empty "
-        "ambiguities list. Never return both empty intents and empty ambiguities."
+        "be determined exactly, return ambiguities instead of guessing. Each "
+        "intent kind has its own schema: include only that kind's fields and "
+        "never add null placeholder fields. Use SET_MEETING_DATES only for "
+        "dates; use SET_START_TIME or SET_END_TIME for one clock boundary; use "
+        "ADD_TIME_WINDOW or REMOVE_TIME_WINDOW for a complete window. An "
+        "ambiguous request uses intents=[] and a non-empty ambiguities list. "
+        "Never return both empty intents and empty ambiguities."
     )
     ALLOWED_INTENT_TYPES = (
         "SET_MEETING_DATES",
@@ -626,6 +631,31 @@ class QwenProposalAgent:
         from potato_agent.qwen_proposals import RescheduleIntentExtraction
 
         return RescheduleIntentExtraction.model_json_schema()
+
+    @staticmethod
+    def _requires_meeting_constraints(request_text: str) -> bool:
+        normalized = " ".join(request_text.casefold().split())
+        has_constraint = any(
+            term in normalized for term in ("제약", "조건", "constraint")
+        )
+        has_inspection = any(
+            term in normalized
+            for term in ("확인", "조회", "살펴", "검토", "check", "inspect", "review")
+        )
+        explicitly_negated = any(
+            term in normalized
+            for term in (
+                "확인하지",
+                "조회하지",
+                "살펴보지",
+                "검토하지",
+                "don't check",
+                "do not check",
+                "don't inspect",
+                "do not inspect",
+            )
+        )
+        return has_constraint and has_inspection and not explicitly_negated
 
     @staticmethod
     def _extract_message(response: dict[str, Any]) -> dict[str, Any]:
@@ -670,6 +700,8 @@ class QwenProposalAgent:
         self.dispatcher.call_count = 0
         deadline = time.monotonic() + self.total_timeout_seconds
         response_schema = self._response_schema()
+        tool_result_chars = 0
+        preloaded_constraints: dict[str, Any] | None = None
         participant_context = [
             {
                 "participantId": participant.participant_id,
@@ -687,6 +719,21 @@ class QwenProposalAgent:
             "timeZone": snapshot.time_zone,
             "participants": participant_context,
         }
+        if self._requires_meeting_constraints(request_text):
+            preloaded_constraints = self.dispatcher.invoke(
+                "get_meeting_constraints",
+                "{}",
+                max_calls=self.max_tool_calls,
+                timeout_seconds=min(
+                    self.client.config.tool_timeout_seconds,
+                    max(0.0, deadline - time.monotonic()),
+                ),
+            )
+            self._tool_calls_for_request += 1
+            user_context["meetingConstraints"] = preloaded_constraints
+            tool_result_chars += len(
+                json.dumps(preloaded_constraints, ensure_ascii=False)
+            )
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": self.SYSTEM_PROMPT},
             {
@@ -697,7 +744,6 @@ class QwenProposalAgent:
         validation_retry_used = False
         model_requests = 0
         response_chars = 0
-        tool_result_chars = 0
         model_input_chars = 0
         tool_definition_chars = len(
             json.dumps(ReadOnlyToolDispatcher.definitions(), ensure_ascii=False)
@@ -809,7 +855,17 @@ class QwenProposalAgent:
                     )
                     continue
 
-            if self._tool_calls_for_request + len(tool_calls) > self.max_tool_calls:
+            cached_constraint_calls = 0
+            if preloaded_constraints is not None:
+                cached_constraint_calls = sum(
+                    1
+                    for call in tool_calls
+                    if isinstance(call, dict)
+                    and isinstance(call.get("function"), dict)
+                    and call["function"].get("name") == "get_meeting_constraints"
+                )
+            new_tool_calls = len(tool_calls) - cached_constraint_calls
+            if self._tool_calls_for_request + new_tool_calls > self.max_tool_calls:
                 raise LlamaCppError(
                     "TOOL_CALL_LIMIT", "The model exceeded the read-only tool call limit."
                 )
@@ -828,16 +884,36 @@ class QwenProposalAgent:
                     raise LlamaCppError(
                         "INVALID_TOOL_CALL", "The model returned a malformed tool call."
                     )
-                result = self.dispatcher.invoke(
-                    name,
-                    arguments,
-                    max_calls=self.max_tool_calls,
-                    timeout_seconds=min(
-                        self.client.config.tool_timeout_seconds,
-                        max(0.0, deadline - time.monotonic()),
-                    ),
-                )
-                self._tool_calls_for_request += 1
+                if name == "get_meeting_constraints" and preloaded_constraints is not None:
+                    if len(arguments.encode("utf-8")) > self.dispatcher.MAX_ARGUMENT_BYTES:
+                        raise LlamaCppError(
+                            "INVALID_TOOL_ARGUMENTS",
+                            "Tool arguments exceeded the size limit.",
+                        )
+                    try:
+                        parsed_arguments = json.loads(arguments)
+                    except json.JSONDecodeError as exc:
+                        raise LlamaCppError(
+                            "INVALID_TOOL_ARGUMENTS",
+                            "Tool arguments were not valid JSON.",
+                        ) from exc
+                    if not isinstance(parsed_arguments, dict) or parsed_arguments:
+                        raise LlamaCppError(
+                            "INVALID_TOOL_ARGUMENTS",
+                            "get_meeting_constraints takes no arguments.",
+                        )
+                    result = preloaded_constraints
+                else:
+                    result = self.dispatcher.invoke(
+                        name,
+                        arguments,
+                        max_calls=self.max_tool_calls,
+                        timeout_seconds=min(
+                            self.client.config.tool_timeout_seconds,
+                            max(0.0, deadline - time.monotonic()),
+                        ),
+                    )
+                    self._tool_calls_for_request += 1
                 tool_result = json.dumps(result, ensure_ascii=False)
                 tool_result_chars += len(tool_result)
                 messages.append(

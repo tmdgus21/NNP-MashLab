@@ -32,6 +32,7 @@ from potato_agent.qwen_proposals import (
     ProposalStatus,
     ProposalValidationError,
     RescheduleProposalDraft,
+    parse_intent_payload,
     parse_proposal_payload,
     proposal_scope,
     validate_proposal,
@@ -96,23 +97,14 @@ def _llm_response(content: str):
 def _intent_output(proposal_output: dict[str, Any]) -> dict[str, Any]:
     intents = []
     for change in proposal_output.get("changes", ()):
-        intent = {
-            "kind": change["kind"],
-            "operation": None,
-            "minutes": None,
-            "dates": None,
-            "date": None,
-            "minute": None,
-            "start_minute": None,
-            "end_minute": None,
-            "participant_id": None,
-            "slots": None,
-        }
+        intent = {"kind": change["kind"]}
         if change["kind"] == "SET_DURATION":
-            intent["operation"] = change.get("operation", "SET")
-            intent["minutes"] = change.get(
-                "minutes", change.get("duration_minutes")
+            intent["duration_minutes"] = change.get(
+                "duration_minutes", change.get("minutes")
             )
+            operation = change.get("operation")
+            if operation not in (None, "SET"):
+                intent["operation"] = operation
         elif change["kind"] == "SET_MEETING_DATES":
             intent["dates"] = change["dates"]
         else:
@@ -297,6 +289,7 @@ def test_fixture_duration_language_maps_to_set_duration(
     )
 
     assert proposal.status == ProposalStatus.PROPOSED
+    assert proposal.ambiguities == ()
     assert proposal.changes[0].kind == "SET_DURATION"
     assert proposal.changes[0].duration_minutes == duration_minutes
     assert snapshot.model_dump(mode="json") == snapshot_before
@@ -529,6 +522,52 @@ def test_empty_intent_is_retried_and_fails_closed_when_repeated():
     assert retry_payload["originalRequest"] == "소요시간을 45분으로 줄여줘"
     assert len(client.requests) == 2
     assert snapshot.model_dump(mode="json") == snapshot_before
+
+
+def test_ambiguous_duration_is_preserved_for_user_clarification():
+    snapshot = sample_snapshot()
+    extraction = {
+        "base_input_revision": snapshot.input_revision,
+        "intents": [],
+        "ambiguities": ["요청한 소요시간의 기준이 모호합니다."],
+        "summary": "소요시간을 확인해야 합니다.",
+    }
+    client = ScriptedClient(
+        [_llm_response(json.dumps(extraction, ensure_ascii=False))]
+    )
+    agent, _, _ = _fixture_agent({}, client=client, snapshot=snapshot)
+    snapshot_before = snapshot.model_dump(mode="json")
+
+    proposal = agent.propose(
+        "시간을 적당히 줄여줘", snapshot, _actor(), today=TODAY
+    )
+
+    assert proposal.status == ProposalStatus.CLARIFICATION_REQUIRED
+    assert proposal.ambiguities == ("요청한 소요시간의 기준이 모호합니다.",)
+    assert proposal.changes == ()
+    assert snapshot.model_dump(mode="json") == snapshot_before
+
+
+def test_intent_kind_with_another_kind_fields_returns_explicit_schema_error():
+    payload = json.dumps(
+        {
+            "base_input_revision": 7,
+            "intents": [
+                {
+                    "kind": "SET_DURATION",
+                    "duration_minutes": 45,
+                    "date": "2026-11-08",
+                }
+            ],
+            "ambiguities": [],
+            "summary": "소요시간 변경",
+        }
+    )
+
+    with pytest.raises(ProposalValidationError) as error:
+        parse_intent_payload(payload)
+
+    assert error.value.code == "INTENT_SCHEMA_CONFLICT"
 
 
 def test_second_validation_failure_exits_without_applying_proposal():
@@ -901,12 +940,75 @@ def test_qwen_uses_only_read_tools_and_json_schema_response():
     assert json.loads(original_user_message["content"])["request"] == "45분으로 줄여줘"
 
 
+def test_explicit_constraint_check_runs_even_when_model_chooses_no_tool():
+    snapshot = sample_snapshot()
+    output = {
+        "base_input_revision": snapshot.input_revision,
+        "changes": [{"kind": "SET_DURATION", "duration_minutes": 45}],
+        "ambiguities": [],
+        "summary": "소요시간을 45분으로 변경합니다.",
+    }
+    client = ScriptedClient(
+        [_llm_response(json.dumps(_intent_output(output), ensure_ascii=False))]
+    )
+    agent, _, _ = _fixture_agent(output, client=client, snapshot=snapshot)
+    snapshot_before = snapshot.model_dump(mode="json")
+
+    proposal = agent.propose(
+        "현재 모임 제약을 확인한 다음, 소요시간을 45분으로 줄여줘.",
+        snapshot,
+        _actor(),
+        today=TODAY,
+    )
+
+    user_context = json.loads(client.requests[0]["messages"][-1]["content"])
+    assert proposal.status == ProposalStatus.PROPOSED
+    assert agent.dispatcher.call_count == 1
+    assert user_context["meetingConstraints"]["durationMinutes"] == 60
+    assert len(client.requests) == 1
+    assert snapshot.model_dump(mode="json") == snapshot_before
+
+
+def test_constraint_context_does_not_bypass_domain_validation():
+    snapshot = sample_snapshot()
+    invalid_output = {
+        "base_input_revision": snapshot.input_revision,
+        "changes": [
+            {
+                "kind": "REMOVE_TIME_WINDOW",
+                "date": SAMPLE_DATE.isoformat(),
+                "start_minute": 20 * 60,
+                "end_minute": 21 * 60,
+            }
+        ],
+        "ambiguities": [],
+        "summary": "시간창 조건을 삭제합니다.",
+    }
+    response = _llm_response(json.dumps(_intent_output(invalid_output)))
+    client = ScriptedClient([response, response])
+    agent, _, _ = _fixture_agent(invalid_output, client=client, snapshot=snapshot)
+
+    with pytest.raises(ProposalValidationError) as error:
+        agent.propose(
+            "현재 모임 제약을 확인하고 오후 8시부터 9시 조건을 삭제해줘",
+            snapshot,
+            _actor(),
+            today=TODAY,
+        )
+
+    assert error.value.code == "PROPOSAL_RETRY_EXHAUSTED"
+    assert error.value.__cause__.code == "CONDITION_NOT_FOUND"
+    assert agent.dispatcher.call_count == 1
+
+
 def test_structured_intent_schema_is_required_compact_and_output_is_bounded(
     monkeypatch,
 ):
     schema = QwenProposalAgent._response_schema()
-    intent_schema = schema["$defs"]["RescheduleIntent"]
-    intent_fields = set(intent_schema["properties"])
+    definitions = schema["$defs"]
+    duration_schema = definitions["SetDurationIntent"]
+    start_schema = definitions["SetStartTimeIntent"]
+    end_schema = definitions["SetEndTimeIntent"]
     client = LlamaCppClient(
         LlamaCppConfig(
             base_url="http://127.0.0.1:18081",
@@ -934,8 +1036,17 @@ def test_structured_intent_schema_is_required_compact_and_output_is_bounded(
         "ambiguities",
         "summary",
     }
-    assert set(intent_schema["required"]) == intent_fields
-    assert len(json.dumps(schema)) < 3000
+    assert set(duration_schema["required"]) == {"kind", "duration_minutes"}
+    assert set(duration_schema["properties"]) == {
+        "kind",
+        "duration_minutes",
+        "operation",
+    }
+    assert set(start_schema["required"]) == {"kind", "date", "minute"}
+    assert set(end_schema["required"]) == {"kind", "date", "minute"}
+    assert "date" not in duration_schema["properties"]
+    assert "minute" not in duration_schema["properties"]
+    assert len(json.dumps(schema)) < 10_000
     assert sent["max_tokens"] == 384
     assert sent["response_format"]["type"] == "json_schema"
     assert sent["response_format"]["json_schema"]["strict"] is True

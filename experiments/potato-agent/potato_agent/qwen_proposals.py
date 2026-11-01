@@ -7,7 +7,7 @@ import json
 from typing import Annotated, Literal
 from uuid import uuid4
 
-from pydantic import Field, StrictInt, StrictStr, model_validator
+from pydantic import Field, StrictInt, StrictStr, ValidationError, model_validator
 
 from potato_agent.models import (
     AbsoluteTimeWindow,
@@ -110,76 +110,87 @@ RescheduleChange = Annotated[
 ]
 
 
-_MinuteOfDay = Annotated[StrictInt, Field(ge=0, le=1440)]
 _PositiveDuration = Annotated[StrictInt, Field(gt=0, le=1440)]
 
 
-class RescheduleIntent(DomainModel):
-    kind: Literal[
-        "SET_DURATION",
-        "SET_MEETING_DATES",
-        "SET_START_TIME",
-        "SET_END_TIME",
-        "EXCLUDE_DATE",
-        "ADD_TIME_WINDOW",
-        "REMOVE_TIME_WINDOW",
-        "SET_PERSONAL_AVAILABILITY",
-    ]
-    operation: Literal["SET", "INCREASE", "DECREASE"] | None
-    minutes: _PositiveDuration | None
-    dates: tuple[date, ...] | None
-    date: date | None
-    minute: _MinuteOfDay | None
-    start_minute: _MinuteOfDay | None
-    end_minute: _MinuteOfDay | None
-    participant_id: StrictStr | None
-    slots: tuple[AvailabilitySlot, ...] | None
+class SetDurationIntent(DomainModel):
+    kind: Literal["SET_DURATION"]
+    duration_minutes: _PositiveDuration
+    operation: Literal["SET", "INCREASE", "DECREASE"] = "SET"
+
+
+class SetMeetingDatesIntent(DomainModel):
+    kind: Literal["SET_MEETING_DATES"]
+    dates: tuple[date, ...] = Field(min_length=1)
+
+
+class SetStartTimeIntent(DomainModel):
+    kind: Literal["SET_START_TIME"]
+    date: date
+    minute: Annotated[StrictInt, Field(ge=0, le=1439)]
+
+
+class SetEndTimeIntent(DomainModel):
+    kind: Literal["SET_END_TIME"]
+    date: date
+    minute: Annotated[StrictInt, Field(ge=1, le=1440)]
+
+
+class ExcludeDateIntent(DomainModel):
+    kind: Literal["EXCLUDE_DATE"]
+    date: date
+
+
+class AddTimeWindowIntent(DomainModel):
+    kind: Literal["ADD_TIME_WINDOW"]
+    date: date
+    start_minute: Annotated[StrictInt, Field(ge=0, le=1439)]
+    end_minute: Annotated[StrictInt, Field(ge=1, le=1440)]
 
     @model_validator(mode="after")
-    def validate_intent_fields(self) -> RescheduleIntent:
-        expected_fields = {
-            "SET_DURATION": {"operation", "minutes"},
-            "SET_MEETING_DATES": {"dates"},
-            "SET_START_TIME": {"date", "minute"},
-            "SET_END_TIME": {"date", "minute"},
-            "EXCLUDE_DATE": {"date"},
-            "ADD_TIME_WINDOW": {"date", "start_minute", "end_minute"},
-            "REMOVE_TIME_WINDOW": {"date", "start_minute", "end_minute"},
-            "SET_PERSONAL_AVAILABILITY": {"participant_id", "date", "slots"},
-        }[self.kind]
-        populated_fields = {
-            name
-            for name in (
-                "operation",
-                "minutes",
-                "dates",
-                "date",
-                "minute",
-                "start_minute",
-                "end_minute",
-                "participant_id",
-                "slots",
-            )
-            if getattr(self, name) is not None
-        }
-        if populated_fields != expected_fields:
-            raise ValueError(
-                f"{self.kind} requires exactly these fields: "
-                f"{', '.join(sorted(expected_fields))}."
-            )
-        if self.kind == "SET_MEETING_DATES" and not self.dates:
-            raise ValueError("SET_MEETING_DATES requires at least one date.")
-        if self.kind == "SET_START_TIME" and self.minute > 1439:
-            raise ValueError("A start minute must be before midnight.")
-        if self.kind == "SET_END_TIME" and self.minute < 1:
-            raise ValueError("An end minute must be after midnight.")
-        if self.kind in ("ADD_TIME_WINDOW", "REMOVE_TIME_WINDOW"):
-            if self.start_minute >= self.end_minute:
-                raise ValueError("A time-window intent must be non-empty.")
-        if self.kind == "SET_PERSONAL_AVAILABILITY":
-            if not self.slots or any(slot.date != self.date for slot in self.slots):
-                raise ValueError("Availability slots must match the intent date.")
+    def validate_interval(self) -> AddTimeWindowIntent:
+        if self.start_minute >= self.end_minute:
+            raise ValueError("A time-window intent must be non-empty.")
         return self
+
+
+class RemoveTimeWindowIntent(DomainModel):
+    kind: Literal["REMOVE_TIME_WINDOW"]
+    date: date
+    start_minute: Annotated[StrictInt, Field(ge=0, le=1439)]
+    end_minute: Annotated[StrictInt, Field(ge=1, le=1440)]
+
+    @model_validator(mode="after")
+    def validate_interval(self) -> RemoveTimeWindowIntent:
+        if self.start_minute >= self.end_minute:
+            raise ValueError("A time-window intent must be non-empty.")
+        return self
+
+
+class SetPersonalAvailabilityIntent(DomainModel):
+    kind: Literal["SET_PERSONAL_AVAILABILITY"]
+    participant_id: StrictStr
+    date: date
+    slots: tuple[AvailabilitySlot, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_slot_dates(self) -> SetPersonalAvailabilityIntent:
+        if any(slot.date != self.date for slot in self.slots):
+            raise ValueError("Availability slots must match the intent date.")
+        return self
+
+
+RescheduleIntent = Annotated[
+    SetDurationIntent
+    | SetMeetingDatesIntent
+    | SetStartTimeIntent
+    | SetEndTimeIntent
+    | ExcludeDateIntent
+    | AddTimeWindowIntent
+    | RemoveTimeWindowIntent
+    | SetPersonalAvailabilityIntent,
+    Field(discriminator="kind"),
+]
 
 
 class RescheduleIntentExtraction(DomainModel):
@@ -646,9 +657,19 @@ def parse_proposal_payload(payload: str, *, base_revision: int) -> ReschedulePro
 def parse_intent_payload(payload: str) -> RescheduleIntentExtraction:
     try:
         return RescheduleIntentExtraction.model_validate_json(payload)
-    except ValueError as exc:
+    except ValidationError as exc:
+        intent_field_conflict = any(
+            error["type"] in {"extra_forbidden", "missing"}
+            and "intents" in error["loc"]
+            for error in exc.errors()
+        )
         raise ProposalValidationError(
-            "INVALID_MODEL_OUTPUT", "The model output was not valid intent JSON."
+            "INTENT_SCHEMA_CONFLICT"
+            if intent_field_conflict
+            else "INVALID_MODEL_OUTPUT",
+            "Intent fields did not match the selected intent type."
+            if intent_field_conflict
+            else "The model output was not valid intent JSON.",
         ) from exc
 
 
@@ -671,16 +692,12 @@ def build_proposal_from_intents(
     changes: list[dict[str, object]] = []
     for intent in extraction.intents:
         if intent.kind == "SET_DURATION":
-            if intent.operation is None or intent.minutes is None:
-                raise ProposalValidationError(
-                    "INVALID_INTENT", "A duration intent requires an operation and minutes."
-                )
             if intent.operation == "SET":
-                duration_minutes = intent.minutes
+                duration_minutes = intent.duration_minutes
             elif intent.operation == "INCREASE":
-                duration_minutes = snapshot.duration_minutes + intent.minutes
+                duration_minutes = snapshot.duration_minutes + intent.duration_minutes
             else:
-                duration_minutes = snapshot.duration_minutes - intent.minutes
+                duration_minutes = snapshot.duration_minutes - intent.duration_minutes
             if not 0 < duration_minutes <= 1440:
                 raise ProposalValidationError(
                     "INVALID_DURATION", "The requested duration is outside the allowed range."
@@ -689,7 +706,7 @@ def build_proposal_from_intents(
                 {"kind": "SET_DURATION", "duration_minutes": duration_minutes}
             )
         else:
-            changes.append(intent.model_dump(mode="python", exclude_none=True))
+            changes.append(intent.model_dump(mode="python"))
 
     draft = RescheduleProposalDraft(
         base_input_revision=extraction.base_input_revision,

@@ -75,6 +75,11 @@ The CP-SAT adapter is local-only and accepts an injected snapshot and revision
   checks them. The agent exposes only the read-only meeting tools declared in
   `llama_cpp.py`. It does not optimize, persist candidates, approve changes, or
   finalize meetings.
+  Intent output uses a distinct schema for each intent kind; a duration intent
+  requires `duration_minutes` and does not request unrelated date or clock-time
+  fields. Requests that explicitly ask to inspect current meeting constraints
+  trigger a deterministic read-only `get_meeting_constraints` call before
+  inference, independent of the model's tool selection.
   `LocalProposalApprovalAdapter` is a non-durable test adapter; a proposal must
   be explicitly confirmed before it changes the local input snapshot.
   Duration changes and exact time-window removal are distinct operations.
