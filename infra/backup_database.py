@@ -98,8 +98,12 @@ secret_copy = backup_root / f"conditional-ok-{stamp}.env"
 shutil.copyfile(secret_source, secret_copy)
 os.chmod(secret_copy, 0o600)
 if args.verify_restore:
-    database = "ok_restore_check_" + stamp.lower()
-    assert re.fullmatch(r"ok_restore_check_\d{8}t\d{6}z", database)
+    # Drill only: restore into a throwaway DB, never into DB_NAME / production.
+    database = "v21_restore_check_" + stamp.lower()
+    assert re.fullmatch(r"v21_restore_check_\d{8}t\d{6}z", database)
+    if database == env["DB_NAME"]:
+        raise SystemExit("Refusing restore drill: temp DB name collides with configured DB_NAME")
+    print(f"Isolated restore drill into {database} (not {env['DB_NAME']}) ...")
     pg_client(["createdb", "-h", host, "-p", port, "-U", env["DB_USER"], database])
     try:
         with target.open("rb") as source:
@@ -120,6 +124,7 @@ if args.verify_restore:
                 ],
                 stdin=source,
             )
+        # v2.1 schema probes (potato_server_v2 / migrations_v21); not ok_rooms.
         pg_client(
             [
                 "psql",
@@ -134,10 +139,12 @@ if args.verify_restore:
                 "-v",
                 "ON_ERROR_STOP=1",
                 "-c",
-                "SELECT count(*) AS restored_rooms FROM ok_rooms;",
+                "SELECT count(*) AS restored_rooms FROM rooms;",
+                "-c",
+                "SELECT version_num FROM alembic_version;",
             ]
         )
-        print("Isolated database restore drill PASS")
+        print("Isolated database restore drill PASS (rooms + alembic_version)")
     finally:
         pg_client(["dropdb", "-h", host, "-p", port, "-U", env["DB_USER"], database])
 cutoff = datetime.datetime.now(datetime.timezone.utc).timestamp() - 14 * 86400

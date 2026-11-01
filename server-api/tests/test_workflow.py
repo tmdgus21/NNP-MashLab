@@ -1,12 +1,16 @@
 import os
-os.environ.setdefault("DATABASE_URL", "sqlite://")
+os.environ["DATABASE_URL"] = "sqlite://"
+os.environ["ADMIN_ENABLED"] = "0"
 import unittest
 from copy import deepcopy
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+import database as database_module
+database_module._engine = None
 from main import app
-from database import AIDraft, ConsentRow, Member, Proposal, Submission, initialize, session
+from database import AIDraft, ConsentRow, Member, Proposal, RoomEvent, Submission, initialize, session
+from models import ConditionAvailableSlot, ConditionRolePreference, ProposalAssignment, ProposalConditionInput
 from workflow_models import Conditions, CreateMeeting
 from optimizer import solve
 from ai_conditions import ParsedCondition
@@ -47,10 +51,23 @@ class WorkflowTests(unittest.TestCase):
     def test_full_round_flow(self):
         self.assertEqual(len(self.host['meeting']['code']),8)
         self.submit_all()
+        with session() as db:
+            host_sub=db.scalar(select(Submission).where(Submission.member_id==self.host['actorId']))
+            slots=list(db.scalars(select(ConditionAvailableSlot).where(ConditionAvailableSlot.condition_submission_id==host_sub.id)))
+            prefs=list(db.scalars(select(ConditionRolePreference).where(ConditionRolePreference.condition_submission_id==host_sub.id)))
+            self.assertEqual(len(slots),1)
+            self.assertGreaterEqual(len(prefs),1)
+            self.assertEqual(host_sub.confirmed['roles'],['진행'])
         calculation=self.mutate('/calculations')
         self.assertEqual(calculation.status_code,200,calculation.text)
         self.assertEqual(calculation.json()['plan']['solverStatus'],'OPTIMAL')
         self.assertEqual(self.get()['round'],1)
+        with session() as db:
+            proposal=db.scalar(select(Proposal).where(Proposal.room_id==self.id,Proposal.round==1))
+            inputs=list(db.scalars(select(ProposalConditionInput).where(ProposalConditionInput.proposal_id==proposal.id)))
+            assigns=list(db.scalars(select(ProposalAssignment).where(ProposalAssignment.proposal_id==proposal.id)))
+            self.assertEqual(len(inputs),2)
+            self.assertEqual(len(assigns),len(proposal.plan['assignments']))
         self.assertEqual(self.mutate('/finalize').status_code,409)
         self.agree_all()
         self.assertEqual(self.get()['status'],'reviewing')
@@ -117,6 +134,51 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(one.json(),two.json())
         self.assertEqual(self.client.get('/join',params={'code':join['code']}).status_code,200)
         self.assertEqual(self.client.get('/join',params={'code':'invalid'}).status_code,422)
+
+    def test_member_events_flush_actor_before_room_event_fk(self):
+        """Regression: room_events.actor_member_id must reference an inserted room_members row."""
+        created=self.client.post('/v1/meetings',json=CONFIG)
+        self.assertEqual(created.status_code,201,created.text)
+        host_id=created.json()['actorId']
+        room_id=created.json()['meeting']['id']
+        joined=self.client.post('/v1/meetings/join',json={'code':created.json()['meeting']['code'],'name':'FK검증'})
+        self.assertEqual(joined.status_code,201,joined.text)
+        guest_id=joined.json()['actorId']
+        with session() as db:
+            created_event=db.scalar(select(RoomEvent).where(RoomEvent.room_id==room_id,RoomEvent.event_type=='ROOM_CREATED'))
+            joined_event=db.scalar(select(RoomEvent).where(RoomEvent.room_id==room_id,RoomEvent.event_type=='MEMBER_JOINED'))
+            self.assertIsNotNone(created_event)
+            self.assertIsNotNone(joined_event)
+            self.assertEqual(created_event.actor_member_id,host_id)
+            self.assertEqual(joined_event.actor_member_id,guest_id)
+            self.assertIsNotNone(db.get(Member,created_event.actor_member_id))
+            self.assertIsNotNone(db.get(Member,joined_event.actor_member_id))
+
+    def test_interval_bounds_emits_asia_seoul_offset(self):
+        """Unit: _interval_bounds builds aware KST (+09:00) wall-clock datetimes."""
+        from datetime import timedelta
+        from db_v21.write_sync import SEOUL, _interval_bounds
+        start,end=_interval_bounds('2026-10-17',540,720)
+        self.assertIsNotNone(start.tzinfo)
+        self.assertIsNotNone(end.tzinfo)
+        self.assertEqual(start.utcoffset(),timedelta(hours=9))
+        self.assertEqual(end.utcoffset(),timedelta(hours=9))
+        self.assertEqual(start.astimezone(SEOUL).strftime('%Y-%m-%d %H:%M'),'2026-10-17 09:00')
+        self.assertEqual(end.astimezone(SEOUL).strftime('%Y-%m-%d %H:%M'),'2026-10-17 12:00')
+
+    def test_condition_slots_sqlite_roundtrip_seoul_wall_clock(self):
+        """SQLite drops tzinfo; wall-clock numbers must still read as KST 09:00~12:00."""
+        from db_v21.write_sync import wall_clock_seoul
+        payload=conditions(['진행'])  # default availability is 09:00~12:00 (540~720)
+        self.assertEqual(payload['availability'],[{'date':'2026-10-17','start':540,'end':720}])
+        self.assertEqual(self.mutate('/conditions',method='put',conditions=payload).status_code,200)
+        with session() as db:
+            submission=db.scalar(select(Submission).where(Submission.member_id==self.host['actorId']))
+            slot=db.scalar(select(ConditionAvailableSlot).where(ConditionAvailableSlot.condition_submission_id==submission.id))
+            self.assertIsNotNone(slot)
+            # CI host TZ is UTC; never call astimezone() on naive SQLite values.
+            self.assertEqual(wall_clock_seoul(slot.starts_at).strftime('%Y-%m-%d %H:%M'),'2026-10-17 09:00')
+            self.assertEqual(wall_clock_seoul(slot.ends_at).strftime('%Y-%m-%d %H:%M'),'2026-10-17 12:00')
 
     def test_auth_self_only_and_conflicts(self):
         self.assertEqual(self.client.get('/v1/meetings/'+self.id).status_code,401)

@@ -12,6 +12,7 @@ from database import initialize
 from workflow import db_session, new_meeting, router as workflow_router, join_meeting
 from workflow_models import CreateMeeting, JoinMeeting
 from public_routes import router as public_router
+from user_auth import router as user_auth_router
 from admin.auth import router as admin_auth_router
 from admin.routes import router as admin_router
 from admin.security import enabled as admin_enabled
@@ -66,6 +67,7 @@ app = FastAPI(lifespan=lifespan)
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 app.include_router(ai_router)
 app.include_router(workflow_router)
+app.include_router(user_auth_router)
 app.include_router(public_router)
 app.include_router(admin_auth_router)
 app.include_router(admin_router)

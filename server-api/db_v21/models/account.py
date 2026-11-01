@@ -11,7 +11,11 @@ class Account(Base):
     __tablename__ = "accounts"
     __table_args__ = (
         CheckConstraint(
+<<<<<<< HEAD
             "account_type IN ('USER', 'ADMIN')",
+=======
+            "account_type IN ('USER', 'ADMIN', 'GUEST')",
+>>>>>>> 4a28f5df6e17f8be24ab6bebfa6f3bc599e6b284
             name="ck_accounts_account_type",
         ),
         CheckConstraint(
@@ -41,9 +45,13 @@ class Account(Base):
 
 class AccountSession(Base):
     __tablename__ = "account_sessions"
+<<<<<<< HEAD
     __table_args__ = (
         CheckConstraint("expires_at > created_at", name="ck_account_sessions_expires"),
     )
+=======
+    # expires_at may be moved into the past to force logout; no created/expires check.
+>>>>>>> 4a28f5df6e17f8be24ab6bebfa6f3bc599e6b284
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     account_id: Mapped[str] = mapped_column(

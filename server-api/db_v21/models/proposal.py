@@ -1,7 +1,23 @@
+<<<<<<< HEAD
 """Proposals, condition inputs, assignments, consents."""
 from datetime import datetime
 
 from sqlalchemy import (
+=======
+"""Proposals with JSON snapshots + normalized inputs/assignments/consents.
+
+Storage rule:
+- `input_snapshot` / `plan` preserve the exact solver input/output for audit and replay.
+- `proposal_condition_inputs` / `proposal_assignments` are the relational view used for
+  queries and integrity. They MUST match the same write that produced the JSON.
+- Re-assignment increments `round` (UNIQUE per room). Prior rows stay; mark old proposals
+  INVALIDATED instead of deleting.
+"""
+from datetime import datetime
+
+from sqlalchemy import (
+    JSON,
+>>>>>>> 4a28f5df6e17f8be24ab6bebfa6f3bc599e6b284
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -20,7 +36,13 @@ class Proposal(Base):
     __table_args__ = (
         UniqueConstraint("room_id", "round", name="uq_proposals_room_round"),
         CheckConstraint(
+<<<<<<< HEAD
             "solver_status IN ('PENDING', 'COMPLETED', 'FAILED')",
+=======
+            "solver_status IN ("
+            "'PENDING','COMPLETED','FAILED',"
+            "'OPTIMAL','FEASIBLE','INFEASIBLE','UNBOUNDED','ERROR','idle')",
+>>>>>>> 4a28f5df6e17f8be24ab6bebfa6f3bc599e6b284
             name="ck_proposals_solver_status",
         ),
         CheckConstraint(
@@ -36,6 +58,11 @@ class Proposal(Base):
     )
     round: Mapped[int] = mapped_column(Integer)
     source_revision: Mapped[int] = mapped_column(Integer)
+<<<<<<< HEAD
+=======
+    input_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    plan: Mapped[dict] = mapped_column(JSON, default=dict)
+>>>>>>> 4a28f5df6e17f8be24ab6bebfa6f3bc599e6b284
     solver_status: Mapped[str] = mapped_column(String(20), default="PENDING")
     proposal_status: Mapped[str] = mapped_column(String(40), default="PROPOSED")
     created_by_member_id: Mapped[str | None] = mapped_column(
@@ -103,7 +130,13 @@ class ProposalConsent(Base):
     __tablename__ = "proposal_consents"
     __table_args__ = (
         CheckConstraint(
+<<<<<<< HEAD
             "status IN ('PENDING', 'AGREED', 'WITHDRAWN', 'REJECTED')",
+=======
+            "status IN ("
+            "'PENDING','AGREED','WITHDRAWN','REJECTED',"
+            "'pending','agreed','review')",
+>>>>>>> 4a28f5df6e17f8be24ab6bebfa6f3bc599e6b284
             name="ck_proposal_consents_status",
         ),
     )
@@ -114,7 +147,12 @@ class ProposalConsent(Base):
     room_member_id: Mapped[str] = mapped_column(
         ForeignKey("room_members.id", ondelete="CASCADE"), primary_key=True
     )
+<<<<<<< HEAD
     status: Mapped[str] = mapped_column(String(20), default="PENDING")
+=======
+    # API uses lowercase agreed/pending/review; uppercase kept for v2.1 semantics
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+>>>>>>> 4a28f5df6e17f8be24ab6bebfa6f3bc599e6b284
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=now, onupdate=now

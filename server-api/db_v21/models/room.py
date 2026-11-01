@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 """Rooms, members, roles."""
 from datetime import datetime
 
@@ -5,6 +6,22 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+=======
+"""Rooms, members, roles.
+
+Idempotency for create/join mirrors ok_members: request_key_hash + request_hash on
+room_members. Same key with different payload → 409; same key+payload → replay.
+"""
+from datetime import datetime
+
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+>>>>>>> 4a28f5df6e17f8be24ab6bebfa6f3bc599e6b284
     Integer,
     String,
     UniqueConstraint,
@@ -24,6 +41,14 @@ class Room(Base):
             "'CONFIRMED','IN_PROGRESS','COMPLETED','CANCELLED')",
             name="ck_rooms_lifecycle_status",
         ),
+<<<<<<< HEAD
+=======
+        CheckConstraint(
+            "progress_status IN ("
+            "'collecting','reviewing','finalized','deleted','cancelled')",
+            name="ck_rooms_progress_status",
+        ),
+>>>>>>> 4a28f5df6e17f8be24ab6bebfa6f3bc599e6b284
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
@@ -31,12 +56,26 @@ class Room(Base):
     created_by_account_id: Mapped[str | None] = mapped_column(
         ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True, index=True
     )
+<<<<<<< HEAD
+=======
+    # OWNER room_member id (API hostId); kept denormalized for host checks without joins
+    host_member_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+>>>>>>> 4a28f5df6e17f8be24ab6bebfa6f3bc599e6b284
     title: Mapped[str] = mapped_column(String(100))
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     lifecycle_status: Mapped[str] = mapped_column(
         String(40), default="COLLECTING_CONDITIONS"
     )
+<<<<<<< HEAD
+=======
+    # API-facing progress (legacy ok_rooms.status)
+    progress_status: Mapped[str] = mapped_column(String(20), default="collecting")
+    # CreateMeeting dump + _lifecycle admin cycle metadata
+    meeting_settings: Mapped[dict] = mapped_column(JSON, default=dict)
+    dirty: Mapped[bool] = mapped_column(Boolean, default=True)
+    current_round: Mapped[int] = mapped_column(Integer, default=0)
+>>>>>>> 4a28f5df6e17f8be24ab6bebfa6f3bc599e6b284
     revision: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(
@@ -52,6 +91,11 @@ class RoomMember(Base):
     __table_args__ = (
         UniqueConstraint("room_id", "account_id", name="uq_room_members_room_account"),
         UniqueConstraint("room_id", "nickname", name="uq_room_members_room_nickname"),
+<<<<<<< HEAD
+=======
+        Index("ix_room_members_request_key_hash", "request_key_hash", unique=True),
+        Index("ix_room_members_token_hash", "token_hash", unique=True),
+>>>>>>> 4a28f5df6e17f8be24ab6bebfa6f3bc599e6b284
         CheckConstraint(
             "room_role IN ('OWNER', 'MEMBER')",
             name="ck_room_members_room_role",
@@ -72,6 +116,14 @@ class RoomMember(Base):
     nickname: Mapped[str] = mapped_column(String(30))
     room_role: Mapped[str] = mapped_column(String(20), default="MEMBER")
     membership_status: Mapped[str] = mapped_column(String(20), default="ACTIVE")
+<<<<<<< HEAD
+=======
+    # Meeting-scoped bearer token (workflow compatibility with ok_members.token_hash)
+    token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Idempotency for create/join (from ok_members)
+    request_key_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    request_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+>>>>>>> 4a28f5df6e17f8be24ab6bebfa6f3bc599e6b284
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     left_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # GPT Handoff: DB Schema v2.1 vs Current Repo Gap Checklist
 
 **목적:** ChatGPT/Cursor가 NNP-MashLab의 *현재 구현*과 *DB Schema v2.1 설계서* 차이를 바로 이해하도록 하는 컨텍스트 문서.  
@@ -202,3 +203,35 @@ infra/deploy.sh
 | admin이 v2.1 테이블인가? | **아니오** (`ok_admin_*` / lifecycle) |
 | 인프라는 v2.1 가이드와 맞나? | **대체로 예** |
 | 다음 큰 작업은? | v2.1 19모델 + Alembic 초기 리비전(빈 DB) + API는 후속; ok_* 전략 결정 필요 |
+=======
+# GPT Handoff: DB Schema 갭 체크리스트 (이력)
+
+**갱신:** 2026-11-02  
+**상태:** 이 문서의 초기 결론(“v2.1 미구현”)은 **구버전**이다.
+
+## 최신 진실은 여기
+
+→ **[docs/db-schema-status.md](db-schema-status.md)**  
+→ 모델/검증: [server-api/db_v21/README.md](../server-api/db_v21/README.md)  
+→ 컷오버: [infra/alembic-v21-cutover.md](../infra/alembic-v21-cutover.md)  
+→ API 이식 맵: [server-api/db_v21/COMPAT.md](../server-api/db_v21/COMPAT.md)
+
+## 2026-11-02 기준 요약
+
+| 항목 | 답 |
+|------|----|
+| v2.1 ORM/Alembic 코드 있나? | **예** (`db_v21`, head `20261101_0002`, 22테이블) |
+| 운영 DB가 v2.1인가? | **아니오** (`mashpotato-server-db` + `ok_*`) |
+| 신규 DB 이름 | `mashlab_v21` (앱 미연결) |
+| API가 v2.1인가? | **아니오** (아직 `workflow`/`admin`은 ok_*) |
+| 데이터 이전 | 없음 |
+| 다음 | 빈 DB upgrade → API 이식 → (승인) 연결 전환 |
+
+## 초기 갭 분석 (참고용, 2026-11-01)
+
+당시 기준: 운영은 `ok_*`만 존재하고 v2.1 모델은 레포에 없었음.  
+인프라(외부 PG, `DB_*`, Alembic 방향, main-only 배포)는 이미 가이드와 대체로 일치했음.
+
+상세 테이블 대 테이블 갭은 당시 PDF/`ok_*` 기준으로 작성되었으며,  
+**현재 코드의 단일 기준은 `db-schema-status.md`이다.**
+>>>>>>> 4a28f5df6e17f8be24ab6bebfa6f3bc599e6b284

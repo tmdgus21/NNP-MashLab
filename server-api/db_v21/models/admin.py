@@ -1,4 +1,12 @@
+<<<<<<< HEAD
 """Admin controls, audit, announcements, and security extras (OTP/rate/cycles)."""
+=======
+"""Admin controls, audit, announcements, OTP/rate limits, and idempotency ledger.
+
+No room_cycles / room_cycle_archives: one event per room; re-assignment uses proposals.round.
+Admin extension and other non-join mutations use idempotency_records.
+"""
+>>>>>>> 4a28f5df6e17f8be24ab6bebfa6f3bc599e6b284
 from datetime import datetime
 
 from sqlalchemy import (
@@ -99,7 +107,11 @@ class Announcement(Base):
 
 
 class AdminOtp(Base):
+<<<<<<< HEAD
     """Preserved from ok_admin_otps — not in core 19 tables."""
+=======
+    """Preserved from ok_admin_otps."""
+>>>>>>> 4a28f5df6e17f8be24ab6bebfa6f3bc599e6b284
 
     __tablename__ = "admin_otps"
 
@@ -114,7 +126,11 @@ class AdminOtp(Base):
 
 
 class AdminRateLimit(Base):
+<<<<<<< HEAD
     """Preserved from ok_admin_rate_limits — not in core 19 tables."""
+=======
+    """Preserved from ok_admin_rate_limits."""
+>>>>>>> 4a28f5df6e17f8be24ab6bebfa6f3bc599e6b284
 
     __tablename__ = "admin_rate_limits"
 
@@ -123,6 +139,7 @@ class AdminRateLimit(Base):
     reset: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
+<<<<<<< HEAD
 class RoomCycleArchive(Base):
     """Preserved from ok_room_cycles — admin cycle snapshots."""
 
@@ -142,4 +159,25 @@ class RoomCycleArchive(Base):
     request_key: Mapped[str] = mapped_column(String(100))
     request_hash: Mapped[str] = mapped_column(String(64))
     snapshot: Mapped[dict] = mapped_column(JSON)
+=======
+class IdempotencyRecord(Base):
+    """Duplicate-request ledger for non-join mutations (admin extend, etc.).
+
+    Replaces ok_room_cycles request_key/request_hash pairing without multi-event cycles.
+    """
+
+    __tablename__ = "idempotency_records"
+    __table_args__ = (
+        UniqueConstraint("scope", "key_hash", name="uq_idempotency_records_scope_key"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    scope: Mapped[str] = mapped_column(String(64))
+    key_hash: Mapped[str] = mapped_column(String(64))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    resource_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    resource_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Replay payload (e.g. extension cycle snapshot); optional
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+>>>>>>> 4a28f5df6e17f8be24ab6bebfa6f3bc599e6b284
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

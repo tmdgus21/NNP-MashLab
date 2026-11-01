@@ -1,7 +1,23 @@
+<<<<<<< HEAD
 """Condition submissions, available slots, role preferences."""
 from datetime import datetime
 
 from sqlalchemy import (
+=======
+"""Condition submissions with confirmed JSON + normalized slots/preferences.
+
+Storage rule:
+- `condition_available_slots` / `condition_role_preferences` are the source of truth
+  for queryable availability and role preference.
+- `confirmed` JSON is a denormalized snapshot of the member's submitted payload
+  (including extras not modeled as columns). On write, slots/preferences MUST be
+  derived from the same payload that is stored in `confirmed` so they never diverge.
+"""
+from datetime import datetime
+
+from sqlalchemy import (
+    JSON,
+>>>>>>> 4a28f5df6e17f8be24ab6bebfa6f3bc599e6b284
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -30,6 +46,10 @@ class ConditionSubmission(Base):
         ForeignKey("room_members.id", ondelete="CASCADE"), index=True
     )
     version: Mapped[int] = mapped_column(Integer)
+<<<<<<< HEAD
+=======
+    confirmed: Mapped[dict] = mapped_column(JSON, default=dict)
+>>>>>>> 4a28f5df6e17f8be24ab6bebfa6f3bc599e6b284
     ai_draft_id: Mapped[str | None] = mapped_column(
         ForeignKey("ai_drafts.id", ondelete="SET NULL"), nullable=True
     )

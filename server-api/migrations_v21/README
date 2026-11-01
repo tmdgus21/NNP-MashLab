@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 Alembic history for schema v2.1 (+ admin security extras).
 
 Parallel to legacy `migrations/` (ok_*). Use:
@@ -6,3 +7,17 @@ Parallel to legacy `migrations/` (ok_*). Use:
 
 Do not point production deploy at this chain until cutover is approved
 (see infra/alembic-v21-cutover.md).
+=======
+Alembic history for schema v2.1 (+ admin security / idempotency extras).
+
+Head: `20261101_0002`  
+Parallel to legacy `migrations/` (ok_*). Status overview: `docs/db-schema-status.md`.
+
+```sh
+alembic -c alembic.v21.ini upgrade head
+alembic -c alembic.v21.ini current
+```
+
+Do not point production deploy at this chain until cutover is approved
+(see `infra/alembic-v21-cutover.md`).
+>>>>>>> 4a28f5df6e17f8be24ab6bebfa6f3bc599e6b284
