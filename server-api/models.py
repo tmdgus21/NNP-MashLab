@@ -1,108 +1,173 @@
-"""Operational Conditional OK schema (ok_*). Single source for ORM + Alembic."""
-from datetime import datetime, timezone
-from uuid import uuid4
+"""Application ORM entrypoint — re-exports db_v21 with legacy field aliases.
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+Workflow/admin code may use historical names (Member, config, host_id, …).
+Physical schema lives in db_v21 / Alembic v21.
+"""
+from datetime import datetime, timedelta, timezone
 
+from sqlalchemy.orm import synonym
 
-def uid():
-    return str(uuid4())
+from db_v21 import (  # noqa: F401 — register metadata
+    Account,
+    AccountSession,
+    AdminAuditLog,
+    AdminOtp,
+    AdminRateLimit,
+    AiDraft,
+    Announcement,
+    Base,
+    ConditionAvailableSlot,
+    ConditionRolePreference,
+    ConditionSubmission,
+    IdempotencyRecord,
+    PasswordResetToken,
+    Proposal,
+    ProposalAssignment,
+    ProposalConditionInput,
+    ProposalConsent,
+    Room,
+    RoomControl,
+    RoomEvent,
+    RoomMember,
+    RoomRole,
+    ServiceControl,
+    now,
+    uid,
+)
 
+# --- Room legacy aliases -------------------------------------------------------
+Room.status = synonym("progress_status")
+Room.round = synonym("current_round")
+Room.config = synonym("meeting_settings")
+Room.host_id = synonym("host_member_id")
 
-def now():
-    return datetime.now(timezone.utc)
+# --- Member / condition / AI / consent aliases ---------------------------------
+RoomMember.created_at = synonym("joined_at")
+AiDraft.member_id = synonym("room_member_id")
+ConditionSubmission.member_id = synonym("room_member_id")
+ConditionSubmission.created_at = synonym("submitted_at")
+ProposalConsent.member_id = synonym("room_member_id")
 
+# Public names used by workflow.py / database.py
+Member = RoomMember
+Submission = ConditionSubmission
+AIDraft = AiDraft
+ConsentRow = ProposalConsent
 
-class Base(DeclarativeBase):
+# Stub kept for imports that still mention SchemaVersion (no-op table in v2.1)
+class SchemaVersion:  # pragma: no cover — unused after Alembic ownership
     pass
 
 
-class Room(Base):
-    __tablename__ = "ok_rooms"
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
-    code: Mapped[str] = mapped_column(String(8), unique=True, index=True)
-    host_id: Mapped[str] = mapped_column(String(36))
-    config: Mapped[dict] = mapped_column(JSON)
-    revision: Mapped[int] = mapped_column(Integer, default=1)
-    round: Mapped[int] = mapped_column(Integer, default=0)
-    status: Mapped[str] = mapped_column(String(20), default="collecting")
-    dirty: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+def room_time_bounds(settings: dict) -> tuple[datetime, datetime]:
+    """Derive rooms.starts_at / ends_at from meeting dates (+1 day end for check)."""
+    dates = sorted(settings.get("dates") or [])
+    if not dates:
+        start = now()
+        return start, start + timedelta(days=1)
+    start = datetime.fromisoformat(dates[0]).replace(tzinfo=timezone.utc)
+    end = datetime.fromisoformat(dates[-1]).replace(tzinfo=timezone.utc) + timedelta(days=1)
+    if end <= start:
+        end = start + timedelta(days=1)
+    return start, end
 
 
-class Member(Base):
-    __tablename__ = "ok_members"
-    __table_args__ = (
-        UniqueConstraint("room_id", "nickname"),
-        Index("ix_ok_members_request_key_hash", "request_key_hash", unique=True),
+def sync_room_roles(db, room: Room, roles: list[str], role_needs: dict | None = None) -> None:
+    """Replace room_roles from CreateMeeting roles / roleNeeds."""
+    from sqlalchemy import delete
+
+    db.execute(delete(RoomRole).where(RoomRole.room_id == room.id))
+    needs = role_needs or {}
+    for name in roles or []:
+        db.add(
+            RoomRole(
+                room_id=room.id,
+                name=name,
+                required_count=int(needs.get(name, 1) or 1),
+            )
+        )
+
+
+def ensure_guest_account(db, nickname: str = "") -> Account:
+    """Disposable GUEST account for anonymous create/join (not email USER signup)."""
+    from argon2 import PasswordHasher
+
+    account = Account(
+        login_email=f"guest-{uid()}@local.invalid",
+        password_hash=PasswordHasher().hash(uid()),
+        account_type="GUEST",
+        account_status="ACTIVE",
+        approved=True,
     )
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
-    room_id: Mapped[str] = mapped_column(ForeignKey("ok_rooms.id"), index=True)
-    nickname: Mapped[str] = mapped_column(String(30))
-    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    request_key_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    request_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    db.add(account)
+    db.flush()
+    return account
 
 
-class AIDraft(Base):
-    __tablename__ = "ok_ai_drafts"
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
-    member_id: Mapped[str] = mapped_column(ForeignKey("ok_members.id"), index=True)
-    raw_text: Mapped[str] = mapped_column(String(1500))
-    model_output: Mapped[dict] = mapped_column(JSON)
-    app_draft: Mapped[dict] = mapped_column(JSON)
-    questions: Mapped[list] = mapped_column(JSON)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+def resolve_user_account(db, account_token: str | None) -> Account | None:
+    """Resolve an email USER session token; rejects GUEST/ADMIN and expired/revoked."""
+    if not account_token:
+        return None
+    import hashlib
+    from sqlalchemy import select
+
+    token = account_token.removeprefix("Bearer ").strip() if account_token.startswith("Bearer ") else account_token.strip()
+    if not token:
+        return None
+    digest = hashlib.sha256(token.encode()).hexdigest()
+    row = db.scalar(select(AccountSession).where(AccountSession.token_hash == digest))
+    if not row or row.revoked_at is not None:
+        return None
+    expires = row.expires_at
+    if expires is None:
+        return None
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    if expires <= now():
+        return None
+    account = db.get(Account, row.account_id)
+    if (
+        not account
+        or account.account_type != "USER"
+        or account.account_status != "ACTIVE"
+        or not account.approved
+    ):
+        return None
+    return account
 
 
-class Submission(Base):
-    __tablename__ = "ok_condition_submissions"
-    __table_args__ = (UniqueConstraint("member_id", "version"),)
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
-    member_id: Mapped[str] = mapped_column(ForeignKey("ok_members.id"), index=True)
-    version: Mapped[int] = mapped_column(Integer)
-    confirmed: Mapped[dict] = mapped_column(JSON)
-    ai_draft_id: Mapped[str | None] = mapped_column(ForeignKey("ok_ai_drafts.id"), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
-
-
-class Proposal(Base):
-    __tablename__ = "ok_proposals"
-    __table_args__ = (UniqueConstraint("room_id", "round"),)
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
-    room_id: Mapped[str] = mapped_column(ForeignKey("ok_rooms.id"), index=True)
-    round: Mapped[int] = mapped_column(Integer)
-    source_revision: Mapped[int] = mapped_column(Integer)
-    input_snapshot: Mapped[dict] = mapped_column(JSON)
-    plan: Mapped[dict] = mapped_column(JSON)
-    solver_status: Mapped[str] = mapped_column(String(20))
-    finalized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
-
-
-class ConsentRow(Base):
-    __tablename__ = "ok_consents"
-    __table_args__ = (UniqueConstraint("proposal_id", "member_id"),)
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
-    proposal_id: Mapped[str] = mapped_column(ForeignKey("ok_proposals.id"), index=True)
-    member_id: Mapped[str] = mapped_column(ForeignKey("ok_members.id"), index=True)
-    status: Mapped[str] = mapped_column(String(20))
-    note: Mapped[str] = mapped_column(String(1000), default="")
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
-
-
-class RoomEvent(Base):
-    __tablename__ = "ok_room_events"
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
-    room_id: Mapped[str] = mapped_column(ForeignKey("ok_rooms.id"), index=True)
-    message: Mapped[str] = mapped_column(String(300))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
-
-
-class SchemaVersion(Base):
-    """Legacy version marker retained for parity with existing databases."""
-    __tablename__ = "ok_schema_versions"
-    version: Mapped[int] = mapped_column(Integer, primary_key=True)
-    applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+__all__ = [
+    "AIDraft",
+    "Account",
+    "AccountSession",
+    "AdminAuditLog",
+    "AdminOtp",
+    "AdminRateLimit",
+    "Announcement",
+    "Base",
+    "ConditionAvailableSlot",
+    "ConditionRolePreference",
+    "ConditionSubmission",
+    "ConsentRow",
+    "IdempotencyRecord",
+    "Member",
+    "PasswordResetToken",
+    "Proposal",
+    "ProposalAssignment",
+    "ProposalConditionInput",
+    "ProposalConsent",
+    "Room",
+    "RoomControl",
+    "RoomEvent",
+    "RoomMember",
+    "RoomRole",
+    "SchemaVersion",
+    "ServiceControl",
+    "Submission",
+    "ensure_guest_account",
+    "now",
+    "resolve_user_account",
+    "room_time_bounds",
+    "sync_room_roles",
+    "uid",
+]

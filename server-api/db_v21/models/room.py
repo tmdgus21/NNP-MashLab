@@ -6,6 +6,8 @@ room_members. Same key with different payload → 409; same key+payload → repl
 from datetime import datetime
 
 from sqlalchemy import (
+    JSON,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -29,6 +31,11 @@ class Room(Base):
             "'CONFIRMED','IN_PROGRESS','COMPLETED','CANCELLED')",
             name="ck_rooms_lifecycle_status",
         ),
+        CheckConstraint(
+            "progress_status IN ("
+            "'collecting','reviewing','finalized','deleted','cancelled')",
+            name="ck_rooms_progress_status",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
@@ -36,12 +43,20 @@ class Room(Base):
     created_by_account_id: Mapped[str | None] = mapped_column(
         ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # OWNER room_member id (API hostId); kept denormalized for host checks without joins
+    host_member_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(100))
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     lifecycle_status: Mapped[str] = mapped_column(
         String(40), default="COLLECTING_CONDITIONS"
     )
+    # API-facing progress (legacy ok_rooms.status)
+    progress_status: Mapped[str] = mapped_column(String(20), default="collecting")
+    # CreateMeeting dump + _lifecycle admin cycle metadata
+    meeting_settings: Mapped[dict] = mapped_column(JSON, default=dict)
+    dirty: Mapped[bool] = mapped_column(Boolean, default=True)
+    current_round: Mapped[int] = mapped_column(Integer, default=0)
     revision: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(

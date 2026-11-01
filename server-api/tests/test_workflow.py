@@ -1,12 +1,16 @@
 import os
-os.environ.setdefault("DATABASE_URL", "sqlite://")
+os.environ["DATABASE_URL"] = "sqlite://"
+os.environ["ADMIN_ENABLED"] = "0"
 import unittest
 from copy import deepcopy
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+import database as database_module
+database_module._engine = None
 from main import app
 from database import AIDraft, ConsentRow, Member, Proposal, Submission, initialize, session
+from models import ConditionAvailableSlot, ConditionRolePreference, ProposalAssignment, ProposalConditionInput
 from workflow_models import Conditions, CreateMeeting
 from optimizer import solve
 from ai_conditions import ParsedCondition
@@ -47,10 +51,23 @@ class WorkflowTests(unittest.TestCase):
     def test_full_round_flow(self):
         self.assertEqual(len(self.host['meeting']['code']),8)
         self.submit_all()
+        with session() as db:
+            host_sub=db.scalar(select(Submission).where(Submission.member_id==self.host['actorId']))
+            slots=list(db.scalars(select(ConditionAvailableSlot).where(ConditionAvailableSlot.condition_submission_id==host_sub.id)))
+            prefs=list(db.scalars(select(ConditionRolePreference).where(ConditionRolePreference.condition_submission_id==host_sub.id)))
+            self.assertEqual(len(slots),1)
+            self.assertGreaterEqual(len(prefs),1)
+            self.assertEqual(host_sub.confirmed['roles'],['진행'])
         calculation=self.mutate('/calculations')
         self.assertEqual(calculation.status_code,200,calculation.text)
         self.assertEqual(calculation.json()['plan']['solverStatus'],'OPTIMAL')
         self.assertEqual(self.get()['round'],1)
+        with session() as db:
+            proposal=db.scalar(select(Proposal).where(Proposal.room_id==self.id,Proposal.round==1))
+            inputs=list(db.scalars(select(ProposalConditionInput).where(ProposalConditionInput.proposal_id==proposal.id)))
+            assigns=list(db.scalars(select(ProposalAssignment).where(ProposalAssignment.proposal_id==proposal.id)))
+            self.assertEqual(len(inputs),2)
+            self.assertEqual(len(assigns),len(proposal.plan['assignments']))
         self.assertEqual(self.mutate('/finalize').status_code,409)
         self.agree_all()
         self.assertEqual(self.get()['status'],'reviewing')

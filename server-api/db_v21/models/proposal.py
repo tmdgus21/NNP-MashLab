@@ -29,7 +29,9 @@ class Proposal(Base):
     __table_args__ = (
         UniqueConstraint("room_id", "round", name="uq_proposals_room_round"),
         CheckConstraint(
-            "solver_status IN ('PENDING', 'COMPLETED', 'FAILED')",
+            "solver_status IN ("
+            "'PENDING','COMPLETED','FAILED',"
+            "'OPTIMAL','FEASIBLE','INFEASIBLE','UNBOUNDED','ERROR','idle')",
             name="ck_proposals_solver_status",
         ),
         CheckConstraint(
@@ -114,7 +116,9 @@ class ProposalConsent(Base):
     __tablename__ = "proposal_consents"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('PENDING', 'AGREED', 'WITHDRAWN', 'REJECTED')",
+            "status IN ("
+            "'PENDING','AGREED','WITHDRAWN','REJECTED',"
+            "'pending','agreed','review')",
             name="ck_proposal_consents_status",
         ),
     )
@@ -125,7 +129,8 @@ class ProposalConsent(Base):
     room_member_id: Mapped[str] = mapped_column(
         ForeignKey("room_members.id", ondelete="CASCADE"), primary_key=True
     )
-    status: Mapped[str] = mapped_column(String(20), default="PENDING")
+    # API uses lowercase agreed/pending/review; uppercase kept for v2.1 semantics
+    status: Mapped[str] = mapped_column(String(20), default="pending")
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=now, onupdate=now

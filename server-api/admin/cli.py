@@ -19,10 +19,17 @@ def main():
             if account: parser.error('Account already exists')
             password=getpass.getpass('Password (at least 12 characters): ')
             if len(password)<12 or password!=getpass.getpass('Confirm password: '): parser.error('Password confirmation failed')
-            account=Account(email=email,password_hash=PASSWORDS.hash(password),role=args.role)
+            account=Account(
+                login_email=email,
+                password_hash=PASSWORDS.hash(password),
+                account_type='ADMIN',
+                account_status='ACTIVE',
+                admin_role=args.role,
+                approved=True,
+            )
             db.add(account);db.flush()
         else:
-            if not account: parser.error('Account does not exist')
+            if not account or account.account_type!='ADMIN': parser.error('Account does not exist')
             account.frozen=False;account.revision+=1;revoke(db,account.id)
         log(db,'server-operator','account.'+args.command,account.id,args.reason)
     print('Administrator updated; no password or OTP printed.')

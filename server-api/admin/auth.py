@@ -71,7 +71,9 @@ def login(body: Login, request: Request, db=Depends(db_session)):
     sec.preauth(request)
     email = body.email.strip().lower()
     sec.rate(db, request, email)
-    account = db.scalar(select(Account).where(Account.email == email).with_for_update())
+    account = db.scalar(
+        select(Account).where(Account.email == email, Account.account_type == 'ADMIN').with_for_update()
+    )
     if account and (account.frozen or not account.approved): sec.error(403, '관리자 계정이 동결되었거나 승인되지 않았습니다.')
     valid = False
     if account:
@@ -103,8 +105,14 @@ def verify(body: Verify, request: Request, db=Depends(db_session)):
         sec.failure(db, account, 'otp.failed')
         sec.error(401, '인증번호가 올바르지 않거나 만료됐습니다.')
     otp.used, account.failures = True, 0
+    account.last_login_at = now()
     token = secrets.token_urlsafe(48)
-    row = AdminSession(digest=sec.digest(token), account_id=account.id, csrf=secrets.token_urlsafe(32), expires=now()+timedelta(hours=8))
+    row = AdminSession(
+        digest=sec.digest(token),
+        account_id=account.id,
+        csrf=secrets.token_urlsafe(32),
+        expires=now() + timedelta(hours=8),
+    )
     db.add(row)
     sec.log(db, account.id, 'login.success', account.id)
     response = JSONResponse({'email':account.email,'role':account.role,'csrf':row.csrf,'expiresAt':row.expires.isoformat()})

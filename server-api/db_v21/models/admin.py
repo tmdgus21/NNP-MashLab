@@ -6,6 +6,7 @@ Admin extension and other non-join mutations use idempotency_records.
 from datetime import datetime
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -143,4 +144,6 @@ class IdempotencyRecord(Base):
     request_hash: Mapped[str] = mapped_column(String(64))
     resource_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     resource_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Replay payload (e.g. extension cycle snapshot); optional
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

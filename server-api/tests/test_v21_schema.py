@@ -44,15 +44,26 @@ class V21SchemaTests(unittest.TestCase):
             db_path = Path(tmp) / "v21.db"
             url = f"sqlite:///{db_path.as_posix()}"
             previous = os.environ.get("DATABASE_URL")
+            # Alembic env.py load_dotenv(.env) may inject ADMIN_ENABLED; snapshot and restore.
+            previous_admin = os.environ.get("ADMIN_ENABLED")
             os.environ["DATABASE_URL"] = url
             try:
                 cfg = Config(str(ROOT / "alembic.v21.ini"))
                 command.upgrade(cfg, "head")
             finally:
-                if previous is None:
-                    os.environ.pop("DATABASE_URL", None)
+                # Always return to in-memory sqlite for sibling unit tests in this process.
+                os.environ["DATABASE_URL"] = "sqlite://"
+                if previous_admin is None:
+                    os.environ.pop("ADMIN_ENABLED", None)
                 else:
-                    os.environ["DATABASE_URL"] = previous
+                    os.environ["ADMIN_ENABLED"] = previous_admin
+                try:
+                    import database as database_module
+
+                    database_module._engine = None
+                except Exception:
+                    pass
+                _ = previous
 
             engine = create_engine(url)
             try:
@@ -61,6 +72,20 @@ class V21SchemaTests(unittest.TestCase):
                 self.assertEqual(EXPECTED_TABLES, tables)
                 self.assertEqual(22, len(tables))
                 self.assertNotIn("room_cycle_archives", tables)
+
+                room_cols = {c["name"] for c in insp.get_columns("rooms")}
+                self.assertTrue(
+                    {
+                        "progress_status",
+                        "meeting_settings",
+                        "dirty",
+                        "current_round",
+                        "host_member_id",
+                    }
+                    <= room_cols
+                )
+                idem_cols = {c["name"] for c in insp.get_columns("idempotency_records")}
+                self.assertIn("payload", idem_cols)
 
                 ai_cols = {c["name"] for c in insp.get_columns("ai_drafts")}
                 self.assertTrue(
