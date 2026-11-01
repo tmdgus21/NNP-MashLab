@@ -7,7 +7,9 @@ import httpx
 from fastapi.testclient import TestClient
 
 import ai_conditions as ai
-os.environ.setdefault("DATABASE_URL", "sqlite://")
+os.environ["DATABASE_URL"] = "sqlite://"
+import database as database_module
+database_module._engine = None
 from main import app
 from database import initialize
 

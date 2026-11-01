@@ -7,7 +7,7 @@ from datetime import timedelta
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from database import initialize, engine, session, Room, now
-from admin.models import AdminBase, CycleArchive
+from admin.models import CycleArchive
 from admin.lifecycle import extend, expire
 from main import app
 from unittest.mock import patch
@@ -17,7 +17,7 @@ class PostgresConcurrency(unittest.TestCase):
  def test_parallel_extension_and_expiration(self):
   self.assertEqual(engine().dialect.name,'postgresql')
   with patch.dict(os.environ,{'ADMIN_ENABLED':'1'}):
-   initialize();AdminBase.metadata.create_all(engine())
+   initialize()
    with TestClient(app) as client:
     day=(now()+timedelta(days=3)).date().isoformat()
     r=client.post('/v1/meetings',json={'name':'동시성 테스트','title':'격리 DB 테스트','dates':[day],'roles':['진행'],'duration':30,'windowStart':540,'windowEnd':600})
@@ -30,4 +30,4 @@ class PostgresConcurrency(unittest.TestCase):
      return extend(db,room,[new_day],revision,key,'test-operator','동시 요청 멱등성 검증',admin=True)
    with ThreadPoolExecutor(max_workers=4) as pool:results=list(pool.map(work,range(4)))
    self.assertEqual(sum(not r['replayed'] for r in results),1)
-   with session() as db:self.assertEqual(len(list(db.scalars(select(CycleArchive).where(CycleArchive.room_id==rid)))),1)
+   with session() as db:self.assertEqual(len(list(db.scalars(select(CycleArchive).where(CycleArchive.scope==f'extend:{rid}')))),1)
