@@ -4,8 +4,11 @@ Workflow/admin code may use historical names (Member, config, host_id, …).
 Physical schema lives in db_v21 / Alembic v21.
 """
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import synonym
+
+SEOUL = ZoneInfo("Asia/Seoul")
 
 from db_v21 import (  # noqa: F401 — register metadata
     Account,
@@ -60,13 +63,13 @@ class SchemaVersion:  # pragma: no cover — unused after Alembic ownership
 
 
 def room_time_bounds(settings: dict) -> tuple[datetime, datetime]:
-    """Derive rooms.starts_at / ends_at from meeting dates (+1 day end for check)."""
+    """Derive rooms.starts_at / ends_at from meeting dates in Asia/Seoul (+1 day end)."""
     dates = sorted(settings.get("dates") or [])
     if not dates:
         start = now()
         return start, start + timedelta(days=1)
-    start = datetime.fromisoformat(dates[0]).replace(tzinfo=timezone.utc)
-    end = datetime.fromisoformat(dates[-1]).replace(tzinfo=timezone.utc) + timedelta(days=1)
+    start = datetime.fromisoformat(dates[0]).replace(tzinfo=SEOUL)
+    end = datetime.fromisoformat(dates[-1]).replace(tzinfo=SEOUL) + timedelta(days=1)
     if end <= start:
         end = start + timedelta(days=1)
     return start, end

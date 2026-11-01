@@ -1,7 +1,8 @@
 """Keep JSON snapshots and normalized condition/proposal rows in sync on write."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, select
 
@@ -18,9 +19,12 @@ from db_v21.models.proposal import (
 from db_v21.models.room import RoomRole
 from db_v21.base import now
 
+# Meeting wall-clock times are Asia/Seoul; TIMESTAMPTZ stores the instant with offset.
+SEOUL = ZoneInfo("Asia/Seoul")
+
 
 def _interval_bounds(date_str: str, start_min: int, end_min: int) -> tuple[datetime, datetime]:
-    day = datetime.fromisoformat(date_str).replace(tzinfo=timezone.utc)
+    day = datetime.fromisoformat(date_str).replace(tzinfo=SEOUL)
     return day + timedelta(minutes=int(start_min)), day + timedelta(minutes=int(end_min))
 
 
