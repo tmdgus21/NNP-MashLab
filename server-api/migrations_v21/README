@@ -1,0 +1,8 @@
+Alembic history for schema v2.1 (+ admin security extras).
+
+Parallel to legacy `migrations/` (ok_*). Use:
+
+  alembic -c alembic.v21.ini upgrade head
+
+Do not point production deploy at this chain until cutover is approved
+(see infra/alembic-v21-cutover.md).
