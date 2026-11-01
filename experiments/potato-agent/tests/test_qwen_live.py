@@ -40,11 +40,12 @@ def test_live_qwen_tool_call_proposal_and_langgraph_recalculation(
     assert probe["model_id_verified"], f"Expected model ID not served: {probe}"
 
     snapshot = sample_snapshot()
+    snapshot_before = snapshot.model_dump(mode="json")
     actor = ProposalActor(participant_id="organizer-1")
     agent = QwenProposalAgent(client, LocalSnapshotReadTools(snapshot))
     started_at = time.perf_counter()
     proposal = agent.propose(
-        "현재 모임 제약을 확인한 다음, 일정 소요시간을 45분으로 줄이는 안을 제안해줘.",
+        "현재 모임 제약을 확인한 다음, 소요시간을 45분으로 줄여줘.",
         snapshot,
         actor,
         today=snapshot.dates[0],
@@ -52,12 +53,15 @@ def test_live_qwen_tool_call_proposal_and_langgraph_recalculation(
     inference_seconds = time.perf_counter() - started_at
 
     assert proposal.status == ProposalStatus.PROPOSED
-    assert any(
-        change.kind == "SET_DURATION" and change.duration_minutes == 45
-        for change in proposal.changes
-    )
+    assert proposal.ambiguities == ()
+    assert len(proposal.changes) == 1
+    assert proposal.changes[0].kind == "SET_DURATION"
+    assert proposal.changes[0].duration_minutes == 45
+    assert proposal.base_input_revision == snapshot.input_revision
     assert agent.dispatcher.call_count >= 1
+    assert snapshot.model_dump(mode="json") == snapshot_before
     assert snapshot.input_revision == 7
+    assert snapshot.consent_round == 1
     assert snapshot.duration_minutes == 60
     record_property("qwen_inference_seconds", inference_seconds)
     print(

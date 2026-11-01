@@ -564,7 +564,31 @@ class QwenProposalAgent:
         "from a name; use the authoritative participant IDs shown in context. "
         "If date, time, target, or requested change is ambiguous, populate "
         "ambiguities and do not invent missing values. Times are integer minutes "
-        "after midnight in Asia/Seoul."
+        "after midnight in Asia/Seoul. Interpret duration separately from a "
+        "clock-time window: '소요시간을 45분으로 줄여줘' and '모임 시간을 "
+        "30분 늘려줘' change the meeting length and must use SET_DURATION with "
+        "duration_minutes only. They do not add, remove, or move a time window. "
+        "For example, if get_meeting_constraints reports a current duration of "
+        "60 minutes, '모임 시간을 30분 늘려줘' means SET_DURATION with 90. "
+        "Use REMOVE_TIME_WINDOW only when the user explicitly asks to delete "
+        "an existing exact time-window condition. Copy its date, startMinute, "
+        "and endMinute exactly from get_meeting_constraints; never invent a "
+        "window to remove. Do not turn a duration into a start/end clock time. "
+        "For relative duration changes, call get_meeting_constraints if the "
+        "current duration is not already in the context. Use only values "
+        "explicitly requested by the user or present in the read-only meeting "
+        "context. If the requested date, time, duration, or condition cannot "
+        "be determined exactly, return ambiguities instead of guessing."
+    )
+    ALLOWED_CHANGE_TYPES = (
+        "SET_MEETING_DATES",
+        "SET_START_TIME",
+        "SET_END_TIME",
+        "SET_DURATION",
+        "EXCLUDE_DATE",
+        "ADD_TIME_WINDOW",
+        "REMOVE_TIME_WINDOW",
+        "SET_PERSONAL_AVAILABILITY",
     )
 
     def __init__(
@@ -655,8 +679,9 @@ class QwenProposalAgent:
                 "content": json.dumps(user_context, ensure_ascii=False),
             },
         ]
+        validation_retry_used = False
 
-        for _ in range(self.max_tool_calls + 1):
+        for _ in range(self.max_tool_calls + 2):
             response = self._chat(messages, deadline)
             message = self._extract_message(response)
             tool_calls = message.get("tool_calls") or []
@@ -664,19 +689,58 @@ class QwenProposalAgent:
                 raise LlamaCppError("INVALID_LOCAL_RESPONSE", "Tool call list is malformed.")
             if not tool_calls:
                 content = message.get("content")
-                if not isinstance(content, str) or not content:
-                    raise LlamaCppError(
-                        "INVALID_MODEL_OUTPUT", "The model returned no proposal JSON."
+                try:
+                    if not isinstance(content, str) or not content:
+                        raise ProposalValidationError(
+                            "INVALID_MODEL_OUTPUT",
+                            "The model returned no proposal JSON.",
+                        )
+                    draft = parse_proposal_payload(
+                        content, base_revision=snapshot.input_revision
                     )
-                draft = parse_proposal_payload(
-                    content, base_revision=snapshot.input_revision
-                )
-                proposal = validate_proposal(
-                    snapshot, actor, draft, today=today
-                )
-                if proposal.status.value == "CLARIFICATION_REQUIRED":
-                    return proposal
-                return proposal
+                    return validate_proposal(
+                        snapshot, actor, draft, today=today
+                    )
+                except ProposalValidationError as exc:
+                    if validation_retry_used:
+                        raise ProposalValidationError(
+                            "PROPOSAL_RETRY_EXHAUSTED",
+                            "The proposal remained invalid after one correction attempt "
+                            f"({exc.code}). No meeting data was changed.",
+                        ) from exc
+                    if exc.code in {
+                        "EMPTY_REQUEST",
+                        "ACTOR_NOT_ACTIVE",
+                        "STALE_INPUT_REVISION",
+                    }:
+                        raise
+                    validation_retry_used = True
+                    messages.append(message)
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": json.dumps(
+                                {
+                                    "validationError": {
+                                        "code": exc.code,
+                                    },
+                                    "allowedChangeTypes": self.ALLOWED_CHANGE_TYPES,
+                                    "instruction": (
+                                        "Generate the proposal again using only the "
+                                        "original request and authoritative meeting "
+                                        "context. Correct the validation error; do not "
+                                        "relax or bypass validation and do not invent "
+                                        "dates, times, participants, or conditions. "
+                                        "If the request cannot be represented safely, "
+                                        "return an empty changes list with a specific "
+                                        "ambiguity."
+                                    ),
+                                },
+                                ensure_ascii=False,
+                            ),
+                        }
+                    )
+                    continue
 
             if self._tool_calls_for_request + len(tool_calls) > self.max_tool_calls:
                 raise LlamaCppError(

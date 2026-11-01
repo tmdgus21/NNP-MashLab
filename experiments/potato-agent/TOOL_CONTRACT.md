@@ -31,10 +31,38 @@ The call is read-only. Do not send secrets, unrelated personal data, raw
 checkpoints, or all participant records where a bounded summary is sufficient.
 Participant names are context for clarification only; name-to-ID resolution
 must be an explicit user/server operation and must not be guessed by the model.
+The local adapter may additionally expose only these snapshot-scoped,
+read-only interpretation tools:
 
-The model cannot call the deterministic tools below. If an implementation
-chooses LangGraph tool-calling for Qwen, expose only this parser capability and
-validate every returned field as untrusted input.
+| Tool | Purpose | Boundary |
+|---|---|---|
+| `get_availability(participant_id)` | Read an accepted participant's submitted slots by authoritative ID. | Same snapshot only; no mutation |
+| `get_meeting_constraints()` | Read the current revision, configured dates, duration, and exact conditions. | Same snapshot only; no mutation |
+| `find_common_slots(date)` | Read common availability windows. | Does not create candidates or imply feasibility/approval |
+
+These are not optimizer or persistence tools. The model cannot invoke the
+internal deterministic tools listed below, and unknown tool names or invalid
+arguments fail closed.
+
+For the local `RescheduleProposalDraft` adapter, distinguish a meeting duration
+from clock-time constraints:
+
+| User intent | Change type | Required interpretation |
+|---|---|---|
+| "소요시간을 45분으로 줄여줘" | `SET_DURATION` | Set `duration_minutes` to 45; do not infer a date or clock time. |
+| "모임 시간을 30분 늘려줘" | `SET_DURATION` | Read current duration; if it is 60, set `duration_minutes` to 90. |
+| "11월 8일 오후 8시부터 9시까지 조건을 삭제해줘" | `REMOVE_TIME_WINDOW` | Remove only an exact existing date/start/end tuple copied from meeting constraints. |
+
+`REMOVE_TIME_WINDOW` is not a synonym for shortening a meeting's duration.
+The deterministic validator rejects any removal that does not match an
+existing exact condition. If schema or domain validation fails, the local
+adapter may request one corrected draft, supplying only the error code and
+permitted change types. The retry cannot relax validation; a second failure
+terminates with an explicit error and leaves the snapshot unchanged.
+
+The model cannot call the internal deterministic tools below. Implementations
+may expose the three read-only context tools above, then must validate every
+returned proposal field as untrusted input.
 
 ### Internal deterministic policy tools
 

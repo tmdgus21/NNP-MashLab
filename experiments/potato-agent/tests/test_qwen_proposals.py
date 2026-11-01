@@ -224,6 +224,234 @@ def test_fixture_duration_change_is_applied_only_after_confirmation():
     assert updated.input_revision == snapshot.input_revision + 1
 
 
+@pytest.mark.parametrize(
+    ("request_text", "duration_minutes"),
+    [
+        ("소요시간을 45분으로 줄여줘", 45),
+        ("모임 시간을 30분 늘려줘", 90),
+    ],
+)
+def test_fixture_duration_language_maps_to_set_duration(
+    request_text, duration_minutes
+):
+    snapshot = sample_snapshot()
+    output = {
+        "base_input_revision": snapshot.input_revision,
+        "changes": [
+            {"kind": "SET_DURATION", "duration_minutes": duration_minutes}
+        ],
+        "ambiguities": [],
+        "summary": f"소요시간을 {duration_minutes}분으로 변경합니다.",
+    }
+    agent, client, _ = _fixture_agent(output, snapshot=snapshot)
+    snapshot_before = snapshot.model_dump(mode="json")
+
+    proposal = agent.propose(
+        request_text, snapshot, _actor(), today=TODAY
+    )
+
+    assert proposal.status == ProposalStatus.PROPOSED
+    assert proposal.changes[0].kind == "SET_DURATION"
+    assert proposal.changes[0].duration_minutes == duration_minutes
+    assert snapshot.model_dump(mode="json") == snapshot_before
+    assert "소요시간을 45분으로 줄여줘" in client.requests[0]["messages"][0]["content"]
+    assert "REMOVE_TIME_WINDOW" in client.requests[0]["messages"][0]["content"]
+
+
+def test_explicit_removal_requires_an_existing_exact_time_window():
+    snapshot = sample_snapshot().model_copy(
+        update={
+            "absolute_time_windows": (
+                AbsoluteTimeWindow(
+                    date=SAMPLE_DATE,
+                    start_minute=20 * 60,
+                    end_minute=21 * 60,
+                ),
+            )
+        }
+    )
+    existing_change = {
+        "kind": "REMOVE_TIME_WINDOW",
+        "date": SAMPLE_DATE.isoformat(),
+        "start_minute": 20 * 60,
+        "end_minute": 21 * 60,
+    }
+    proposal = validate_proposal(
+        snapshot, _actor(), _draft([existing_change]), today=TODAY
+    )
+    assert proposal.status == ProposalStatus.PROPOSED
+    assert proposal.changes[0].kind == "REMOVE_TIME_WINDOW"
+
+    missing_change = {
+        **existing_change,
+        "start_minute": 19 * 60,
+        "end_minute": 20 * 60,
+    }
+    with pytest.raises(ProposalValidationError) as error:
+        validate_proposal(
+            snapshot, _actor(), _draft([missing_change]), today=TODAY
+        )
+    assert error.value.code == "CONDITION_NOT_FOUND"
+
+
+def test_fixture_explicit_clock_window_removal_uses_existing_condition():
+    snapshot = sample_snapshot().model_copy(
+        update={
+            "absolute_time_windows": (
+                AbsoluteTimeWindow(
+                    date=SAMPLE_DATE,
+                    start_minute=20 * 60,
+                    end_minute=21 * 60,
+                ),
+            )
+        }
+    )
+    output = {
+        "base_input_revision": snapshot.input_revision,
+        "changes": [
+            {
+                "kind": "REMOVE_TIME_WINDOW",
+                "date": SAMPLE_DATE.isoformat(),
+                "start_minute": 20 * 60,
+                "end_minute": 21 * 60,
+            }
+        ],
+        "ambiguities": [],
+        "summary": "11월 8일 오후 8시부터 9시까지 조건을 삭제합니다.",
+    }
+    agent, _, _ = _fixture_agent(output, snapshot=snapshot)
+
+    proposal = agent.propose(
+        "11월 8일 오후 8시부터 9시까지 조건을 삭제해줘",
+        snapshot,
+        _actor(),
+        today=TODAY,
+    )
+
+    assert proposal.status == ProposalStatus.PROPOSED
+    change = proposal.changes[0]
+    assert change.kind == "REMOVE_TIME_WINDOW"
+    assert change.date == SAMPLE_DATE
+    assert change.start_minute == 20 * 60
+    assert change.end_minute == 21 * 60
+
+
+def test_domain_validation_failure_regenerates_once_with_error_feedback():
+    snapshot = sample_snapshot()
+    invalid_output = {
+        "base_input_revision": snapshot.input_revision,
+        "changes": [
+            {
+                "kind": "REMOVE_TIME_WINDOW",
+                "date": SAMPLE_DATE.isoformat(),
+                "start_minute": 20 * 60,
+                "end_minute": 21 * 60,
+            }
+        ],
+        "ambiguities": [],
+        "summary": "오후 8시부터 9시까지 조건을 삭제합니다.",
+    }
+    corrected_output = {
+        "base_input_revision": snapshot.input_revision,
+        "changes": [{"kind": "SET_DURATION", "duration_minutes": 45}],
+        "ambiguities": [],
+        "summary": "소요시간을 45분으로 변경합니다.",
+    }
+    client = ScriptedClient(
+        [
+            _llm_response(json.dumps(invalid_output, ensure_ascii=False)),
+            _llm_response(json.dumps(corrected_output, ensure_ascii=False)),
+        ]
+    )
+    agent, _, _ = _fixture_agent(corrected_output, client=client, snapshot=snapshot)
+    snapshot_before = snapshot.model_dump(mode="json")
+    revision_before = snapshot.input_revision
+    consent_round_before = snapshot.consent_round
+
+    proposal = agent.propose(
+        "소요시간을 45분으로 줄여줘",
+        snapshot,
+        _actor(),
+        today=TODAY,
+    )
+
+    retry_feedback = json.loads(client.requests[1]["messages"][-1]["content"])
+    assert proposal.status == ProposalStatus.PROPOSED
+    assert proposal.changes[0].kind == "SET_DURATION"
+    assert proposal.changes[0].duration_minutes == 45
+    assert retry_feedback["validationError"]["code"] == "CONDITION_NOT_FOUND"
+    assert set(retry_feedback["allowedChangeTypes"]) == set(
+        agent.ALLOWED_CHANGE_TYPES
+    )
+    assert "do not" in retry_feedback["instruction"]
+    assert snapshot.model_dump(mode="json") == snapshot_before
+    assert snapshot.input_revision == revision_before
+    assert snapshot.consent_round == consent_round_before
+
+
+def test_schema_validation_failure_regenerates_once():
+    snapshot = sample_snapshot()
+    corrected_output = {
+        "base_input_revision": snapshot.input_revision,
+        "changes": [{"kind": "SET_DURATION", "duration_minutes": 45}],
+        "ambiguities": [],
+        "summary": "소요시간을 45분으로 변경합니다.",
+    }
+    client = ScriptedClient(
+        [
+            _llm_response("not valid JSON"),
+            _llm_response(json.dumps(corrected_output, ensure_ascii=False)),
+        ]
+    )
+    agent, _, _ = _fixture_agent(corrected_output, client=client, snapshot=snapshot)
+
+    proposal = agent.propose(
+        "소요시간을 45분으로 줄여줘", snapshot, _actor(), today=TODAY
+    )
+
+    retry_feedback = json.loads(client.requests[1]["messages"][-1]["content"])
+    assert proposal.status == ProposalStatus.PROPOSED
+    assert proposal.changes[0].kind == "SET_DURATION"
+    assert retry_feedback["validationError"]["code"] == "INVALID_MODEL_OUTPUT"
+
+
+def test_second_validation_failure_exits_without_applying_proposal():
+    snapshot = sample_snapshot()
+    invalid_output = {
+        "base_input_revision": snapshot.input_revision,
+        "changes": [
+            {
+                "kind": "REMOVE_TIME_WINDOW",
+                "date": SAMPLE_DATE.isoformat(),
+                "start_minute": 20 * 60,
+                "end_minute": 21 * 60,
+            }
+        ],
+        "ambiguities": [],
+        "summary": "존재하는지 확인되지 않은 시간창을 삭제합니다.",
+    }
+    invalid_response = _llm_response(
+        json.dumps(invalid_output, ensure_ascii=False)
+    )
+    client = ScriptedClient([invalid_response, invalid_response])
+    agent, _, _ = _fixture_agent(invalid_output, client=client, snapshot=snapshot)
+    snapshot_before = snapshot.model_dump(mode="json")
+
+    with pytest.raises(ProposalValidationError) as error:
+        agent.propose(
+            "오후 8시부터 9시까지 조건을 삭제해줘",
+            snapshot,
+            _actor(),
+            today=TODAY,
+        )
+
+    assert error.value.code == "PROPOSAL_RETRY_EXHAUSTED"
+    assert isinstance(error.value.__cause__, ProposalValidationError)
+    assert error.value.__cause__.code == "CONDITION_NOT_FOUND"
+    assert len(client.requests) == 2
+    assert snapshot.model_dump(mode="json") == snapshot_before
+
+
 def test_fixture_excludes_one_date_without_deleting_submitted_slots():
     snapshot, second_date = _multi_date_snapshot()
     draft = _draft(

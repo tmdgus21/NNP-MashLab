@@ -73,6 +73,10 @@ The CP-SAT adapter is local-only and accepts an injected snapshot and revision
   not optimize, persist candidates, approve changes, or finalize meetings.
   `LocalProposalApprovalAdapter` is a non-durable test adapter; a proposal must
   be explicitly confirmed before it changes the local input snapshot.
+  Duration changes and exact time-window removal are distinct operations.
+  Schema or domain validation failure triggers at most one constrained
+  regeneration with the error code and allowed change types; another failure
+  raises `PROPOSAL_RETRY_EXHAUSTED` without mutating the snapshot.
 
   The adapter defaults to the local SSH tunnel
   `http://127.0.0.1:18081` and model ID `potato-qwen-test`. It refuses
