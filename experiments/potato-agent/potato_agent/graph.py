@@ -5,8 +5,6 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator, Literal, TypedDict
 
-from langgraph.checkpoint.sqlite import SqliteSaver
-from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 from pydantic import ValidationError
@@ -588,6 +586,9 @@ def open_local_graph(
     tools: SolverAdapter, checkpoint_path: str | Path
 ) -> Iterator[Any]:
     """Open a SQLite-backed local graph; checkpoint identifiers stay internal."""
+    from langgraph.checkpoint.sqlite import SqliteSaver
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
     connection = sqlite3.connect(str(checkpoint_path), check_same_thread=False)
     try:
         checkpointer = SqliteSaver(

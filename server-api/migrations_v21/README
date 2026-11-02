@@ -1,6 +1,6 @@
 Alembic history for schema v2.1 (+ admin security / idempotency extras).
 
-Head: `20261101_0002`  
+Head: `20261102_0007`
 Parallel to legacy `migrations/` (ok_*). Status overview: `docs/db-schema-status.md`.
 
 ```sh

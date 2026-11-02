@@ -14,6 +14,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -35,6 +36,10 @@ class Room(Base):
             "progress_status IN ("
             "'collecting','reviewing','finalized','deleted','cancelled')",
             name="ck_rooms_progress_status",
+        ),
+        CheckConstraint(
+            "agent_input_revision >= 1",
+            name="ck_rooms_agent_input_revision",
         ),
     )
 
@@ -58,6 +63,9 @@ class Room(Base):
     dirty: Mapped[bool] = mapped_column(Boolean, default=True)
     current_round: Mapped[int] = mapped_column(Integer, default=0)
     revision: Mapped[int] = mapped_column(Integer, default=1)
+    agent_input_revision: Mapped[int] = mapped_column(
+        Integer, default=1, server_default=text("1")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=now, onupdate=now

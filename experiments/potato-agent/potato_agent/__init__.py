@@ -1,9 +1,9 @@
 """Local-only Potato Meet Agent Core experiment."""
 
-from potato_agent.graph import build_agent_graph, open_local_graph
+from importlib import import_module
+from typing import Any
+
 from potato_agent.models import AgentStatus, MeetingSnapshot
-from potato_agent.ortools_adapter import CpSatSolverAdapter
-from potato_agent.tools import FixtureToolAdapter
 
 __all__ = [
     "AgentStatus",
@@ -13,3 +13,16 @@ __all__ = [
     "build_agent_graph",
     "open_local_graph",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    module_names = {
+        "build_agent_graph": "potato_agent.graph",
+        "open_local_graph": "potato_agent.graph",
+        "CpSatSolverAdapter": "potato_agent.ortools_adapter",
+        "FixtureToolAdapter": "potato_agent.tools",
+    }
+    module_name = module_names.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    return getattr(import_module(module_name), name)

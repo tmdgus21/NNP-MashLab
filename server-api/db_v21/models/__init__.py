@@ -1,4 +1,10 @@
 from db_v21.models.account import Account, AccountSession, PasswordResetToken
+from db_v21.models.agent import (
+    AgentCandidate,
+    AgentCandidateMember,
+    AgentRun,
+    RoomInvitation,
+)
 from db_v21.models.admin import (
     AdminAuditLog,
     AdminOtp,
@@ -27,6 +33,10 @@ __all__ = [
     "Account",
     "AccountSession",
     "PasswordResetToken",
+    "RoomInvitation",
+    "AgentRun",
+    "AgentCandidate",
+    "AgentCandidateMember",
     "Room",
     "RoomMember",
     "RoomRole",
