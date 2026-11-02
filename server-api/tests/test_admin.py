@@ -1,24 +1,32 @@
-import os, unittest, secrets, importlib.util
+import os, unittest, secrets
 from datetime import timedelta
 from unittest.mock import patch
-os.environ.setdefault('DATABASE_URL','sqlite://')
+os.environ['DATABASE_URL']='sqlite://'
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from database import initialize, session, now, Room, Proposal, Submission
+import database as database_module
+database_module._engine = None
 from main import app
-from admin.models import AdminBase, Account, OTP, AdminSession, Lifecycle, CycleArchive, RateBucket
+from admin.models import Account, OTP, AdminSession, CycleArchive, RateBucket
 from admin import security as sec
-from admin.lifecycle import expire, extend, ensure
-from database import engine
+from admin.lifecycle import expire, ensure
 
 class AdminTests(unittest.TestCase):
  def setUp(self):
   self.env=patch.dict(os.environ,{'ADMIN_ENABLED':'1','ADMIN_SECRET':'local-test-secret-at-least-thirty-two-characters','ADMIN_ORIGIN':'https://testserver'});self.env.start()
-  initialize();AdminBase.metadata.create_all(engine())
+  initialize()
   with session() as db,db.begin():
-   db.query(RateBucket).delete()
+   db.execute(delete(RateBucket))
    self.email='test-'+secrets.token_hex(5)+'@example.test'
-   a=Account(email=self.email,password_hash=sec.PASSWORDS.hash('test-password-long'),role='SUPER_ADMIN');db.add(a);db.flush();self.account_id=a.id
+   a=Account(
+    login_email=self.email,
+    password_hash=sec.PASSWORDS.hash('test-password-long'),
+    account_type='ADMIN',
+    account_status='ACTIVE',
+    admin_role='SUPER_ADMIN',
+    approved=True,
+   );db.add(a);db.flush();self.account_id=a.id
   self.client=TestClient(app,base_url='https://testserver')
   self.sent=[]
   self.mail=patch('admin.security.send_otp',side_effect=lambda email,code:self.sent.append((email,code)));self.mail.start()
@@ -73,7 +81,9 @@ class AdminTests(unittest.TestCase):
  def test_session_max_age_and_rbac(self):
   self.auth()
   with session() as db,db.begin():
-   row=db.scalar(select(AdminSession).where(AdminSession.account_id==self.account_id));row.expires=now()-timedelta(seconds=1)
+   row=db.scalar(select(AdminSession).where(AdminSession.account_id==self.account_id))
+   row.created_at=now()-timedelta(hours=9)
+   row.expires=now()-timedelta(seconds=1)
   self.assertEqual(self.client.get('/admin-api/auth/me').status_code,401)
  def test_rooms_filters_transfer_disable_and_viewer(self):
   self.auth();host=self.room();rid=host['meeting']['id'];host_headers={'Authorization':'Bearer '+host['token']}
@@ -103,7 +113,7 @@ class AdminTests(unittest.TestCase):
   response=self.client.post('/admin-api/rooms/'+rid+'/actions',json=body,headers=h);self.assertEqual(response.status_code,200,response.text)
   repeat=self.client.post('/admin-api/rooms/'+rid+'/actions',json=body,headers=h);self.assertEqual(repeat.status_code,200,repeat.text);self.assertTrue(repeat.json()['replayed'])
   current=self.client.get('/v1/meetings/'+rid,headers=headers).json();self.assertEqual(current['code'],host['meeting']['code']);self.assertFalse(current['participants'][0]['submitted']);self.assertEqual(current['participants'][0]['consent'],'pending');self.assertEqual(current['plan']['assignments'],[])
-  with session() as db: self.assertEqual(len(list(db.scalars(select(CycleArchive).where(CycleArchive.room_id==rid)))),1)
+  with session() as db: self.assertEqual(len(list(db.scalars(select(CycleArchive).where(CycleArchive.scope==f'extend:{rid}')))),1)
   body['dates']=[(now()+timedelta(days=7)).date().isoformat()]
   self.assertEqual(self.client.post('/admin-api/rooms/'+rid+'/actions',json=body,headers=h).status_code,409)
  def test_confirmed_expiry_cancelled_and_late_actual_end(self):
@@ -120,14 +130,23 @@ class AdminTests(unittest.TestCase):
  def test_admin_unlock_csrf_self_protection_and_session_revocation(self):
   self.auth()
   with session() as db,db.begin():
-   other=Account(email='locked-'+secrets.token_hex(5)+'@example.test',password_hash=sec.PASSWORDS.hash('long-test-password'),role='OPERATOR',frozen=True,failures=5);db.add(other);db.flush();oid=other.id
-   db.add(AdminSession(digest=sec.digest('revoked-test-token'),account_id=oid,csrf='unused',expires=now()+timedelta(hours=1)))
+   other=Account(
+    login_email='locked-'+secrets.token_hex(5)+'@example.test',
+    password_hash=sec.PASSWORDS.hash('long-test-password'),
+    account_type='ADMIN',
+    account_status='FROZEN',
+    admin_role='OPERATOR',
+    failures=5,
+    approved=True,
+   );db.add(other);db.flush();oid=other.id
+   raw_token='revoked-test-token-'+secrets.token_hex(8)
+   db.add(AdminSession(digest=sec.digest(raw_token),account_id=oid,csrf='unused',expires=now()+timedelta(hours=1)))
   path='/admin-api/accounts/'+oid+'/actions';body={'action':'unfreeze','expectedRevision':1,'reason':'운영자 확인 후 수동 해제'}
   self.assertEqual(self.client.post(path,json=body).status_code,403)
   self.assertEqual(self.client.post(path,json=body,headers=self.admin_headers).status_code,200)
   with session() as db:
    self.assertFalse(db.get(Account,oid).frozen);self.assertEqual(db.get(Account,oid).failures,5)
-   self.assertTrue(db.get(AdminSession,sec.digest('revoked-test-token')).revoked)
+   row=db.scalar(select(AdminSession).where(AdminSession.token_hash==sec.digest(raw_token)));self.assertTrue(row.revoked)
   self.assertEqual(self.client.post('/admin-api/accounts/'+self.account_id+'/actions',json=body,headers=self.admin_headers).status_code,403)
  def test_extension_preserves_finalized_plan_and_requires_new_consent(self):
   self.auth();host=self.room();rid=host['meeting']['id'];headers={'Authorization':'Bearer '+host['token']};base='/v1/meetings/'+rid
@@ -153,9 +172,9 @@ class AdminTests(unittest.TestCase):
    self.assertEqual(len(proposals),2);self.assertTrue(all(p.finalized_at for p in proposals))
    versions=list(db.scalars(select(Submission.version).where(Submission.member_id==host['actorId']).order_by(Submission.version)))
    self.assertEqual(versions,[1,2])
- def test_migration_repeat_preserves_existing_rooms(self):
-  host=self.room();spec=importlib.util.spec_from_file_location('migration003','migrations/003_admin.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
-  module.upgrade();module.upgrade()
+ def test_v21_initialize_preserves_existing_rooms(self):
+  host=self.room()
+  initialize()
   with session() as db:self.assertEqual(db.get(Room,host['meeting']['id']).code,host['meeting']['code'])
  def test_account_rate_limit(self):
   self.login()
