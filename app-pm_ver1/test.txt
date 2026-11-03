@@ -46,6 +46,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -55,7 +56,7 @@ import kotlinx.coroutines.launch
 import java.util.Calendar
 
 data class UserAccount(
-    val nickname: String,
+    var nickname: String,
     val id: String,
     val pw: String,
     val twoFactorCode: String,
@@ -167,7 +168,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 Surface(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().imePadding(),
                     color = Color(0xFFFFFCF3)
                 ) {
                     when (currentScreen.value) {
@@ -175,7 +176,7 @@ class MainActivity : ComponentActivity() {
                             LoginScreen(
                                 adminAccount = adminAccount,
                                 registeredAccount = registeredAccount.value,
-                                onLoginSuccess = { nickname, id ->
+                                onLoginSuccess = { nickname: String, id: String ->
                                     loggedInNickname.value = nickname
                                     loggedInId.value = id
                                     currentScreen.value = "home"
@@ -185,7 +186,7 @@ class MainActivity : ComponentActivity() {
                         }
                         "signup" -> {
                             SignUpScreen(
-                                onCompleteClick = { newAccount ->
+                                onCompleteClick = { newAccount: UserAccount ->
                                     registeredAccount.value = newAccount
                                     currentScreen.value = "login"
                                 },
@@ -198,7 +199,7 @@ class MainActivity : ComponentActivity() {
                                 bottomBar = {
                                     CustomBottomBar(
                                         currentRoute = currentScreen.value,
-                                        onTabSelected = { route ->
+                                        onTabSelected = { route: String ->
                                             currentScreen.value = route
                                         }
                                     )
@@ -223,16 +224,10 @@ class MainActivity : ComponentActivity() {
                                                 onCreateAppointmentClick = {
                                                     currentScreen.value = "create_step1"
                                                 },
-                                                onDeleteAppointment = { appt ->
+                                                onDeleteAppointment = { appt: Appointment ->
                                                     appointmentsList.remove(appt)
                                                 },
-                                                onUpdateAppointment = { updatedAppt ->
-                                                    val index = appointmentsList.indexOfFirst { it.id == updatedAppt.id }
-                                                    if (index != -1) {
-                                                        appointmentsList[index] = updatedAppt
-                                                    }
-                                                },
-                                                onEditAppointmentToCreate = { appt ->
+                                                onEditAppointmentToCreate = { appt: Appointment ->
                                                     appointmentName.value = appt.title
                                                     category.value = appt.category
                                                     duration.value = appt.duration
@@ -243,7 +238,7 @@ class MainActivity : ComponentActivity() {
                                             )
                                         }
                                         "friends" -> {
-                                            FriendsScreen()
+                                            FriendsScreen(isAdmin = loggedInId.value == "admin")
                                         }
                                         "mypage" -> {
                                             MyPageScreen(
@@ -252,6 +247,10 @@ class MainActivity : ComponentActivity() {
                                                 onLogoutClick = {
                                                     loggedInNickname.value = ""
                                                     currentScreen.value = "login"
+                                                },
+                                                onNicknameChanged = { newNick: String ->
+                                                    loggedInNickname.value = newNick
+                                                    registeredAccount.value?.let { it.nickname = newNick }
                                                 }
                                             )
                                         }
@@ -267,28 +266,29 @@ class MainActivity : ComponentActivity() {
                                                 onLocationChange = { location.value = it },
                                                 onBackClick = { currentScreen.value = "home" },
                                                 onNextClick = { currentScreen.value = "create_step2" },
-                                                onStepClick = { step -> currentScreen.value = step }
+                                                onStepClick = { step: String -> currentScreen.value = step }
                                             )
                                         }
                                         "create_step2" -> {
                                             CreateAppointmentStep2InviteScreen(
+                                                isAdmin = loggedInId.value == "admin",
                                                 selectedFriendsMap = selectedFriendsForNew,
                                                 onBackClick = { currentScreen.value = "create_step1" },
                                                 onNextClick = { currentScreen.value = "create_step3" },
-                                                onStepClick = { step -> currentScreen.value = step }
+                                                onStepClick = { step: String -> currentScreen.value = step }
                                             )
                                         }
                                         "create_step3" -> {
                                             CreateAppointmentStep3TimeScreen(
                                                 timeSlotsList = createdTimeSlots,
                                                 appointmentsList = appointmentsList,
-                                                onAddTimeSlot = { slot ->
+                                                onAddTimeSlot = { slot: TimeSlot ->
                                                     createdTimeSlots.add(slot)
                                                     val merged = mergeTimeSlots(createdTimeSlots)
                                                     createdTimeSlots.clear()
                                                     createdTimeSlots.addAll(merged)
                                                 },
-                                                onDeleteTimeSlot = { slot -> createdTimeSlots.remove(slot) },
+                                                onDeleteTimeSlot = { slot: TimeSlot -> createdTimeSlots.remove(slot) },
                                                 calendarYear = sharedCalendarYear,
                                                 onYearChange = { sharedCalendarYear = it },
                                                 calendarMonth = sharedCalendarMonth,
@@ -296,8 +296,8 @@ class MainActivity : ComponentActivity() {
                                                 selectedCalendarDay = sharedSelectedDay,
                                                 onDayChange = { sharedSelectedDay = it },
                                                 onBackClick = { currentScreen.value = "create_step2" },
-                                                onStepClick = { step -> currentScreen.value = step },
-                                                onNextClick = { inputSlot ->
+                                                onStepClick = { step: String -> currentScreen.value = step },
+                                                onNextClick = { inputSlot: TimeSlot? ->
                                                     if (inputSlot != null) {
                                                         createdTimeSlots.add(inputSlot)
                                                     }
@@ -314,8 +314,8 @@ class MainActivity : ComponentActivity() {
                                                 invitedFriends = selectedFriendsForNew.filter { it.value }.keys.toList(),
                                                 myTimeSlots = createdTimeSlots,
                                                 onBackClick = { currentScreen.value = "create_step3" },
-                                                onStepClick = { step -> currentScreen.value = step },
-                                                onAiAdjustClick = { chosenTime ->
+                                                onStepClick = { step: String -> currentScreen.value = step },
+                                                onAiAdjustClick = { chosenTime: String ->
                                                     selectedAiRecommendationTime.value = chosenTime
                                                     currentScreen.value = "create_ai_recommendation"
                                                 }
@@ -326,7 +326,7 @@ class MainActivity : ComponentActivity() {
                                                 myTimeSlots = createdTimeSlots,
                                                 invitedFriends = selectedFriendsForNew.filter { it.value }.keys.toList(),
                                                 onBackClick = { currentScreen.value = "create_step4" },
-                                                onConfirmFinal = { finalTimeStr ->
+                                                onConfirmFinal = { finalTimeStr: String ->
                                                     val chosenFriends = selectedFriendsForNew.filter { it.value }.keys.toList()
 
                                                     val newAppt = Appointment(
@@ -411,41 +411,51 @@ fun CustomBottomBar(
 }
 
 @Composable
-fun FriendsScreen() {
-    val friendsList = listOf("민수", "지훈", "영희", "철수")
+fun FriendsScreen(isAdmin: Boolean) {
+    val friendsList = if (isAdmin) listOf("민수", "지훈", "영희", "철수") else emptyList()
+
     Column(
         modifier = Modifier.fillMaxSize().padding(20.dp).verticalScroll(rememberScrollState())
     ) {
         Text(text = "친구 목록", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
         Spacer(modifier = Modifier.height(16.dp))
 
-        friendsList.forEach { friend ->
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White),
-                shape = RoundedCornerShape(12.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        if (friendsList.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxWidth().height(200.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Text(text = "등록된 친구가 없습니다.", fontSize = 14.sp, color = Color(0xFFAAAAAA))
+            }
+        } else {
+            friendsList.forEach { friend ->
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    shape = RoundedCornerShape(12.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier.size(40.dp).clip(CircleShape).background(Color(0xFFE0E0E0)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(text = friend.take(1), fontWeight = FontWeight.Bold, color = Color.DarkGray)
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(text = friend, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
-                    }
-                    Surface(
-                        color = Color(0xFFFFF3E0),
-                        shape = RoundedCornerShape(8.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(text = "친구", fontSize = 12.sp, color = Color(0xFFFF8F00), modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier.size(40.dp).clip(CircleShape).background(Color(0xFFE0E0E0)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(text = friend.take(1), fontWeight = FontWeight.Bold, color = Color.DarkGray)
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(text = friend, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+                        }
+                        Surface(
+                            color = Color(0xFFFFF3E0),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(text = "친구", fontSize = 12.sp, color = Color(0xFFFF8F00), modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                        }
                     }
                 }
             }
@@ -457,8 +467,13 @@ fun FriendsScreen() {
 fun MyPageScreen(
     nickname: String,
     userId: String,
-    onLogoutClick: () -> Unit
+    onLogoutClick: () -> Unit,
+    onNicknameChanged: (String) -> Unit
 ) {
+    var showEditProfileDialog by remember { mutableStateOf(false) }
+    var newNicknameInput by remember { mutableStateOf(nickname) }
+    val context = LocalContext.current
+
     Column(
         modifier = Modifier.fillMaxSize().padding(20.dp).verticalScroll(rememberScrollState())
     ) {
@@ -487,7 +502,10 @@ fun MyPageScreen(
                     Text(text = userId, fontSize = 13.sp, color = Color(0xFF777777))
                 }
                 OutlinedButton(
-                    onClick = {},
+                    onClick = {
+                        newNicknameInput = nickname
+                        showEditProfileDialog = true
+                    },
                     shape = RoundedCornerShape(20.dp),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                 ) {
@@ -527,6 +545,48 @@ fun MyPageScreen(
         ) {
             Text(text = "로그아웃", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFFC62828))
         }
+    }
+
+    if (showEditProfileDialog) {
+        AlertDialog(
+            onDismissRequest = { showEditProfileDialog = false },
+            containerColor = Color.White,
+            title = { Text(text = "프로필 수정 (닉네임 변경)", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = newNicknameInput,
+                        onValueChange = { newNicknameInput = it },
+                        placeholder = { Text("변경할 닉네임 입력") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newNicknameInput.isNotBlank()) {
+                            onNicknameChanged(newNicknameInput.trim())
+                            Toast.makeText(context, "닉네임이 변경되었습니다!", Toast.LENGTH_SHORT).show()
+                            showEditProfileDialog = false
+                        } else {
+                            Toast.makeText(context, "닉네임을 입력해주세요.", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F))
+                ) {
+                    Text(text = "저장", color = Color(0xFF3C1E1E), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditProfileDialog = false }) {
+                    Text(text = "취소", color = Color.Gray)
+                }
+            }
+        )
     }
 }
 
@@ -596,6 +656,7 @@ fun LoginScreen(
 ) {
     var inputId by remember { mutableStateOf("") }
     var inputPw by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
     var inputAuthCode by remember { mutableStateOf("") }
     var isGoogleVerified by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -644,8 +705,14 @@ fun LoginScreen(
             onValueChange = { inputPw = it },
             placeholder = { Text("비밀번호 입력", color = Color(0xFFAAAAAA)) },
             singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
+            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            trailingIcon = {
+                val image = if (passwordVisible) "👁️‍🗨️" else "👁️‍🗨️"
+                IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                    Text(text = image, fontSize = 16.sp)
+                }
+            },
             modifier = Modifier.fillMaxWidth().height(52.dp),
             shape = RoundedCornerShape(26.dp),
             colors = OutlinedTextFieldDefaults.colors(
@@ -767,7 +834,9 @@ fun SignUpScreen(
     var nickname by remember { mutableStateOf("") }
     var id by remember { mutableStateOf("") }
     var pw by remember { mutableStateOf("") }
+    var pwVisible by remember { mutableStateOf(false) }
     var pwConfirm by remember { mutableStateOf("") }
+    var pwConfirmVisible by remember { mutableStateOf(false) }
     var authCode by remember { mutableStateOf("") }
     var isGoogleRegistered by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -800,7 +869,7 @@ fun SignUpScreen(
         OutlinedTextField(
             value = id,
             onValueChange = { id = it },
-            placeholder = { Text("아이디 (이메일 형태)", color = Color(0xFFAAAAAA)) },
+            placeholder = { Text("아이디", color = Color(0xFFAAAAAA)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth().height(52.dp),
             shape = RoundedCornerShape(26.dp),
@@ -818,8 +887,13 @@ fun SignUpScreen(
             onValueChange = { pw = it },
             placeholder = { Text("비밀번호", color = Color(0xFFAAAAAA)) },
             singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
+            visualTransformation = if (pwVisible) VisualTransformation.None else PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            trailingIcon = {
+                IconButton(onClick = { pwVisible = !pwVisible }) {
+                    Text(text = "👁️‍🗨️", fontSize = 16.sp)
+                }
+            },
             modifier = Modifier.fillMaxWidth().height(52.dp),
             shape = RoundedCornerShape(26.dp),
             colors = OutlinedTextFieldDefaults.colors(
@@ -836,8 +910,13 @@ fun SignUpScreen(
             onValueChange = { pwConfirm = it },
             placeholder = { Text("비밀번호 확인", color = Color(0xFFAAAAAA)) },
             singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
+            visualTransformation = if (pwConfirmVisible) VisualTransformation.None else PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            trailingIcon = {
+                IconButton(onClick = { pwConfirmVisible = !pwConfirmVisible }) {
+                    Text(text = "👁️‍🗨️", fontSize = 16.sp)
+                }
+            },
             modifier = Modifier.fillMaxWidth().height(52.dp),
             shape = RoundedCornerShape(26.dp),
             colors = OutlinedTextFieldDefaults.colors(
@@ -1130,7 +1209,6 @@ fun HomeScreen(
     onLogoutClick: () -> Unit,
     onCreateAppointmentClick: () -> Unit,
     onDeleteAppointment: (Appointment) -> Unit,
-    onUpdateAppointment: (Appointment) -> Unit,
     onEditAppointmentToCreate: (Appointment) -> Unit
 ) {
     var selectedAppointment by remember { mutableStateOf<Appointment?>(null) }
@@ -1212,7 +1290,7 @@ fun HomeScreen(
                             onYearChange = onYearChange,
                             onMonthChange = onMonthChange,
                             onDayChange = onDayChange,
-                            hasSlotOrApptCheck = { m, d ->
+                            hasSlotOrApptCheck = { m: Int, d: Int ->
                                 appointmentsList.any { appt ->
                                     appt.timeInfo.contains("${m}월 ${d}일")
                                 }
@@ -1488,13 +1566,14 @@ fun CreateAppointmentStep1Screen(
 // 모임 만들기 Step 2
 @Composable
 fun CreateAppointmentStep2InviteScreen(
+    isAdmin: Boolean,
     selectedFriendsMap: MutableMap<String, Boolean>,
     onBackClick: () -> Unit,
     onNextClick: () -> Unit,
     onStepClick: (String) -> Unit
 ) {
     val context = LocalContext.current
-    val friendsList = listOf("민수", "지훈", "영희", "철수")
+    val friendsList = if (isAdmin) listOf("민수", "지훈", "영희", "철수") else emptyList()
 
     Column(modifier = Modifier.fillMaxSize()) {
         Box(
@@ -1535,22 +1614,31 @@ fun CreateAppointmentStep2InviteScreen(
                     OutlinedTextField(value = "", onValueChange = {}, placeholder = { Text("친구 검색하기", color = Color(0xFFAAAAAA)) }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp))
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    LazyColumn(modifier = Modifier.fillMaxWidth().height(300.dp)) {
-                        items(friendsList) { friend ->
-                            val isSelected = selectedFriendsMap[friend] ?: false
-                            Row(
-                                modifier = Modifier.fillMaxWidth().clickable { selectedFriendsMap[friend] = !isSelected }.padding(vertical = 8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(modifier = Modifier.size(36.dp).clip(CircleShape).background(Color(0xFFE0E0E0)), contentAlignment = Alignment.Center) {
-                                        Text(text = friend.take(1), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.DarkGray)
+                    if (friendsList.isEmpty()) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(150.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(text = "초대할 친구가 없습니다.", fontSize = 14.sp, color = Color(0xFFAAAAAA))
+                        }
+                    } else {
+                        LazyColumn(modifier = Modifier.fillMaxWidth().height(300.dp)) {
+                            items(friendsList) { friend ->
+                                val isSelected = selectedFriendsMap[friend] ?: false
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().clickable { selectedFriendsMap[friend] = !isSelected }.padding(vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(modifier = Modifier.size(36.dp).clip(CircleShape).background(Color(0xFFE0E0E0)), contentAlignment = Alignment.Center) {
+                                            Text(text = friend.take(1), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.DarkGray)
+                                        }
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Text(text = friend, fontSize = 15.sp, color = Color(0xFF333333))
                                     }
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Text(text = friend, fontSize = 15.sp, color = Color(0xFF333333))
+                                    Checkbox(checked = isSelected, onCheckedChange = { selectedFriendsMap[friend] = it }, colors = CheckboxDefaults.colors(checkedColor = Color(0xFFFFD54F)))
                                 }
-                                Checkbox(checked = isSelected, onCheckedChange = { selectedFriendsMap[friend] = it }, colors = CheckboxDefaults.colors(checkedColor = Color(0xFFFFD54F)))
                             }
                         }
                     }
@@ -1692,11 +1780,11 @@ fun CreateAppointmentStep3TimeScreen(
                         selectedDay = selectedCalendarDay,
                         onYearChange = onYearChange,
                         onMonthChange = onMonthChange,
-                        onDayChange = {
+                        onDayChange = { it: Int ->
                             onDayChange(it)
                             showTimePickerModal = true
                         },
-                        hasSlotOrApptCheck = { m, d ->
+                        hasSlotOrApptCheck = { m: Int, d: Int ->
                             timeSlotsList.any { slot ->
                                 slot.month == m && slot.day == d
                             } || appointmentsList.any { appt ->
@@ -1744,38 +1832,38 @@ fun CreateAppointmentStep3TimeScreen(
                                 ) {
                                     SeamlessInputBox(
                                         value = editM,
-                                        onValueChange = { if (it.length <= 2 && it.all { c -> c.isDigit() }) editM = it }
+                                        onValueChange = { it: String -> if (it.length <= 2 && it.all { c: Char -> c.isDigit() }) editM = it }
                                     )
                                     Text(text = "월 ", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
 
                                     SeamlessInputBox(
                                         value = editD,
-                                        onValueChange = { if (it.length <= 2 && it.all { c -> c.isDigit() }) editD = it }
+                                        onValueChange = { it: String -> if (it.length <= 2 && it.all { c: Char -> c.isDigit() }) editD = it }
                                     )
                                     Text(text = "일 ", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
 
                                     SeamlessInputBox(
                                         value = editSh,
-                                        onValueChange = { if (it.length <= 2 && it.all { c -> c.isDigit() }) editSh = it }
+                                        onValueChange = { it: String -> if (it.length <= 2 && it.all { c: Char -> c.isDigit() }) editSh = it }
                                     )
                                     Text(text = ":", fontSize = 13.sp, fontWeight = FontWeight.Bold)
 
                                     SeamlessInputBox(
                                         value = editSm,
-                                        onValueChange = { if (it.length <= 2 && it.all { c -> c.isDigit() }) editSm = it }
+                                        onValueChange = { it: String -> if (it.length <= 2 && it.all { c: Char -> c.isDigit() }) editSm = it }
                                     )
 
                                     Text(text = " ~ ", fontSize = 13.sp, fontWeight = FontWeight.Bold)
 
                                     SeamlessInputBox(
                                         value = editEh,
-                                        onValueChange = { if (it.length <= 2 && it.all { c -> c.isDigit() }) editEh = it }
+                                        onValueChange = { it: String -> if (it.length <= 2 && it.all { c: Char -> c.isDigit() }) editEh = it }
                                     )
                                     Text(text = ":", fontSize = 13.sp, fontWeight = FontWeight.Bold)
 
                                     SeamlessInputBox(
                                         value = editEm,
-                                        onValueChange = { if (it.length <= 2 && it.all { c -> c.isDigit() }) editEm = it }
+                                        onValueChange = { it: String -> if (it.length <= 2 && it.all { c: Char -> c.isDigit() }) editEm = it }
                                     )
                                 }
 
@@ -1807,19 +1895,19 @@ fun CreateAppointmentStep3TimeScreen(
                             ) {
                                 SeamlessInputBox(
                                     value = inputMonth,
-                                    onValueChange = { if (it.length <= 2 && it.all { c -> c.isDigit() }) inputMonth = it }
+                                    onValueChange = { it: String -> if (it.length <= 2 && it.all { c: Char -> c.isDigit() }) inputMonth = it }
                                 )
                                 Text(text = "월 ", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
 
                                 SeamlessInputBox(
                                     value = inputDay,
-                                    onValueChange = { if (it.length <= 2 && it.all { c -> c.isDigit() }) inputDay = it }
+                                    onValueChange = { it: String -> if (it.length <= 2 && it.all { c: Char -> c.isDigit() }) inputDay = it }
                                 )
                                 Text(text = "일 ", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
 
                                 SeamlessInputBox(
                                     value = inputStartHour,
-                                    onValueChange = { newSH ->
+                                    onValueChange = { newSH: String ->
                                         if (newSH.length <= 2 && newSH.all { it.isDigit() }) {
                                             val oldSH = inputStartHour.toIntOrNull() ?: 0
                                             inputStartHour = newSH
@@ -1837,20 +1925,20 @@ fun CreateAppointmentStep3TimeScreen(
 
                                 SeamlessInputBox(
                                     value = inputStartMin,
-                                    onValueChange = { if (it.length <= 2 && it.all { c -> c.isDigit() }) inputStartMin = it }
+                                    onValueChange = { it: String -> if (it.length <= 2 && it.all { c: Char -> c.isDigit() }) inputStartMin = it }
                                 )
 
                                 Text(text = " ~ ", fontSize = 13.sp, fontWeight = FontWeight.Bold)
 
                                 SeamlessInputBox(
                                     value = inputEndHour,
-                                    onValueChange = { if (it.length <= 2 && it.all { c -> c.isDigit() }) inputEndHour = it }
+                                    onValueChange = { it: String -> if (it.length <= 2 && it.all { c: Char -> c.isDigit() }) inputEndHour = it }
                                 )
                                 Text(text = ":", fontSize = 13.sp, fontWeight = FontWeight.Bold)
 
                                 SeamlessInputBox(
                                     value = inputEndMin,
-                                    onValueChange = { if (it.length <= 2 && it.all { c -> c.isDigit() }) inputEndMin = it }
+                                    onValueChange = { it: String -> if (it.length <= 2 && it.all { c: Char -> c.isDigit() }) inputEndMin = it }
                                 )
                             }
 
@@ -2047,7 +2135,7 @@ fun CreateAppointmentStep3TimeScreen(
     }
 }
 
-// 모임 만들기 Step 4 (시간 조율 화면 - 가로 스크롤 그래프 반영)
+// 모임 만들기 Step 4
 @Composable
 fun CreateAppointmentStep4AdjustScreen(
     myNickname: String,
@@ -2060,8 +2148,6 @@ fun CreateAppointmentStep4AdjustScreen(
     val realMyName = myNickname.ifBlank { "나" }
     val activeMembers = listOf(realMyName) + invitedFriends
 
-    // 0시부터 24시까지 1시간 단위 24개 구간
-    // 친구별 가능 시간 (0: 불가, 1: 가능)
     val friendRanges = mapOf(
         "민수" to Pair(0, 24),   // 24시간 모두 가능
         "지훈" to Pair(0, 12),   // 오전만 가능 (0시~12시)
@@ -2134,11 +2220,8 @@ fun CreateAppointmentStep4AdjustScreen(
                     }
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // 가로 스크롤 영역 (친구 프로필 고정 + 시간 그래프 드래그)
                     Row(modifier = Modifier.fillMaxWidth()) {
-                        // 왼쪽 고정: 멤버 목록
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            // 시간 헤더 높이만큼 여백
                             Box(modifier = Modifier.height(24.dp).width(65.dp), contentAlignment = Alignment.CenterStart) {
                                 Text(text = "이름", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF888888))
                             }
@@ -2161,13 +2244,11 @@ fun CreateAppointmentStep4AdjustScreen(
 
                         Spacer(modifier = Modifier.width(8.dp))
 
-                        // 오른쪽 스크롤: 0시~24시 시간축 및 그래프
                         Column(
                             modifier = Modifier
                                 .weight(1f)
                                 .horizontalScroll(horizontalScrollState)
                         ) {
-                            // 상단 시간 눈금 (0시 ~ 24시)
                             Row(modifier = Modifier.padding(bottom = 8.dp)) {
                                 (0..24 step 2).forEach { hour ->
                                     Box(
@@ -2179,7 +2260,6 @@ fun CreateAppointmentStep4AdjustScreen(
                                 }
                             }
 
-                            // 멤버별 시간 바 (0시~24시 = 총 600dp 너비)
                             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 activeMembers.forEach { memberName ->
                                     Row(
