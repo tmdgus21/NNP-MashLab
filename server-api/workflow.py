@@ -10,7 +10,11 @@ from sqlalchemy import select
 
 from ai_conditions import ParseConditionRequest, parse_condition
 from database import AIDraft, ConsentRow, Member, Proposal, Room, RoomEvent, Submission, now, session, uid
+from models import ensure_guest_account, resolve_user_account, room_time_bounds, sync_room_roles
+from db_v21.write_sync import invalidate_prior_proposals, sync_condition_normalized, sync_proposal_normalized
 from optimizer import solve
+from admin import lifecycle
+from admin.security import enabled as admin_enabled
 from workflow_models import Conditions, ConsentInput, CreateMeeting, JoinMeeting, ParseInput, Revision, Submit
 
 router = APIRouter(prefix="/v1", tags=["Persistent meetings"])
@@ -49,6 +53,7 @@ def creation_identity(db, key, scope, request):
         room = db.scalar(select(Room).where(Room.id == existing.room_id).with_for_update())
         if room.status == "deleted":
             fail(410, "방장이 삭제한 모임입니다.")
+        lifecycle.check(db, room)
         return token, key_hash, fingerprint, {"meeting": meeting_view(db, room), "actorId": existing.id, "token": token}
     return token, key_hash, fingerprint, None
 
@@ -75,6 +80,7 @@ def access(db, room_id, authorization, expected=None, host=False, mutable=False,
         if allow_deleted:
             return room, member
         fail(410, "방장이 삭제한 모임입니다.")
+    lifecycle.check(db, room, write=mutable or expected is not None)
     if mutable and room.status == "finalized":
         fail(409, "이미 최종 확정된 모임입니다.")
     if expected is not None and expected != room.revision:
@@ -83,19 +89,44 @@ def access(db, room_id, authorization, expected=None, host=False, mutable=False,
 
 
 def members(db, room):
-    return list(db.scalars(select(Member).where(Member.room_id == room.id).order_by(Member.created_at, Member.id)))
+    return list(
+        db.scalars(
+            select(Member)
+            .where(Member.room_id == room.id, Member.membership_status == "ACTIVE")
+            .order_by(Member.created_at, Member.id)
+        )
+    )
 
 
-def latest_submission(db, member_id):
-    return db.scalar(select(Submission).where(Submission.member_id == member_id).order_by(Submission.version.desc()).limit(1))
+def latest_submission(db, member_id, current=True):
+    query = select(Submission).where(Submission.member_id == member_id)
+    if current and admin_enabled():
+        member = db.get(Member, member_id)
+        room = db.get(Room, member.room_id) if member else None
+        if room:
+            life = lifecycle.ensure(db, room)
+            if life.starts_at:
+                query = query.where(Submission.created_at >= life.starts_at)
+    return db.scalar(query.order_by(Submission.version.desc()).limit(1))
 
 
 def latest_proposal(db, room):
-    return db.scalar(select(Proposal).where(Proposal.room_id == room.id).order_by(Proposal.round.desc()).limit(1))
+    query = select(Proposal).where(Proposal.room_id == room.id)
+    if admin_enabled():
+        life = lifecycle.ensure(db, room)
+        query = query.where(Proposal.round > life.base_round)
+    return db.scalar(query.order_by(Proposal.round.desc()).limit(1))
 
 
-def event(db, room, message):
-    db.add(RoomEvent(room_id=room.id, message=message))
+def event(db, room, message, event_type="INFO", actor_member_id=None):
+    db.add(
+        RoomEvent(
+            room_id=room.id,
+            message=message,
+            event_type=event_type,
+            actor_member_id=actor_member_id,
+        )
+    )
 
 
 def empty_plan(round_number):
@@ -115,10 +146,11 @@ def meeting_view(db, room):
     if proposal:
         previous = proposal if room.dirty else db.scalar(select(Proposal).where(Proposal.room_id == room.id, Proposal.round < proposal.round).order_by(Proposal.round.desc()).limit(1))
         prior = deepcopy(previous.plan) if previous else None
-    return {"id": room.id, "code": room.code, "hostId": room.host_id, "timezone": "Asia/Seoul", **{k: v for k, v in room.config.items() if k != "name"}, "revision": room.revision, "round": room.round, "status": room.status, "participants": participants, "plan": deepcopy(proposal.plan) if proposal and not room.dirty else empty_plan(room.round), "previousPlan": prior, "history": list(db.scalars(select(RoomEvent.message).where(RoomEvent.room_id == room.id).order_by(RoomEvent.created_at, RoomEvent.id)))[-100:]}
+    settings = {k: v for k, v in (room.config or {}).items() if k not in ("name", "_lifecycle")}
+    return {"id": room.id, "code": room.code, "hostId": room.host_id, "timezone": "Asia/Seoul", **settings, "revision": room.revision, "round": room.round, "status": room.status, "participants": participants, "plan": deepcopy(proposal.plan) if proposal and not room.dirty else empty_plan(room.round), "previousPlan": prior, "history": list(db.scalars(select(RoomEvent.message).where(RoomEvent.room_id == room.id).order_by(RoomEvent.created_at, RoomEvent.id)))[-100:]}
 
 
-def new_meeting(db, request, request_key=None):
+def new_meeting(db, request, request_key=None, account_authorization=None):
     token, key_hash, fingerprint, replay = creation_identity(db, request_key, "create", request)
     if replay:
         return replay
@@ -128,21 +160,65 @@ def new_meeting(db, request, request_key=None):
         code = "".join(secrets.choice(alphabet) for _ in range(8))
         if not db.scalar(select(Room.id).where(Room.code == code)):
             break
-    room = Room(id=room_id, code=code, host_id=member_id, config=request.model_dump(), revision=1, round=0, status="collecting", dirty=True)
+    settings = request.model_dump()
+    starts_at, ends_at = room_time_bounds(settings)
+    host_account = resolve_user_account(db, account_authorization) or ensure_guest_account(db, request.name)
+    room = Room(
+        id=room_id,
+        code=code,
+        created_by_account_id=host_account.id,
+        host_id=member_id,
+        title=settings.get("title") or request.name,
+        starts_at=starts_at,
+        ends_at=ends_at,
+        lifecycle_status="COLLECTING_CONDITIONS",
+        config=settings,
+        revision=1,
+        round=0,
+        status="collecting",
+        dirty=True,
+    )
     db.add(room)
     db.flush()
-    db.add(Member(id=member_id, room_id=room_id, nickname=request.name, token_hash=token_hash(token), request_key_hash=key_hash, request_hash=fingerprint))
-    event(db, room, "모임이 생성됐습니다.")
+    db.add(
+        Member(
+            id=member_id,
+            room_id=room_id,
+            account_id=host_account.id,
+            nickname=request.name,
+            room_role="OWNER",
+            membership_status="ACTIVE",
+            token_hash=token_hash(token),
+            request_key_hash=key_hash,
+            request_hash=fingerprint,
+        )
+    )
+    # room_events.actor_member_id FK requires room_members row first (PostgreSQL)
+    db.flush()
+    sync_room_roles(db, room, settings.get("roles") or [], settings.get("roleNeeds"))
+    if admin_enabled():
+        lifecycle.ensure(db, room)
+    event(db, room, "모임이 생성됐습니다.", event_type="ROOM_CREATED", actor_member_id=member_id)
     return {"meeting": meeting_view(db, room), "actorId": member_id, "token": token}
 
 
 @router.post("/meetings", status_code=201)
-def create_meeting(request: CreateMeeting, db=Depends(db_session), idempotency_key: str | None = Header(default=None)):
-    return new_meeting(db, request, idempotency_key)
+def create_meeting(
+    request: CreateMeeting,
+    db=Depends(db_session),
+    idempotency_key: str | None = Header(default=None),
+    x_account_authorization: str | None = Header(default=None),
+):
+    return new_meeting(db, request, idempotency_key, x_account_authorization)
 
 
 @router.post("/meetings/join", status_code=201)
-def join_meeting(request: JoinMeeting, db=Depends(db_session), idempotency_key: str | None = Header(default=None)):
+def join_meeting(
+    request: JoinMeeting,
+    db=Depends(db_session),
+    idempotency_key: str | None = Header(default=None),
+    x_account_authorization: str | None = Header(default=None),
+):
     token, key_hash, fingerprint, replay = creation_identity(db, idempotency_key, "join", request)
     if replay:
         return replay
@@ -153,6 +229,7 @@ def join_meeting(request: JoinMeeting, db=Depends(db_session), idempotency_key: 
         _, _, _, replay = creation_identity(db, idempotency_key, "join", request)
         if replay:
             return replay
+    lifecycle.check(db, room, write=True)
     if room.status == "finalized":
         fail(409, "확정된 모임에는 참가할 수 없습니다.")
     existing = members(db, room)
@@ -161,10 +238,36 @@ def join_meeting(request: JoinMeeting, db=Depends(db_session), idempotency_key: 
     if any(p.nickname.casefold() == request.name.casefold() for p in existing):
         fail(409, "이미 사용 중인 닉네임입니다. 기존 참여자는 저장된 인증으로 접속해 주세요.")
     member_id = uid()
-    db.add(Member(id=member_id, room_id=room.id, nickname=request.name, token_hash=token_hash(token), request_key_hash=key_hash, request_hash=fingerprint))
+    account = resolve_user_account(db, x_account_authorization) or ensure_guest_account(db, request.name)
+    if account.account_type == "USER":
+        already = db.scalar(
+            select(Member.id).where(
+                Member.room_id == room.id,
+                Member.account_id == account.id,
+                Member.membership_status == "ACTIVE",
+            )
+        )
+        if already:
+            fail(409, "이미 이 계정으로 참가한 모임입니다.")
+    db.add(
+        Member(
+            id=member_id,
+            room_id=room.id,
+            account_id=account.id,
+            nickname=request.name,
+            room_role="MEMBER",
+            membership_status="ACTIVE",
+            token_hash=token_hash(token),
+            request_key_hash=key_hash,
+            request_hash=fingerprint,
+        )
+    )
+    # room_events.actor_member_id FK requires room_members row first (PostgreSQL)
+    db.flush()
     room.dirty, room.status = True, "collecting"
+    room.lifecycle_status = "COLLECTING_CONDITIONS"
     room.revision += 1
-    event(db, room, f"{request.name}님이 참가했습니다. 다음 배정에 새 동의가 필요합니다.")
+    event(db, room, f"{request.name}님이 참가했습니다. 다음 배정에 새 동의가 필요합니다.", event_type="MEMBER_JOINED", actor_member_id=member_id)
     return {"meeting": meeting_view(db, room), "actorId": member_id, "token": token}
 
 
@@ -188,8 +291,10 @@ def delete_meeting(room_id: str, request: Revision, authorization: str | None = 
     room, _ = access(db, room_id, authorization, request.expectedRevision, host=True, allow_deleted=True)
     if room.status != "deleted":
         room.status = "deleted"
+        room.lifecycle_status = "CANCELLED"
+        room.deleted_at = now()
         room.revision += 1
-        event(db, room, "방장이 모임을 삭제했습니다.")
+        event(db, room, "방장이 모임을 삭제했습니다.", event_type="ROOM_DELETED")
     return {"deleted": True}
 
 
@@ -233,11 +338,21 @@ def preview(room_id: str, request: Submit, authorization: str | None = Header(de
 def submit(room_id: str, request: Submit, authorization: str | None = Header(default=None), db=Depends(db_session)):
     room, member = access(db, room_id, authorization, request.expectedRevision, mutable=True)
     validate_conditions(db, room, member, request.conditions)
-    previous = latest_submission(db, member.id)
-    db.add(Submission(member_id=member.id, version=previous.version + 1 if previous else 1, confirmed=request.conditions.model_dump(), ai_draft_id=request.conditions.aiDraftId))
+    previous = latest_submission(db, member.id, current=False)
+    confirmed = request.conditions.model_dump()
+    submission = Submission(
+        member_id=member.id,
+        version=previous.version + 1 if previous else 1,
+        confirmed=confirmed,
+        ai_draft_id=request.conditions.aiDraftId,
+    )
+    db.add(submission)
+    db.flush()
+    sync_condition_normalized(db, submission, confirmed, room.id)
     room.dirty, room.status = True, "collecting"
+    room.lifecycle_status = "COLLECTING_CONDITIONS"
     room.revision += 1
-    event(db, room, f"{member.nickname}님이 조건을 확정 제출했습니다.")
+    event(db, room, f"{member.nickname}님이 조건을 확정 제출했습니다.", event_type="CONDITION_SUBMITTED", actor_member_id=member.id)
     return meeting_view(db, room)
 
 
@@ -250,10 +365,23 @@ def calculate(room_id: str, request: Revision, authorization: str | None = Heade
     next_round = room.round + 1
     plan = solve(room.config, view["participants"], next_round)
     snapshot = {"config": room.config, "participants": view["participants"], "versions": {p["id"]: p["conditionVersion"] for p in view["participants"]}}
-    db.add(Proposal(room_id=room.id, round=next_round, source_revision=room.revision, input_snapshot=snapshot, plan=plan, solver_status=plan["solverStatus"]))
+    proposal = Proposal(
+        room_id=room.id,
+        round=next_round,
+        source_revision=room.revision,
+        input_snapshot=snapshot,
+        plan=plan,
+        solver_status=plan["solverStatus"],
+        proposal_status="WAITING_FOR_CONSENT",
+    )
+    db.add(proposal)
+    db.flush()
+    invalidate_prior_proposals(db, room.id, proposal.id)
+    sync_proposal_normalized(db, proposal, plan, snapshot)
     room.round, room.dirty, room.status = next_round, False, "reviewing"
+    room.lifecycle_status = "WAITING_FOR_CONSENT"
     room.revision += 1
-    event(db, room, f"{next_round}차 배정: {plan['solverStatus']}. 이번 회차에 새 동의가 필요합니다.")
+    event(db, room, f"{next_round}차 배정: {plan['solverStatus']}. 이번 회차에 새 동의가 필요합니다.", event_type="PROPOSAL_CREATED")
     return meeting_view(db, room)
 
 
@@ -292,12 +420,16 @@ def finalize(room_id: str, request: Revision, authorization: str | None = Header
     if not all(p["consent"] == "agreed" and p["consentRound"] == proposal.round for p in view["participants"]):
         fail(409, "이번 회차에 전원 동의해야 확정할 수 있습니다.")
     proposal.finalized_at = now()
+    proposal.proposal_status = "CONFIRMED"
     plan = deepcopy(proposal.plan)
     for assignment in plan["assignments"]:
         assignment["status"] = "confirmed"
     proposal.plan = plan
     room.status, room.revision = "finalized", room.revision + 1
-    event(db, room, f"방장이 {proposal.round}차 담당표를 최종 확정했습니다.")
+    room.lifecycle_status = "CONFIRMED"
+    if admin_enabled():
+        lifecycle.expire(db, room)
+    event(db, room, f"방장이 {proposal.round}차 담당표를 최종 확정했습니다.", event_type="FINALIZED")
     return meeting_view(db, room)
 
 
@@ -348,7 +480,14 @@ async def parse_for_member(room_id: str, request: ParseInput, authorization: str
     draft, questions = map_ai(parsed, view, member_id)
     with session() as db, db.begin():
         access(db, room_id, authorization, mutable=True)
-        row = AIDraft(member_id=member_id, raw_text=request.text, model_output=parsed.model_dump(mode="json"), app_draft=draft, questions=questions)
+        row = AIDraft(
+            member_id=member_id,
+            raw_text=request.text,
+            model_output=parsed.model_dump(mode="json"),
+            app_draft=draft,
+            questions=questions,
+            parse_status="COMPLETED",
+        )
         db.add(row)
         db.flush()
         return {"draft": draft | {"aiDraftId": row.id, "ambiguitiesResolved": not bool(questions)}, "questions": questions, "source": "server", "parseId": row.id, "raw": parsed.model_dump(mode="json")}
@@ -358,3 +497,21 @@ async def parse_for_member(room_id: str, request: ParseInput, authorization: str
 def proposals(room_id: str, authorization: str | None = Header(default=None), db=Depends(db_session)):
     access(db, room_id, authorization)
     return [{"id": p.id, "round": p.round, "sourceRevision": p.source_revision, "solverStatus": p.solver_status, "plan": p.plan, "finalized": p.finalized_at is not None} for p in db.scalars(select(Proposal).where(Proposal.room_id == room_id).order_by(Proposal.round))]
+
+
+class Extension(Revision):
+    dates: list[str]
+    reason: str
+
+@router.post('/meetings/{room_id}/extensions')
+def host_extension(room_id: str, request: Extension, authorization: str | None = Header(default=None), idempotency_key: str | None = Header(default=None), db=Depends(db_session)):
+    if not admin_enabled(): fail(404, '연장 기능이 활성화되지 않았습니다.')
+    member = identity(db, authorization)
+    room = db.scalar(select(Room).where(Room.id == room_id).with_for_update())
+    if not room or member.room_id != room_id or room.host_id != member.id: fail(403, '현재 방장만 연장할 수 있습니다.')
+    if not idempotency_key or not 16 <= len(idempotency_key) <= 100 or not 5 <= len(request.reason.strip()) <= 1000 or not 1 <= len(request.dates) <= 7: fail(422, '새 날짜, 사유와 요청 식별자가 필요합니다.')
+    try:
+        from datetime import date
+        dates = sorted(set(date.fromisoformat(d).isoformat() for d in request.dates))
+    except ValueError: fail(422, '날짜 형식을 확인하세요.')
+    return lifecycle.extend(db, room, dates, request.expectedRevision, idempotency_key, member.id, request.reason)

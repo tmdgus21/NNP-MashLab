@@ -1,4 +1,4 @@
-"""Database engine, sessions, and process init. Schema DDL is owned by Alembic."""
+"""Database engine, sessions, and process init. Schema DDL is owned by Alembic v21."""
 import os
 
 from sqlalchemy import create_engine, text
@@ -8,6 +8,7 @@ from sqlalchemy.pool import StaticPool
 
 from models import (
     AIDraft,
+    Account,
     Base,
     ConsentRow,
     Member,
@@ -22,6 +23,7 @@ from models import (
 
 __all__ = [
     "AIDraft",
+    "Account",
     "Base",
     "ConsentRow",
     "Member",
@@ -42,8 +44,25 @@ __all__ = [
 def make_engine():
     url = os.getenv("DATABASE_URL")
     if url:
-        return create_engine(url, **({"connect_args": {"check_same_thread": False}, "poolclass": StaticPool} if url == "sqlite://" else {}))
-    return create_engine(URL.create("postgresql+psycopg", username=os.environ["DB_USER"], password=os.environ["DB_PASSWORD"], host=os.getenv("DB_HOST", "172.19.0.1"), port=int(os.getenv("DB_PORT", "5432")), database=os.environ["DB_NAME"]), pool_pre_ping=True)
+        return create_engine(
+            url,
+            **(
+                {"connect_args": {"check_same_thread": False}, "poolclass": StaticPool}
+                if url == "sqlite://"
+                else {}
+            ),
+        )
+    return create_engine(
+        URL.create(
+            "postgresql+psycopg",
+            username=os.environ["DB_USER"],
+            password=os.environ["DB_PASSWORD"],
+            host=os.getenv("DB_HOST", "172.19.0.1"),
+            port=int(os.getenv("DB_PORT", "5432")),
+            database=os.environ["DB_NAME"],
+        ),
+        pool_pre_ping=True,
+    )
 
 
 _engine = None
@@ -61,7 +80,7 @@ def session():
 
 
 def initialize():
-    """Verify connectivity. PostgreSQL schema is managed by Alembic.
+    """Verify connectivity. PostgreSQL schema is managed by Alembic v21.
     sqlite:// unit tests create tables from metadata for isolation."""
     with engine().begin() as connection:
         if connection.dialect.name == "sqlite":
@@ -72,4 +91,4 @@ def initialize():
 
 if __name__ == "__main__":
     initialize()
-    print("Database connection OK; apply schema with: alembic upgrade head")
+    print("Database connection OK; apply schema with: alembic -c alembic.v21.ini upgrade head")

@@ -20,3 +20,8 @@ venv/
 .secrets/
 apps/mobile/src/config/runtime.generated.ts
 .cxx-mobile/
+
+ops-dashboard/dist/
+ops-dashboard/*.tsbuildinfo
+ops-dashboard/test3.txt
+!server-api/.env.admin.example
