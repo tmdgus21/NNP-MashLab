@@ -14,6 +14,12 @@ export interface SignUpCredentials {
 export type VerificationPurpose = 'login' | 'signup';
 
 export interface PotatoAuthService {
+  /**
+   * 'required' (default): screens ask for an emailed code.
+   * 'unsupported': the server has no email verification; screens hide the code
+   * field and say so. A code is never faked.
+   */
+  readonly emailVerification?: 'required' | 'unsupported';
   sendVerificationCode(
     email: string,
     purpose: VerificationPurpose,

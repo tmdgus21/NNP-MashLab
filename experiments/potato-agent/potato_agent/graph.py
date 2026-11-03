@@ -581,19 +581,24 @@ def build_agent_graph(tools: SolverAdapter, checkpointer=None):
     return builder.compile(checkpointer=checkpointer)
 
 
+def checkpoint_serde():
+    """Serializer allow-listing exactly the Agent state types (shared by all savers)."""
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+    return JsonPlusSerializer(allowed_msgpack_modules=_CHECKPOINT_TYPES)
+
+
 @contextmanager
 def open_local_graph(
     tools: SolverAdapter, checkpoint_path: str | Path
 ) -> Iterator[Any]:
     """Open a SQLite-backed local graph; checkpoint identifiers stay internal."""
     from langgraph.checkpoint.sqlite import SqliteSaver
-    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
-
     connection = sqlite3.connect(str(checkpoint_path), check_same_thread=False)
     try:
         checkpointer = SqliteSaver(
             connection,
-            serde=JsonPlusSerializer(allowed_msgpack_modules=_CHECKPOINT_TYPES),
+            serde=checkpoint_serde(),
         )
         checkpointer.setup()
         yield build_agent_graph(tools, checkpointer=checkpointer)

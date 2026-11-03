@@ -95,11 +95,13 @@ export function CreateAppointmentStep4AdjustScreen({
             const availabilitySubmitted =
               !declined &&
               participant?.role === 'invitee' &&
-              participant.invitationStatus === 'sent' &&
+              (participant.invitationStatus === 'sent' ||
+                participant.participationStatus === 'accepted') &&
               submission?.status === 'submitted';
             const status =
               participant?.role !== 'invitee' ||
-              participant.invitationStatus === 'not_sent'
+              (participant.invitationStatus === 'not_sent' &&
+                participant.participationStatus === 'pending')
                 ? '초대 미발송'
                 : participant.participationStatus === 'pending'
                   ? '응답 대기'

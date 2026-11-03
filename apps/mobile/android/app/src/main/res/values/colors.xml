@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Sampled from the official logo tile so the adaptive-icon background and splash blend with it. -->
+    <color name="ic_launcher_background">#FDFBF6</color>
+</resources>

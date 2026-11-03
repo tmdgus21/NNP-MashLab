@@ -15,7 +15,9 @@ from public_routes import router as public_router
 from user_auth import router as user_auth_router
 from admin.auth import router as admin_auth_router
 from admin.routes import router as admin_router
-from agent_routes import router as agent_router
+from agent_routes import router as agent_router, final_router as agent_final_router
+from agent_change_routes import router as agent_change_router
+from potato_meet_routes import router as potato_meet_router
 from admin.security import enabled as admin_enabled
 from admin.lifecycle import sweep
 import logging
@@ -71,6 +73,9 @@ app.include_router(workflow_router)
 app.include_router(user_auth_router)
 app.include_router(public_router)
 app.include_router(agent_router)
+app.include_router(agent_final_router)
+app.include_router(agent_change_router)
+app.include_router(potato_meet_router)
 app.include_router(admin_auth_router)
 app.include_router(admin_router)
 

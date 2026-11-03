@@ -1232,3 +1232,53 @@ def test_health_probe_checks_the_configured_model_id(monkeypatch):
     assert result["available_models"] == ["potato-qwen-test"]
     assert result["tool_calling_verified"] is False
     assert result["json_schema_verified"] is False
+
+
+def test_approve_replaces_own_availability_when_a_submission_already_exists():
+    snapshot = sample_snapshot()
+    organizer = next(p for p in snapshot.participants if p.role.value == "ORGANIZER")
+    actor = ProposalActor(participant_id=organizer.participant_id, can_edit_own_availability=True)
+    day = snapshot.dates[0]
+    old_version = snapshot.availability_by_participant_id[organizer.participant_id].submission_version
+    draft = RescheduleProposalDraft(
+        base_input_revision=snapshot.input_revision,
+        changes=(
+            {
+                "kind": "SET_PERSONAL_AVAILABILITY",
+                "participant_id": organizer.participant_id,
+                "date": day,
+                "slots": [
+                    {"date": day, "start_minute": 600, "end_minute": 660, "time_zone": "Asia/Seoul"}
+                ],
+            },
+        ),
+        summary="own availability",
+    )
+    proposal = validate_proposal(snapshot, actor, draft, today=date(2020, 1, 1))
+    updated = LocalProposalApprovalAdapter().approve(
+        snapshot, actor, proposal, today=date(2020, 1, 1)
+    )
+    submission = updated.availability_by_participant_id[organizer.participant_id]
+    assert submission.submission_version == old_version + 1
+    assert [(s.start_minute, s.end_minute) for s in submission.slots if s.date == day] == [(600, 660)]
+
+
+def test_approve_removes_an_existing_time_window():
+    base = sample_snapshot()
+    day = base.dates[0]
+    window = {"date": day, "start_minute": 540, "end_minute": 720}
+    snapshot = type(base).model_validate(
+        {**base.model_dump(mode="python"), "absolute_time_windows": (window,)}
+    )
+    organizer = next(p for p in snapshot.participants if p.role.value == "ORGANIZER")
+    actor = ProposalActor(participant_id=organizer.participant_id)
+    draft = RescheduleProposalDraft(
+        base_input_revision=snapshot.input_revision,
+        changes=({"kind": "REMOVE_TIME_WINDOW", **{k.replace("start_minute", "start_minute"): v for k, v in window.items()}},),
+        summary="remove window",
+    )
+    proposal = validate_proposal(snapshot, actor, draft, today=date(2020, 1, 1))
+    updated = LocalProposalApprovalAdapter().approve(
+        snapshot, actor, proposal, today=date(2020, 1, 1)
+    )
+    assert updated.absolute_time_windows == ()

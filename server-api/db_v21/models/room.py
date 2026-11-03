@@ -62,6 +62,12 @@ class Room(Base):
     meeting_settings: Mapped[dict] = mapped_column(JSON, default=dict)
     dirty: Mapped[bool] = mapped_column(Boolean, default=True)
     current_round: Mapped[int] = mapped_column(Integer, default=0)
+    # Potato Meet coordination round (migration 0011). Unlike current_round -- the
+    # /v1 role-plan round bumped by every /v1 calculation -- only an explicit
+    # host action (services.coordination_round) advances it.
+    coordination_round: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0")
+    )
     revision: Mapped[int] = mapped_column(Integer, default=1)
     agent_input_revision: Mapped[int] = mapped_column(
         Integer, default=1, server_default=text("1")

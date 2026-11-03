@@ -415,6 +415,7 @@ export function prepareAppointmentAiRecommendation(
     if (
       participant.role === 'invitee' &&
       participant.invitationStatus === 'not_sent' &&
+      participant.participationStatus === 'pending' &&
       submissionsById.get(participant.id)?.status === 'submitted'
     ) {
       invalidFields.add('participantAvailability');

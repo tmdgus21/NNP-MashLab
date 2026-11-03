@@ -19,7 +19,9 @@ services:
 
   # 2. FastAPI (Caddy만 내부망에서 접속; DB는 외부 PostgreSQL)
   server-api:
-    build: ./server-api
+    build:
+      context: .
+      dockerfile: server-api/Dockerfile
     container_name: backend-api
     restart: unless-stopped
     environment:
@@ -39,8 +41,33 @@ services:
       ADMIN_SMTP_USER: ${ADMIN_SMTP_USER:-}
       ADMIN_SMTP_PASSWORD: ${ADMIN_SMTP_PASSWORD:-}
       ADMIN_SMTP_FROM: ${ADMIN_SMTP_FROM:-}
+      # Potato Meet: tells clients a DB-polling Worker is expected. It does NOT prove the Worker is alive.
+      AGENT_WORKER_DISPATCH: ${AGENT_WORKER_DISPATCH:-NOT_CONFIGURED}
     expose:
       - "8000"
+    networks:
+      - mash-net
+
+  # 2b. Potato Meet Agent Worker (same image, separate process; polls agent_runs in the DB).
+  # Without it every Run stays QUEUED. Start with:
+  #   docker compose -f docker-compose.yml -f docker-compose.ai.yml up -d --no-deps --build agent-worker
+  agent-worker:
+    build:
+      context: .
+      dockerfile: server-api/Dockerfile
+    container_name: backend-agent-worker
+    restart: unless-stopped
+    command: ["python", "agent_worker_main.py"]
+    environment:
+      DB_USER: ${DB_USER:-mashlab}
+      DB_PASSWORD: ${DB_PASSWORD:-mashlab}
+      DB_NAME: ${DB_NAME:-potato_server_v2}
+      DB_HOST: ${DB_HOST:-172.19.0.1}
+      DB_PORT: ${DB_PORT:-5432}
+      DATABASE_URL: ${DATABASE_URL:-}
+      AGENT_WORKER_ID: ${AGENT_WORKER_ID:-potato-worker-1}
+      AGENT_WORKER_POLL_INTERVAL_SECONDS: ${AGENT_WORKER_POLL_INTERVAL_SECONDS:-2}
+    stop_grace_period: 30s
     networks:
       - mash-net
 

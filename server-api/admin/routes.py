@@ -5,6 +5,7 @@ from pydantic import Field
 from sqlalchemy import select, func, text
 from database import Room, Member, Submission, Proposal, ConsentRow, RoomEvent
 from models import RoomControl
+from services.meeting_domain import bump_agent_input_revision
 from .auth import db_session, Input
 from .models import Account, Audit, CycleArchive
 from .security import authenticate, error, log, revoke
@@ -239,6 +240,7 @@ def action(
             previous.room_role = 'MEMBER'
         member.room_role = 'OWNER'
         room.host_id = member.id
+        bump_agent_input_revision(room)  # the organizer is Agent input; no-op for /v1 rooms
     elif body.action == 'actual_end':
         if life.state != 'ACTIVE' or not body.actualEnd or body.actualEnd.tzinfo is None:
             error(422, '진행 중인 회차의 시간대가 포함된 종료 시각이 필요합니다.')

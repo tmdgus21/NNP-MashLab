@@ -33,6 +33,7 @@ export function LoginScreen({
   const [verificationCode, setVerificationCode] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const needsCode = (service.emailVerification ?? 'required') === 'required';
 
   const login = async () => {
     setError('');
@@ -44,7 +45,7 @@ export function LoginScreen({
       setError('비밀번호를 입력하지 않았습니다.');
       return;
     }
-    if (!verificationCode.trim()) {
+    if (needsCode && !verificationCode.trim()) {
       setError('이메일 인증코드를 입력해 주세요.');
       return;
     }
@@ -87,14 +88,20 @@ export function LoginScreen({
           secureTextEntry
           value={password}
         />
-        <VerificationCodeRow
-          code={verificationCode}
-          email={email}
-          onChangeCode={setVerificationCode}
-          onError={setError}
-          purpose="login"
-          service={service}
-        />
+        {needsCode ? (
+          <VerificationCodeRow
+            code={verificationCode}
+            email={email}
+            onChangeCode={setVerificationCode}
+            onError={setError}
+            purpose="login"
+            service={service}
+          />
+        ) : (
+          <Text style={styles.noticeText}>
+            이메일 인증은 아직 지원하지 않아요. 비밀번호로만 확인해요.
+          </Text>
+        )}
         <AuthErrorMessage message={error} />
         <Pressable
           accessibilityRole="button"
@@ -154,6 +161,10 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.8,
+  },
+  noticeText: {
+    color: '#999999',
+    fontSize: 13,
   },
   signUpPrompt: {
     flexDirection: 'row',

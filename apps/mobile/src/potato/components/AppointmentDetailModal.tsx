@@ -16,6 +16,8 @@ interface AppointmentDetailModalProps {
   onClose: () => void;
   onDelete: (appointment: PotatoAppointment) => void;
   onEdit: (appointment: PotatoAppointment) => void;
+  allowDelete?: boolean;
+  editLabel?: string;
 }
 
 export function AppointmentDetailModal({
@@ -23,6 +25,8 @@ export function AppointmentDetailModal({
   onClose,
   onDelete,
   onEdit,
+  allowDelete = true,
+  editLabel = '수정',
 }: AppointmentDetailModalProps) {
   if (!appointment) {
     return null;
@@ -50,13 +54,15 @@ export function AppointmentDetailModal({
         <View style={styles.dialog}>
           <View style={styles.titleRow}>
             <Text style={styles.title}>모임 상세 정보</Text>
-            <Pressable
-              accessibilityRole="button"
-              onPress={confirmDelete}
-              style={styles.deleteButton}
-            >
-              <Text style={styles.deleteText}>🗑️ 삭제</Text>
-            </Pressable>
+            {allowDelete && (
+              <Pressable
+                accessibilityRole="button"
+                onPress={confirmDelete}
+                style={styles.deleteButton}
+              >
+                <Text style={styles.deleteText}>🗑️ 삭제</Text>
+              </Pressable>
+            )}
           </View>
           <ScrollView contentContainerStyle={styles.details}>
             <Text style={styles.detail}>📌 모임 이름: {appointment.title}</Text>
@@ -83,7 +89,7 @@ export function AppointmentDetailModal({
               onPress={() => onEdit(appointment)}
               style={styles.editButton}
             >
-              <Text style={styles.editText}>수정</Text>
+              <Text style={styles.editText}>{editLabel}</Text>
             </Pressable>
           </View>
         </View>

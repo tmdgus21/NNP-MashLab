@@ -1,5 +1,6 @@
 from db_v21.models.account import Account, AccountSession, PasswordResetToken
 from db_v21.models.agent import (
+    AgentChangeProposal,
     AgentCandidate,
     AgentCandidateMember,
     AgentRun,
@@ -35,6 +36,7 @@ __all__ = [
     "PasswordResetToken",
     "RoomInvitation",
     "AgentRun",
+    "AgentChangeProposal",
     "AgentCandidate",
     "AgentCandidateMember",
     "Room",

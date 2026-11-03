@@ -7,6 +7,8 @@ export interface PotatoAppointment {
   timeInfo: string;
   date: string;
   invitedFriends: string[];
+  /** false while the time is still being coordinated (default: shown as confirmed). */
+  confirmed?: boolean;
 }
 
 export type PotatoTabRoute =

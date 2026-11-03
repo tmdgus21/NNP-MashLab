@@ -40,6 +40,8 @@ EXPECTED_TABLES = {
     "agent_runs",
     "agent_candidates",
     "agent_candidate_members",
+    "agent_change_proposals",
+    "coordination_rounds",
 }
 
 
@@ -119,7 +121,7 @@ class V21SchemaTests(unittest.TestCase):
                 insp = inspect(engine)
                 tables = set(insp.get_table_names()) - {"alembic_version"}
                 self.assertEqual(EXPECTED_TABLES, tables)
-                self.assertEqual(26, len(tables))
+                self.assertEqual(28, len(tables))
                 self.assertNotIn("room_cycle_archives", tables)
 
                 room_cols = {c["name"] for c in insp.get_columns("rooms")}

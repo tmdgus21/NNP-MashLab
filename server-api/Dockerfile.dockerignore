@@ -1,0 +1,16 @@
+# Used because the build context is the repository root. Whitelist only what the image needs.
+*
+!server-api
+!experiments
+experiments/*
+!experiments/potato-agent
+**/.venv
+**/venv
+**/__pycache__
+**/*.pyc
+**/*.log
+**/.env
+**/.env.*
+**/*.orig
+server-api/*.db
+experiments/potato-agent/tests

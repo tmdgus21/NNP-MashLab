@@ -23,11 +23,10 @@ import { ScheduleScreen } from './src/screens/ScheduleScreen';
 import { Button, Loading, StatusCard } from './src/ui/components';
 import { colors, ui } from './src/ui/theme';
 import { invitationCode } from './src/domain/invitation';
-import { INVITE_BASE_URL } from './src/config/runtime.generated';
+import { APP_MODE, INVITE_BASE_URL } from './src/config/runtime.generated';
 const Tab = createBottomTabNavigator();
 import { NavigationIcon } from './src/ui/NavigationIcon';
 import { InvitationSheet } from './src/ui/InvitationSheet';
-import { PotatoMeetDevPreview } from './src/potato/PotatoMeetDevPreview';
 function Content() {
   const app = useApp();
   const { fontScale } = useWindowDimensions();
@@ -185,12 +184,25 @@ function Content() {
     </SafeAreaView>
   );
 }
+function Root() {
+  if (__DEV__) {
+    // Preview data and fixtures live only behind __DEV__; Metro drops this branch
+    // (and the modules it requires) from release bundles.
+    const { PotatoMeetDevPreview } = require('./src/potato/PotatoMeetDevPreview');
+    return <PotatoMeetDevPreview />;
+  }
+  if (APP_MODE === 'legacy') {
+    return <Content />;
+  }
+  const { PotatoApp } = require('./src/potato/PotatoApp');
+  return <PotatoApp />;
+}
 export default function App() {
   return (
     <GestureHandlerRootView style={ui.flex}>
       <SafeAreaProvider>
         <StatusBar barStyle="dark-content" />
-        {__DEV__ ? <PotatoMeetDevPreview /> : <Content />}
+        <Root />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

@@ -6,4 +6,9 @@
         <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
     </style>
 
+    <!-- Launch-only theme: logo splash window. MainActivity.onCreate restores AppTheme. -->
+    <style name="Theme.App.Starting" parent="AppTheme">
+        <item name="android:windowBackground">@drawable/splash_background</item>
+    </style>
+
 </resources>

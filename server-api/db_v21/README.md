@@ -46,8 +46,9 @@ short-lived read sessions before/during/after solving; no DB session spans
 CP-SAT. Only a proven all-attendee `INFEASIBLE` result reaches partial search.
 The function returns validated candidates at the graph's candidate-selection
 pause; it does not persist solver state or candidates. The current in-memory
-checkpointer is process-local, so durable graph resume and PostgreSQL
-checkpointing remain future work. LangGraph is pinned in the server
+checkpointer is the default (process-local); a durable checkpointer
+(PostgreSQL, see DEPLOY-AGENT-WORKER.md) can be passed per worker, and
+`services.agent_resume` resumes paused Runs from it after revalidating the DB. LangGraph is pinned in the server
 requirements for this service.
 
 `services.agent_worker` claims queued Runs using `FOR UPDATE SKIP LOCKED`,

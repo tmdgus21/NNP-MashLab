@@ -91,7 +91,7 @@ def account_from_authorization(db, authorization: str | None) -> Account:
 
 
 @router.post("/register", status_code=201)
-def register(body: Register, db=Depends(db_session)):
+def register(body: Register, db=Depends(db_session, scope="function")):
     email = validate_email(body.email)
     if len(body.password) < 12:
         fail(422, "비밀번호는 12자 이상이어야 합니다.")
@@ -112,7 +112,7 @@ def register(body: Register, db=Depends(db_session)):
 
 
 @router.post("/login")
-def login(body: Login, db=Depends(db_session)):
+def login(body: Login, db=Depends(db_session, scope="function")):
     email = validate_email(body.email)
     account = db.scalar(
         select(Account).where(Account.login_email == email, Account.account_type == "USER").with_for_update()
@@ -134,13 +134,13 @@ def login(body: Login, db=Depends(db_session)):
 
 
 @router.get("/me")
-def me(authorization: str | None = Header(default=None), db=Depends(db_session)):
+def me(authorization: str | None = Header(default=None), db=Depends(db_session, scope="function")):
     account = account_from_authorization(db, authorization)
     return {"accountId": account.id, "email": account.login_email, "accountType": account.account_type}
 
 
 @router.post("/logout")
-def logout(authorization: str | None = Header(default=None), db=Depends(db_session)):
+def logout(authorization: str | None = Header(default=None), db=Depends(db_session, scope="function")):
     if not authorization or not authorization.startswith("Bearer "):
         fail(401, "로그인이 필요합니다.")
     token = authorization[7:].strip()

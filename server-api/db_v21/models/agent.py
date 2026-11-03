@@ -2,6 +2,7 @@
 from datetime import date, datetime
 
 from sqlalchemy import (
+    Index,
     JSON,
     Boolean,
     CheckConstraint,
@@ -11,6 +12,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -82,6 +84,14 @@ class RoomInvitation(Base):
 class AgentRun(Base):
     __tablename__ = "agent_runs"
     __table_args__ = (
+        Index(
+            "uq_agent_runs_final_per_room_round",
+            "room_id",
+            "finalized_room_round",
+            unique=True,
+            sqlite_where=text("finalized_at IS NOT NULL"),
+            postgresql_where=text("finalized_at IS NOT NULL"),
+        ),
         CheckConstraint(
             "status IN ("
             "'QUEUED','RUNNING','WAITING_FOR_INPUT','ANALYZING','RUNNING_TOOLS','ALL_AVAILABLE',"
@@ -151,6 +161,27 @@ class AgentRun(Base):
     )
     checkpoint_thread_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     checkpoint_ref: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    # Decision persistence (migration 0008): the DB is authoritative; the graph
+    # checkpoint is rebuilt from it. decision_version is the optimistic-CAS
+    # counter; graph_synced_version trails it until the checkpoint is rebuilt.
+    decision_version: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
+    graph_synced_version: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
+    sync_owner: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    sync_lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    base_checkpoint_ref: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    finalized_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    finalized_by_member_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # rooms.coordination_round at finalization (not the /v1 current_round);
+    # at most one finalized Run per room per coordination round.
+    finalized_room_round: Mapped[int | None] = mapped_column(Integer, nullable=True)
     worker_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     lease_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     lease_expires_at: Mapped[datetime | None] = mapped_column(
@@ -176,6 +207,7 @@ class AgentCandidate(Base):
     __tablename__ = "agent_candidates"
     __table_args__ = (
         UniqueConstraint("run_id", "rank", name="uq_agent_candidates_run_rank"),
+        Index("uq_agent_candidates_run_graph_id", "run_id", "graph_candidate_id", unique=True),
         CheckConstraint("rank BETWEEN 1 AND 3", name="ck_agent_candidates_top_three"),
         CheckConstraint(
             "candidate_type IN ('ALL_AVAILABLE','PARTIAL_ALTERNATIVE')",
@@ -215,6 +247,7 @@ class AgentCandidate(Base):
     maximum_attendees_proven: Mapped[bool] = mapped_column(Boolean, default=False)
     verified: Mapped[bool] = mapped_column(Boolean, default=False)
     explanation: Mapped[str] = mapped_column(Text, default="")
+    graph_candidate_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
@@ -251,3 +284,91 @@ class AgentCandidateMember(Base):
         DateTime(timezone=True), nullable=True
     )
     consent_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class AgentChangeProposal(Base):
+    """A validated natural-language change proposal. Storing one never alters
+    meeting input; only an explicit approval applies it (see services.agent_change)."""
+
+    __tablename__ = "agent_change_proposals"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('PROPOSED','CLARIFICATION_REQUIRED','MODEL_REJECTED',"
+            "'APPLIED','REJECTED','SUPERSEDED')",
+            name="ck_agent_change_proposals_status",
+        ),
+        CheckConstraint(
+            "base_revision >= 1", name="ck_agent_change_proposals_base_revision"
+        ),
+        CheckConstraint(
+            "length(base_snapshot_hash) = 64",
+            name="ck_agent_change_proposals_hash_length",
+        ),
+        UniqueConstraint(
+            "room_id",
+            "requested_by_member_id",
+            "idempotency_key_hash",
+            name="uq_agent_change_proposals_idempotency",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    room_id: Mapped[str] = mapped_column(
+        ForeignKey("rooms.id", ondelete="CASCADE"), index=True
+    )
+    requested_by_member_id: Mapped[str] = mapped_column(
+        ForeignKey("room_members.id", ondelete="CASCADE")
+    )
+    idempotency_key_hash: Mapped[str] = mapped_column(String(64))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    request_text: Mapped[str] = mapped_column(Text)
+    base_revision: Mapped[int] = mapped_column(Integer)
+    base_snapshot_hash: Mapped[str] = mapped_column(String(64))
+    proposal: Mapped[dict] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(24))
+    decided_by_member_id: Mapped[str | None] = mapped_column(
+        ForeignKey("room_members.id", ondelete="SET NULL"), nullable=True
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    applied_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    resulting_run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now, onupdate=now
+    )
+
+
+class CoordinationRound(Base):
+    """History of explicit Potato Meet round openings (idempotent, auditable)."""
+
+    __tablename__ = "coordination_rounds"
+    __table_args__ = (
+        CheckConstraint("to_round = from_round + 1", name="ck_coordination_rounds_step"),
+        CheckConstraint("from_round >= 0", name="ck_coordination_rounds_from"),
+        UniqueConstraint("room_id", "to_round", name="uq_coordination_rounds_room_to"),
+        UniqueConstraint(
+            "room_id", "idempotency_key_hash", name="uq_coordination_rounds_idempotency"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    room_id: Mapped[str] = mapped_column(
+        ForeignKey("rooms.id", ondelete="CASCADE"), index=True
+    )
+    from_round: Mapped[int] = mapped_column(Integer)
+    to_round: Mapped[int] = mapped_column(Integer)
+    opened_by_member_id: Mapped[str | None] = mapped_column(
+        ForeignKey("room_members.id", ondelete="SET NULL"), nullable=True
+    )
+    idempotency_key_hash: Mapped[str] = mapped_column(String(64))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    closed_run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="SET NULL"), nullable=True
+    )
+    opened_input_revision: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

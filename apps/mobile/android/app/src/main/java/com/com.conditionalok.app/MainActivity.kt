@@ -9,6 +9,8 @@ import com.facebook.react.defaults.DefaultReactActivityDelegate
 
 class MainActivity : ReactActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
+    // The launch theme only paints the logo splash window; use the normal theme from here on.
+    setTheme(R.style.AppTheme)
     supportFragmentManager.fragmentFactory = RNScreensFragmentFactory()
     super.onCreate(savedInstanceState)
   }

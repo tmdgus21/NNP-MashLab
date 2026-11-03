@@ -17,6 +17,11 @@ from services.meeting_snapshot import (
 )
 
 from potato_agent.candidate_validator import StaleInputRevision
+from potato_agent.checkpoint import (
+    CheckpointUnavailableError,
+    latest_checkpoint_id,
+    map_checkpoint_errors,
+)
 from potato_agent.graph import AgentStatus, build_agent_graph
 from potato_agent.models import Candidate, ReadinessReport, SolverResult, SolverStatus
 from potato_agent.ortools_adapter import CpSatSolverAdapter
@@ -78,6 +83,8 @@ class AgentSolverOutput:
     all_solver_status: SolverStatus | None = None
     partial_solver_status: SolverStatus | None = None
     solve_time_seconds: float = 0.0
+    checkpoint_thread_id: str | None = None
+    checkpoint_ref: str | None = None
 
 
 class CurrentSnapshotProvider(Protocol):
@@ -179,6 +186,15 @@ def _validate_run_snapshot(run: AgentRunResult) -> None:
         )
 
 
+def _durable_checkpoint_ref(graph, thread_id: str) -> str | None:
+    try:
+        return latest_checkpoint_id(graph, thread_id)
+    except CheckpointUnavailableError as exc:
+        raise AgentSolverFailureError(
+            "The checkpoint store is unavailable.", code=exc.code
+        ) from exc
+
+
 def run_agent_solver(
     run: AgentRunResult,
     *,
@@ -186,6 +202,8 @@ def run_agent_solver(
     time_limit_seconds: float = 5.0,
     cancellation_event: threading.Event | None = None,
     expected_status: str = "QUEUED",
+    checkpointer=None,
+    checkpoint_thread_id: str | None = None,
 ) -> AgentSolverOutput:
     """Solve a queued Run and return validated candidates without persisting state.
 
@@ -207,16 +225,21 @@ def run_agent_solver(
         time_limit_seconds=time_limit_seconds,
         cancellation_event=cancellation_event,
     )
-    graph = build_agent_graph(adapter, checkpointer=MemorySaver())
+    durable = checkpointer is not None
+    thread_id = checkpoint_thread_id or f"agent-run:{run.run_id}"
+    graph = build_agent_graph(
+        adapter, checkpointer=checkpointer if durable else MemorySaver()
+    )
     try:
-        state = graph.invoke(
-            {"meeting_id": run.meeting_id},
-            config={
-                "configurable": {
-                    "thread_id": f"agent-run:{run.run_id}",
-                }
-            },
-        )
+        with map_checkpoint_errors(unreadable_is_corrupt=False):
+            state = graph.invoke(
+                {"meeting_id": run.meeting_id},
+                config={"configurable": {"thread_id": thread_id}},
+            )
+    except CheckpointUnavailableError as exc:
+        raise AgentSolverFailureError(
+            "The checkpoint store is unavailable.", code=exc.code
+        ) from exc
     except StaleInputRevision as exc:
         raise StaleAgentRunError(
             "The meeting changed before the solver could start."
@@ -281,4 +304,6 @@ def run_agent_solver(
         all_solver_status=state.get("all_solver_status"),
         partial_solver_status=state.get("partial_solver_status"),
         solve_time_seconds=solve_time_seconds,
+        checkpoint_thread_id=thread_id if durable else None,
+        checkpoint_ref=_durable_checkpoint_ref(graph, thread_id) if durable else None,
     )

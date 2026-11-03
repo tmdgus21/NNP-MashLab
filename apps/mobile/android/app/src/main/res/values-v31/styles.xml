@@ -1,0 +1,6 @@
+<resources>
+    <!-- Android 12+ shows the launcher icon automatically; only align its background. -->
+    <style name="Theme.App.Starting" parent="AppTheme">
+        <item name="android:windowSplashScreenBackground">@color/ic_launcher_background</item>
+    </style>
+</resources>

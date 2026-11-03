@@ -85,7 +85,10 @@ function participantStatus(
   if (participant.role === 'organizer') {
     return '모임 생성자';
   }
-  if (participant.invitationStatus === 'not_sent') {
+  if (
+    participant.invitationStatus === 'not_sent' &&
+    participant.participationStatus === 'pending'
+  ) {
     return '초대 미발송';
   }
   if (participant.participationStatus === 'pending') {

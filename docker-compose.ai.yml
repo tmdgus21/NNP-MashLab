@@ -9,3 +9,9 @@ services:
     volumes:
       - /run/conditional-ok:/run/conditional-ok:ro
       - /home/linuxuser/conditional-ok-releases:/releases:ro
+
+  # Potato Meet Worker: same DB secrets as server-api, but no Qwen socket and no release mount.
+  agent-worker:
+    env_file:
+      - path: .env.database
+        format: raw

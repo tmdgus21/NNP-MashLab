@@ -23,6 +23,11 @@ interface HomeScreenProps {
   onCreateAppointmentPress?: () => void;
   onEditAppointmentPress?: (appointment: PotatoAppointment) => void;
   onTabSelected?: (route: PotatoTabRoute) => void;
+  /** Local-only delete is a mock; real builds turn it off. Default keeps the preview behavior. */
+  allowDelete?: boolean;
+  editLabel?: string;
+  /** List every appointment at first instead of only the selected day. */
+  initiallyShowAll?: boolean;
 }
 
 function dateKey(year: number, month: number, day: number): string {
@@ -56,6 +61,9 @@ export function HomeScreen({
   onCreateAppointmentPress,
   onEditAppointmentPress,
   onTabSelected,
+  allowDelete = true,
+  editLabel,
+  initiallyShowAll = false,
 }: HomeScreenProps) {
   const today = new Date();
   const [appointments, setAppointments] = useState(initialAppointments);
@@ -66,7 +74,7 @@ export function HomeScreen({
   });
   const [selectedAppointment, setSelectedAppointment] =
     useState<PotatoAppointment | null>(null);
-  const [showAllAppointments, setShowAllAppointments] = useState(false);
+  const [showAllAppointments, setShowAllAppointments] = useState(initiallyShowAll);
 
   const markedDates = useMemo(
     () =>
@@ -218,7 +226,9 @@ export function HomeScreen({
                       {appointment.title}
                     </Text>
                     <View style={styles.confirmedBadge}>
-                      <Text style={styles.confirmedText}>확정</Text>
+                      <Text style={styles.confirmedText}>
+                        {appointment.confirmed === false ? '조율 중' : '확정'}
+                      </Text>
                     </View>
                   </View>
                   <Text style={styles.appointmentMeta}>
@@ -256,6 +266,8 @@ export function HomeScreen({
         onClose={() => setSelectedAppointment(null)}
         onDelete={deleteAppointment}
         onEdit={editAppointment}
+        allowDelete={allowDelete}
+        editLabel={editLabel}
       />
     </SafeAreaView>
   );

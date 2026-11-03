@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -32,6 +33,7 @@ export function SignUpScreen({
   const [verificationCode, setVerificationCode] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const needsCode = (service.emailVerification ?? 'required') === 'required';
 
   const signUp = async () => {
     setError('');
@@ -51,7 +53,7 @@ export function SignUpScreen({
       setError('비밀번호 확인을 입력하지 않았습니다.');
       return;
     }
-    if (!verificationCode.trim()) {
+    if (needsCode && !verificationCode.trim()) {
       setError('이메일 인증코드를 입력해 주세요.');
       return;
     }
@@ -81,6 +83,12 @@ export function SignUpScreen({
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
     >
+      <Image
+        accessibilityLabel="Potato Meet 로고"
+        resizeMode="contain"
+        source={require('../../assets/images/potato_logo.png')}
+        style={styles.logo}
+      />
       <Text style={styles.title}>회원가입</Text>
       <View style={styles.form}>
         <AuthTextInput
@@ -115,14 +123,20 @@ export function SignUpScreen({
           secureTextEntry
           value={passwordConfirmation}
         />
-        <VerificationCodeRow
-          code={verificationCode}
-          email={email}
-          onChangeCode={setVerificationCode}
-          onError={setError}
-          purpose="signup"
-          service={service}
-        />
+        {needsCode ? (
+          <VerificationCodeRow
+            code={verificationCode}
+            email={email}
+            onChangeCode={setVerificationCode}
+            onError={setError}
+            purpose="signup"
+            service={service}
+          />
+        ) : (
+          <Text style={styles.noticeText}>
+            이메일 인증은 아직 지원하지 않아요. 비밀번호로만 확인해요.
+          </Text>
+        )}
         <AuthErrorMessage message={error} />
         <Pressable
           accessibilityRole="button"
@@ -151,6 +165,16 @@ export function SignUpScreen({
 }
 
 const styles = StyleSheet.create({
+  logo: {
+    width: 84,
+    height: 84,
+    alignSelf: 'center',
+    marginBottom: 12,
+  },
+  noticeText: {
+    color: '#999999',
+    fontSize: 13,
+  },
   content: {
     flexGrow: 1,
     justifyContent: 'center',

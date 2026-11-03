@@ -26,6 +26,7 @@ from db_v21.models.account import Account
 from db_v21.models.admin import IdempotencyRecord
 from db_v21.models.agent import AgentRun
 from db_v21.models.room import Room, RoomMember
+from services.meeting_domain import agent_final_exists
 from potato_agent.models import MeetingSnapshot
 from services.meeting_snapshot import (
     SnapshotBuildError,
@@ -85,6 +86,13 @@ class InputRevisionConflictError(AgentRunServiceError):
         )
         self.expected_revision = expected
         self.current_revision = current
+
+
+class RoundAlreadyFinalizedError(AgentRunServiceError):
+    """The current coordination round already has a final result; a new Run would be wasted."""
+
+    status_code = 409
+    code = "ROUND_ALREADY_FINALIZED"
 
 
 class IdempotencyConflictError(AgentRunServiceError):
@@ -419,6 +427,12 @@ def start_agent_run(
                     request_hash=request_hash,
                     actor=actor,
                     room_id=room.id,
+                )
+
+            # After the replay check, so an already-created Run is still returned.
+            if agent_final_exists(db, room):
+                raise RoundAlreadyFinalizedError(
+                    "the current coordination round already has a final result"
                 )
 
             expected_revision = parsed_request.expected_input_revision

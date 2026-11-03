@@ -11,7 +11,7 @@ from typing import Callable
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from db_v21.base import now
@@ -25,6 +25,7 @@ from potato_agent.models import (
     RecommendationType,
     ResponseStatus,
 )
+from potato_agent.checkpoint import run_thread_id
 from services.agent_run import AgentRunResult
 from services.agent_solver import (
     AgentCandidateValidationError,
@@ -70,6 +71,7 @@ class AgentRunClaim:
     worker_id: str
     lease_token: str = field(repr=False)
     lease_expires_at: datetime
+    checkpoint_thread_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -140,6 +142,70 @@ def _clear_lease(row: AgentRun) -> None:
     row.heartbeat_at = None
 
 
+_CLAIM_BATCH_SIZE = 5
+_CLAIM_MAX_BATCHES = 20
+
+
+def _claim_from_rows(
+    db: Session,
+    rows: list[AgentRun],
+    *,
+    current_time: datetime,
+    worker_id: str,
+    lease_seconds: int,
+    max_attempts: int,
+) -> AgentRunClaim | None:
+    for row in rows:
+        was_expired = row.status == "RUNNING"
+        if row.cancel_requested_at is not None:
+            row.status = "CANCELLED"
+            row.completed_at = current_time
+            _clear_lease(row)
+            continue
+        if was_expired and row.attempt_number >= max_attempts:
+            row.status = "FAILED"
+            row.error_code = "WORKER_LEASE_EXHAUSTED"
+            row.error_detail = "Worker lease expired at the retry limit."
+            row.completed_at = current_time
+            _clear_lease(row)
+            continue
+
+        token = secrets.token_urlsafe(32)
+        row.status = "RUNNING"
+        row.worker_id = worker_id
+        row.lease_token_hash = _token_digest(token)
+        row.lease_expires_at = current_time + timedelta(seconds=lease_seconds)
+        row.heartbeat_at = current_time
+        row.started_at = row.started_at or current_time
+        row.completed_at = None
+        row.error_code = None
+        row.error_detail = None
+        if was_expired:
+            row.attempt_number += 1
+            row.checkpoint_thread_id = None
+            row.checkpoint_ref = None
+        # Server-derived and attempt-scoped: a retry never reuses old graph state.
+        row.checkpoint_thread_id = run_thread_id(row.id, row.attempt_number)
+        db.flush()
+        try:
+            run_result = _run_result(db, row)
+        except (AgentWorkerError, ValueError) as exc:
+            row.status = "FAILED"
+            row.error_code = "SNAPSHOT_INVALID"
+            row.error_detail = f"{type(exc).__name__}: {exc}"
+            row.completed_at = current_time
+            _clear_lease(row)
+            continue
+        return AgentRunClaim(
+            run=run_result,
+            worker_id=worker_id,
+            lease_token=token,
+            lease_expires_at=_utc(row.lease_expires_at),
+            checkpoint_thread_id=row.checkpoint_thread_id,
+        )
+    return None
+
+
 def claim_next_agent_run(
     session_factory: SessionFactory,
     *,
@@ -157,73 +223,40 @@ def claim_next_agent_run(
 
     with session_factory() as db:
         with db.begin():
-            rows = list(
-                db.scalars(
-                    select(AgentRun)
-                    .where(
-                        or_(
-                            AgentRun.status == "QUEUED",
-                            AgentRun.status == "RUNNING",
-                        )
-                    )
-                    .order_by(AgentRun.created_at, AgentRun.id)
-                    .with_for_update(skip_locked=True)
-                )
-            )
             current_time = now()
-            for row in rows:
-                was_expired = (
-                    row.status == "RUNNING"
-                    and row.lease_expires_at is not None
-                    and _utc(row.lease_expires_at) <= current_time
+            # Only claimable rows are selected and locked: QUEUED runs and
+            # RUNNING runs whose lease has expired. Rows terminalized below
+            # leave the predicate, so the bounded batch is re-queried.
+            for _ in range(_CLAIM_MAX_BATCHES):
+                rows = list(
+                    db.scalars(
+                        select(AgentRun)
+                        .where(
+                            or_(
+                                AgentRun.status == "QUEUED",
+                                and_(
+                                    AgentRun.status == "RUNNING",
+                                    AgentRun.lease_expires_at <= current_time,
+                                ),
+                            )
+                        )
+                        .order_by(AgentRun.created_at, AgentRun.id)
+                        .limit(_CLAIM_BATCH_SIZE)
+                        .with_for_update(skip_locked=True, of=AgentRun)
+                    )
                 )
-                if row.status == "RUNNING" and not was_expired:
-                    continue
-                if row.cancel_requested_at is not None:
-                    row.status = "CANCELLED"
-                    row.completed_at = current_time
-                    _clear_lease(row)
-                    continue
-                if was_expired and row.attempt_number >= max_attempts:
-                    row.status = "FAILED"
-                    row.error_code = "WORKER_LEASE_EXHAUSTED"
-                    row.error_detail = "Worker lease expired at the retry limit."
-                    row.completed_at = current_time
-                    _clear_lease(row)
-                    continue
-
-                token = secrets.token_urlsafe(32)
-                row.status = "RUNNING"
-                row.worker_id = worker_id
-                row.lease_token_hash = _token_digest(token)
-                row.lease_expires_at = current_time + timedelta(
-                    seconds=lease_seconds
-                )
-                row.heartbeat_at = current_time
-                row.started_at = row.started_at or current_time
-                row.completed_at = None
-                row.error_code = None
-                row.error_detail = None
-                if was_expired:
-                    row.attempt_number += 1
-                    row.checkpoint_thread_id = None
-                    row.checkpoint_ref = None
-                db.flush()
-                try:
-                    run_result = _run_result(db, row)
-                except (AgentWorkerError, ValueError) as exc:
-                    row.status = "FAILED"
-                    row.error_code = "SNAPSHOT_INVALID"
-                    row.error_detail = f"{type(exc).__name__}: {exc}"
-                    row.completed_at = current_time
-                    _clear_lease(row)
-                    continue
-                return AgentRunClaim(
-                    run=run_result,
+                if not rows:
+                    return None
+                claimed = _claim_from_rows(
+                    db,
+                    rows,
+                    current_time=current_time,
                     worker_id=worker_id,
-                    lease_token=token,
-                    lease_expires_at=_utc(row.lease_expires_at),
+                    lease_seconds=lease_seconds,
+                    max_attempts=max_attempts,
                 )
+                if claimed is not None:
+                    return claimed
     return None
 
 
@@ -280,6 +313,7 @@ def retry_failed_agent_run(
                 "SNAPSHOT_REVALIDATION_FAILED",
                 "SOLVER_FAILURE",
                 "SOLVER_INTERNAL_ERROR",
+                "CHECKPOINT_UNAVAILABLE",
             }:
                 return False
             if row.attempt_number >= 3:
@@ -571,6 +605,7 @@ def _store_candidates(
                 id=candidate_id,
                 run_id=run.id,
                 rank=rank,
+                graph_candidate_id=candidate.candidate_id,
                 source_revision=candidate.source_revision,
                 source_snapshot_hash=candidate.source_snapshot_hash,
                 meeting_date=candidate.date,
@@ -688,6 +723,10 @@ def _finish(
                 _verify_current_snapshot(db, row)
 
             row.status = status
+            if output is not None and output.checkpoint_ref:
+                row.checkpoint_thread_id = output.checkpoint_thread_id
+                row.checkpoint_ref = output.checkpoint_ref
+                row.base_checkpoint_ref = output.checkpoint_ref
             row.error_code = error_code
             row.error_detail = error_detail
             row.completed_at = now()
@@ -728,13 +767,20 @@ def _execute_solver(
     *,
     time_limit_seconds: float,
     cancellation_event: threading.Event,
+    checkpointer=None,
 ) -> AgentSolverOutput:
+    durable = (
+        {"checkpointer": checkpointer, "checkpoint_thread_id": claim.checkpoint_thread_id}
+        if checkpointer is not None
+        else {}
+    )
     return run_agent_solver(
         claim.run,
         session_factory=session_factory,
         time_limit_seconds=time_limit_seconds,
         cancellation_event=cancellation_event,
         expected_status="RUNNING",
+        **durable,
     )
 
 
@@ -745,6 +791,7 @@ def execute_agent_run(
     lease_seconds: int = 60,
     heartbeat_interval_seconds: float | None = None,
     time_limit_seconds: float = 5.0,
+    checkpointer=None,
 ) -> AgentWorkerResult:
     """Run a claimed task outside DB transactions and persist its result atomically."""
     if lease_seconds < 3 or time_limit_seconds <= 0:
@@ -771,6 +818,7 @@ def execute_agent_run(
                 session_factory,
                 time_limit_seconds=time_limit_seconds,
                 cancellation_event=keeper.cancelled,
+                checkpointer=checkpointer,
             )
         except StaleAgentRunError as exc:
             if keeper.lost.is_set():

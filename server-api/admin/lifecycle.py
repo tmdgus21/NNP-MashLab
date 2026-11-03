@@ -8,6 +8,7 @@ from database import Room, Proposal, RoomEvent, session, now
 from models import RoomControl, room_time_bounds, sync_room_roles
 from .models import Lifecycle, CycleArchive
 from .security import enabled, utc, log, digest as hash_digest
+from services.meeting_domain import is_potato_meet, potato_deadline
 
 SEOUL = ZoneInfo('Asia/Seoul')
 
@@ -15,7 +16,9 @@ SEOUL = ZoneInfo('Asia/Seoul')
 def deadline(db, room):
     scheduled = max(room.config.get('dates') or ['1970-01-01'])
     actual = None
-    if room.status == 'finalized':
+    if is_potato_meet(room):
+        scheduled, actual = potato_deadline(db, room)
+    elif room.status == 'finalized':
         plan = db.scalar(select(Proposal).where(Proposal.room_id == room.id, Proposal.round == room.round))
         if plan and plan.plan.get('assignments'):
             intervals = [a['interval'] for a in plan.plan['assignments']]

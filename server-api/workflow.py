@@ -7,6 +7,7 @@ from copy import deepcopy
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import select
+from services.meeting_domain import agent_final_exists, bump_agent_input_revision, is_potato_meet
 
 from ai_conditions import ParseConditionRequest, parse_condition
 from database import AIDraft, ConsentRow, Member, Proposal, Room, RoomEvent, Submission, now, session, uid
@@ -67,7 +68,7 @@ def identity(db, authorization):
     return member
 
 
-def access(db, room_id, authorization, expected=None, host=False, mutable=False, allow_deleted=False):
+def access(db, room_id, authorization, expected=None, host=False, mutable=False, allow_deleted=False, role_assignment=False):
     member = identity(db, authorization)
     if member.room_id != room_id:
         fail(403, "다른 모임에는 접근할 수 없습니다.")
@@ -83,6 +84,13 @@ def access(db, room_id, authorization, expected=None, host=False, mutable=False,
     lifecycle.check(db, room, write=mutable or expected is not None)
     if mutable and room.status == "finalized":
         fail(409, "이미 최종 확정된 모임입니다.")
+    if is_potato_meet(room):
+        # Potato Meet rooms never get /v1 role-assignment policy, and a room whose
+        # current coordination round is finalized is immutable like a /v1 one.
+        if role_assignment:
+            fail(409, "Potato Meet 모임에는 역할 배정을 사용할 수 없습니다.")
+        if mutable and agent_final_exists(db, room):
+            fail(409, "이미 최종 확정된 모임입니다.")
     if expected is not None and expected != room.revision:
         fail(409, "다른 변경이 있습니다. 새로고침 후 다시 시도해 주세요.")
     return room, member
@@ -229,6 +237,8 @@ def join_meeting(
         _, _, _, replay = creation_identity(db, idempotency_key, "join", request)
         if replay:
             return replay
+    if is_potato_meet(room):
+        fail(409, "Potato Meet 모임은 /v2/rooms/join으로 참가하세요.")
     lifecycle.check(db, room, write=True)
     if room.status == "finalized":
         fail(409, "확정된 모임에는 참가할 수 없습니다.")
@@ -352,13 +362,14 @@ def submit(room_id: str, request: Submit, authorization: str | None = Header(def
     room.dirty, room.status = True, "collecting"
     room.lifecycle_status = "COLLECTING_CONDITIONS"
     room.revision += 1
+    bump_agent_input_revision(room)  # availability is Agent input; no-op for /v1 rooms
     event(db, room, f"{member.nickname}님이 조건을 확정 제출했습니다.", event_type="CONDITION_SUBMITTED", actor_member_id=member.id)
     return meeting_view(db, room)
 
 
 @router.post("/meetings/{room_id}/calculations")
 def calculate(room_id: str, request: Revision, authorization: str | None = Header(default=None), db=Depends(db_session)):
-    room, _ = access(db, room_id, authorization, request.expectedRevision, host=True, mutable=True)
+    room, _ = access(db, room_id, authorization, request.expectedRevision, host=True, mutable=True, role_assignment=True)
     view = meeting_view(db, room)
     if not all(p["submitted"] for p in view["participants"]):
         fail(409, "모든 참가자의 조건 제출이 필요합니다.")
@@ -394,7 +405,7 @@ def current_feasible(db, room):
 
 @router.put("/meetings/{room_id}/consent")
 def consent(room_id: str, request: ConsentInput, authorization: str | None = Header(default=None), db=Depends(db_session)):
-    room, member = access(db, room_id, authorization, request.expectedRevision, mutable=True)
+    room, member = access(db, room_id, authorization, request.expectedRevision, mutable=True, role_assignment=True)
     proposal = current_feasible(db, room)
     if request.round != proposal.round:
         fail(409, "이전 회차에는 동의할 수 없습니다.")
@@ -412,7 +423,7 @@ def consent(room_id: str, request: ConsentInput, authorization: str | None = Hea
 
 @router.post("/meetings/{room_id}/finalize")
 def finalize(room_id: str, request: Revision, authorization: str | None = Header(default=None), db=Depends(db_session)):
-    room, _ = access(db, room_id, authorization, request.expectedRevision, host=True, mutable=True)
+    room, _ = access(db, room_id, authorization, request.expectedRevision, host=True, mutable=True, role_assignment=True)
     proposal = current_feasible(db, room)
     view = meeting_view(db, room)
     if proposal.input_snapshot["versions"] != {p["id"]: p["conditionVersion"] for p in view["participants"]}:
@@ -509,6 +520,7 @@ def host_extension(room_id: str, request: Extension, authorization: str | None =
     member = identity(db, authorization)
     room = db.scalar(select(Room).where(Room.id == room_id).with_for_update())
     if not room or member.room_id != room_id or room.host_id != member.id: fail(403, '현재 방장만 연장할 수 있습니다.')
+    if is_potato_meet(room): fail(409, 'Potato Meet 모임은 조정 회차 API로 다음 회차를 여세요.')
     if not idempotency_key or not 16 <= len(idempotency_key) <= 100 or not 5 <= len(request.reason.strip()) <= 1000 or not 1 <= len(request.dates) <= 7: fail(422, '새 날짜, 사유와 요청 식별자가 필요합니다.')
     try:
         from datetime import date

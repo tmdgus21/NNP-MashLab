@@ -527,6 +527,12 @@ class LocalProposalApprovalAdapter:
         validate_proposal(snapshot, actor, draft, today=today)
 
         payload = snapshot.model_dump(mode="python")
+        # model_dump() turns nested models into dicts; the branches below use
+        # attribute access on these values, so keep them as model instances.
+        payload["absolute_time_windows"] = tuple(snapshot.absolute_time_windows)
+        payload["availability_by_participant_id"] = dict(
+            snapshot.availability_by_participant_id
+        )
         for change in proposal.changes:
             if isinstance(change, SetMeetingDatesChange):
                 payload["excluded_dates"] = tuple(
