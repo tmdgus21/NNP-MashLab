@@ -130,7 +130,7 @@ export function WelcomeScreen() {
                 </View>
               </View>
               <Field
-                label="함께 활동할 시간 (분, 30분 단위)"
+                label="함께 활동할 시간 (분)"
                 value={duration}
                 onChangeText={setDuration}
                 keyboardType="number-pad"

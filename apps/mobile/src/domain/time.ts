@@ -5,8 +5,8 @@ export const timeLabel = (minute: number) =>
     minute % 60,
   ).padStart(2, '0')}`;
 export function parseTime(value: string): number {
-  if (!/^(?:[01]\d|2[0-3]):(?:00|30)$/.test(value) && value !== '24:00') {
-    throw new Error('시간은 HH:00 또는 HH:30 형식으로 입력하세요.');
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value) && value !== '24:00') {
+    throw new Error('시간은 HH:MM 형식으로 입력하세요.');
   }
   const [h, m] = value.split(':').map(Number);
   return h * 60 + m;
@@ -46,7 +46,7 @@ export function intervalsToSlots(
     .filter(i => i.date === date)
     .forEach(i => {
       intervalSchema.parse(i);
-      for (let s = i.start / 30; s < i.end / 30; s++) {
+      for (let s = Math.floor(i.start / 30); s < Math.ceil(i.end / 30); s++) {
         slots.add(s);
       }
     });
