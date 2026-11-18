@@ -3,8 +3,8 @@ import { z } from 'zod';
 export const intervalSchema = z
   .object({
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    start: z.number().int().min(0).max(1410).multipleOf(30),
-    end: z.number().int().min(30).max(1440).multipleOf(30),
+    start: z.number().int().min(0).max(1439),
+    end: z.number().int().min(1).max(1440),
   })
   .refine(v => v.start < v.end, '종료는 시작 이후여야 합니다.');
 export const conditionsSchema = z.object({
@@ -17,7 +17,7 @@ export const conditionsSchema = z.object({
   requiredRoles: z.array(z.string()).optional(),
   roleUnavailable: z.array(z.string()).optional(),
   rolePreferences: z.array(z.string()).optional(),
-  timePreferences: z.array(z.object({date: z.string(), start: z.number().int().multipleOf(30), end: z.number().int().multipleOf(30), kind: z.enum(['available', 'unavailable'])})).optional(),
+  timePreferences: z.array(z.object({date: z.string(), start: z.number().int().min(0).max(1439), end: z.number().int().min(1).max(1440), kind: z.enum(['available', 'unavailable'])})).optional(),
   companionRequirements: z.array(z.object({participantId: z.string(), relation: z.enum(['together', 'apart']), strength: z.enum(['required', 'preferred'])})).optional(),
   aiDraftId: z.string().nullable().optional(),
   ambiguitiesResolved: z.boolean().optional(),
@@ -61,7 +61,7 @@ export const meetingSchema = z.object({
   dates: z.array(z.string()).min(1),
   roles: z.array(z.string()).min(1),
   roleNeeds: z.record(z.string(), z.number().int().positive()).optional(),
-  duration: z.number().int().positive().multipleOf(30),
+  duration: z.number().int().min(1).max(1440),
   windowStart: z.number().int(),
   windowEnd: z.number().int(),
   revision: z.number().int(),

@@ -105,15 +105,15 @@ export class MockRepository implements Repository {
       !input.roles.length ||
       input.roles.length > 6 ||
       input.roles.some(r => !r.trim()) ||
-      input.duration < 30 ||
-      input.duration % 30 ||
+      input.duration < 1 ||
       input.windowStart < 0 ||
       input.windowEnd > 1440 ||
-      input.windowStart % 30 ||
-      input.windowEnd % 30 ||
+      !Number.isInteger(input.duration) ||
+      !Number.isInteger(input.windowStart) ||
+      !Number.isInteger(input.windowEnd) ||
       input.windowStart + input.duration > input.windowEnd
     ) {
-      throw new Error('이름·날짜·역할·30분 단위 시간 범위를 확인해 주세요.');
+      throw new Error('이름·날짜·역할·분 단위 시간 범위를 확인해 주세요.');
     }
     const id = `m${Date.now()}`;
     const actorId = `${id}-host`;

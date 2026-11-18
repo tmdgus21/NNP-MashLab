@@ -106,8 +106,8 @@ def read_root():
 
 @app.post("/rooms", status_code=201)
 def create_room(request: RoomCreateRequest, db=Depends(db_session)):
-    if request.start_time.second or request.end_time.second or request.start_time.minute % 30 or request.end_time.minute % 30:
-        raise HTTPException(422, detail="30분 단위 시간을 입력해 주세요.")
+    if request.start_time.second or request.end_time.second or request.start_time.microsecond or request.end_time.microsecond:
+        raise HTTPException(422, detail="초 없이 분 단위로 입력해 주세요.")
     start = request.start_time.hour * 60 + request.start_time.minute
     end = request.end_time.hour * 60 + request.end_time.minute
     if end <= start:

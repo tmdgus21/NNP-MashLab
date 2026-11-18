@@ -9,8 +9,8 @@ class Input(BaseModel):
 
 class Interval(Input):
     date: str
-    start: int = Field(ge=0, le=1410, multiple_of=30)
-    end: int = Field(ge=30, le=1440, multiple_of=30)
+    start: int = Field(ge=0, le=1439)
+    end: int = Field(ge=1, le=1440)
 
     @model_validator(mode="after")
     def valid(self):
@@ -52,9 +52,9 @@ class CreateMeeting(Input):
     dates: list[str] = Field(min_length=1, max_length=7)
     roles: list[str] = Field(min_length=1, max_length=6)
     roleNeeds: dict[str, int] = Field(default_factory=dict)
-    duration: int = Field(ge=30, le=1440, multiple_of=30)
-    windowStart: int = Field(ge=0, le=1410, multiple_of=30)
-    windowEnd: int = Field(ge=30, le=1440, multiple_of=30)
+    duration: int = Field(ge=1, le=1440)
+    windowStart: int = Field(ge=0, le=1439)
+    windowEnd: int = Field(ge=1, le=1440)
 
     @model_validator(mode="after")
     def valid(self):

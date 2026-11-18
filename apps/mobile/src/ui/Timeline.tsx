@@ -7,9 +7,11 @@ import { colors, ui } from './theme';
 const CELL = 30;
 export function Timeline({ meeting: m }: { meeting: Meeting }) {
   const [date, setDate] = useState(m.dates[0]);
+  const first = Math.floor(m.windowStart / 30);
+  const last = Math.ceil(m.windowEnd / 30);
   const slots = Array.from(
-    { length: (m.windowEnd - m.windowStart) / 30 },
-    (_, i) => m.windowStart / 30 + i,
+    { length: Math.max(0, last - first) },
+    (_, i) => first + i,
   );
   const people = m.participants.map(p => ({
     ...p,

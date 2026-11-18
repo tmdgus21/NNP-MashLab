@@ -8,7 +8,7 @@ export function mockSolve(m: Meeting): Plan {
     for (
       let start = m.windowStart;
       start + m.duration <= m.windowEnd;
-      start += 30
+      start += 1
     ) {
       const interval = { date, start, end: start + m.duration };
       const assign = (index: number, rows: Assignment[], score: number) => {

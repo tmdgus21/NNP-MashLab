@@ -17,6 +17,7 @@ test('merges adjacent slots, preserves gaps and midnight boundary', () => {
   ]);
   expect(timeLabel(1440)).toBe('24:00');
   expect(parseTime('09:30')).toBe(570);
+  expect(parseTime('12:15')).toBe(735);
 });
 test('round trip remains lossless for varied selections', () => {
   for (let seed = 0; seed < 100; seed++) {
@@ -34,11 +35,11 @@ test('fast/reverse drags interpolate every cell and erase without holes', () => 
   expect(paintSlots([], -2, 1, false)).toEqual([0, 1]);
   expect(paintSlots([], 46, 50, false)).toEqual([46, 47]);
 });
-test('validates dates, half-hour boundaries and zero/negative ranges', () => {
+test('validates dates, minute precision and zero/negative ranges', () => {
   expect(validDate('2026-02-30')).toBe(false);
   expect(() => slotsToIntervals(date, [48])).toThrow();
   expect(() => parseTime('25:00')).toThrow();
-  expect(() => parseTime('12:15')).toThrow();
+  expect(() => parseTime('12:60')).toThrow();
   expect(() =>
     intervalsToSlots([{ date, start: 600, end: 600 }], date),
   ).toThrow();

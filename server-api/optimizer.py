@@ -3,7 +3,20 @@ from ortools.sat.python import cp_model
 
 
 def covered(ranges, day, start, end):
-    return all(any(r["date"] == day and r["start"] <= slot and r["end"] >= slot + 30 for r in ranges) for slot in range(start, end, 30))
+    """True when [start, end) is covered by the union of same-day ranges. Minute resolution."""
+    cursor = start
+    spans = sorted(
+        (r["start"], r["end"])
+        for r in ranges
+        if r["date"] == day and r["end"] > start and r["start"] < end
+    )
+    for begin, finish in spans:
+        if begin > cursor:
+            return False
+        cursor = max(cursor, finish)
+        if cursor >= end:
+            return True
+    return cursor >= end
 
 
 def overlaps(ranges, day, start, end):
@@ -12,7 +25,7 @@ def overlaps(ranges, day, start, end):
 
 def solve(config, participants, round_number, max_seconds=5):
     model = cp_model.CpModel()
-    candidates = [(day, start, start + config["duration"]) for day in config["dates"] for start in range(config["windowStart"], config["windowEnd"] - config["duration"] + 1, 30)]
+    candidates = [(day, start, start + config["duration"]) for day in config["dates"] for start in range(config["windowStart"], config["windowEnd"] - config["duration"] + 1)]
     selected = [model.new_bool_var(f"time_{i}") for i in range(len(candidates))]
     model.add_exactly_one(selected)
     choices, active, score = {}, {}, []

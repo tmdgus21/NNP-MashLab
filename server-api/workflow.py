@@ -440,8 +440,8 @@ def map_ai(parsed, meeting, member_id):
             questions.append("날짜를 선택하고 시간 블록을 직접 확인해 주세요.")
             continue
         start, end = [sum(int(v) * factor for v, factor in zip(clock.split(":"), (60, 1))) for clock in (item.start, item.end)]
-        if start % 30 or end % 30 or item.date.isoformat() not in meeting["dates"]:
-            questions.append(f"{item.start}~{item.end}: 후보 날짜와 30분 시간 블록으로 직접 수정해 주세요.")
+        if item.date.isoformat() not in meeting["dates"]:
+            questions.append(f"{item.start}~{item.end}: 후보 날짜에 맞게 직접 수정해 주세요.")
             continue
         interval = {"date": item.date.isoformat(), "start": start, "end": end}
         if item.strength == "preferred":
