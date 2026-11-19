@@ -1,0 +1,3 @@
+# Copy to potatomeet.properties (gitignored) for local overrides.
+# Must be HTTPS in production.
+API_BASE_URL=https://oranganman.site/v1

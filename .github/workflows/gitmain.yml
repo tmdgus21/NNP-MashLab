@@ -58,8 +58,12 @@ jobs:
             git checkout --detach --force FETCH_HEAD
             # Host .env / .env.database must already set DB_NAME=potato_server_v2
             bash infra/deploy.sh
+  # Legacy React Native signed APK (apps/mobile / conditional-ok).
+  # Potato Meet Kotlin APK lives under apps/android and is NOT built or published here.
+  # Auto-running this on every main push would ship the wrong app during server cutover,
+  # so keep it manual-only via workflow_dispatch.
   release:
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch'
     needs: test
     runs-on: ubuntu-24.04
     steps:
@@ -80,7 +84,7 @@ jobs:
         working-directory: apps/mobile
         env:
           CONDITIONAL_OK_API_URL: https://oranganman.site/v1
-      - name: Build signed APK
+      - name: Build signed APK (legacy React Native only)
         working-directory: apps/mobile
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}

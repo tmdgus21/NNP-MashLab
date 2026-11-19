@@ -1,0 +1,275 @@
+# Potato Meet — 설치·환경·경로 정리
+# 값 출처: 저장소 파일(README.md, docker-compose*.yml, server-api/requirements*.txt|lock, Dockerfile,
+#          .github/workflows/gitmain.yml, apps/mobile/docs/ENVIRONMENT.md, infra/systemd/*, server-api/README-AI.md)
+# "planned" = 아직 저장소에 없음, 추가 시 승인 필요. "decide" = 버전·값 미정(승인 요청 때 정함).
+# 비밀값은 이 파일에 적지 않는다. 이름과 위치만.
+
+meta:
+  project: Potato Meet
+  repository: https://github.com/tmdgus21/NNP-MashLab
+  timezone: Asia/Seoul            # 모든 날짜·시간 판단은 서버의 한국 시각 기준
+  updated: 2026-11-16               # 정책 동기화(30분 격자·3분 유예·연장 1회 등), 값 자체는 변경 없음
+
+# ─────────────────────────────────────────────────────────────
+# 1. 개발 컴퓨터에 설치할 것
+# ─────────────────────────────────────────────────────────────
+dev_machine:
+  claude_code_harness:            # 원칙 1~3(rules·hooks·skills) 동작에 필요
+    - name: Claude Code
+      note: 저장소 루트에서 실행해야 CLAUDE_PROJECT_DIR가 루트로 잡힘
+    - name: bash
+      note: 훅이 bash 스크립트. Windows는 Git Bash 필요
+    - name: jq
+      required: true
+      note: 없으면 pre_guard 훅이 모든 도구 호출을 차단(원칙 2)
+    - name: git
+  server:
+    - name: Python
+      version: "3.11"             # Dockerfile python:3.11-slim, CI setup-python 3.11
+    - name: Docker + Docker Compose
+      note: 로컬 PostgreSQL(docker-compose.local.yml)과 운영 빌드에 사용
+  android:
+    - name: JDK
+      version: "17"               # CI setup-java 17 (기존 기록 17.0.20)
+    - name: Android SDK
+      note: 아래 android.sdk 값 참고. sdkmanager는 cmdline-tools 사용
+    - name: Android Studio
+      note: 선택. 에뮬레이터 기존 AVD ConditionalOK_API35(API35, x86_64)
+  load_test:
+    - name: Apache JMeter
+      version: decide
+      note: MAX_MEMBERS 결정용(Q36). 운영 서버 대상 실행은 사용자 승인 후 사용자가 실행
+  not_needed_for_new_app:
+    - Node.js / npm               # 기존 React Native 앱(apps/mobile)에서만 사용. 컷오버 후 제거 예정
+
+# ─────────────────────────────────────────────────────────────
+# 2. 서버 (server-api) 의존성 — requirements.txt / requirements.lock
+# ─────────────────────────────────────────────────────────────
+server_dependencies:
+  existing:
+    fastapi: "0.143.0"            # lock
+    uvicorn: "0.54.0"             # lock, uvicorn[standard]
+    sqlalchemy: ">=2.0.36,<2.1"
+    alembic: "1.20.0"
+    psycopg: ">=3.2,<4 (binary)"
+    httpx: "0.28.1"               # Qwen 호출, FCM 호출에도 사용 예정
+    argon2-cffi: "25.1.0"         # /v1/auth 비밀번호
+    python-dotenv: "1.2.4"
+    prometheus-fastapi-instrumentator: "8.1.0"
+    ortools: "9.15.6755"          # 기존 CP-SAT(optimizer.py) 전용. 컷오버 후 제거 검토
+  planned:
+    google-auth: decide           # FCM HTTP v1 OAuth 토큰 발급(R9). requirements.lock 함께 갱신
+  forbidden:
+    - openai
+    - anthropic
+    - google-generativeai
+    - cohere
+    - langchain                   # 외부 LLM SDK 금지(훅 차단). AI는 자체 Qwen만
+
+# ─────────────────────────────────────────────────────────────
+# 3. 앱 (apps/android) — 새 Kotlin 앱
+# ─────────────────────────────────────────────────────────────
+android:
+  app_name: Potato Meet
+  application_id: com.potatomeet.app          # Q11 확정
+  package_root: com.potatomeet.app
+  sdk:                                        # 기존 RN 앱 값(참고). 새 앱 값은 승인 요청 때 확정
+    reference_from_existing_app:
+      compileSdk: 37                          # 패키지명 platforms;android-37.0
+      targetSdk: 36
+      minSdk: 24
+      buildTools: "37.0.0"
+      gradle: "9.4.1"
+      kotlin: "2.2.0"
+    new_app:
+      compileSdk: decide
+      targetSdk: decide
+      minSdk: decide                          # 설계 초안은 26
+  libraries:                                  # 버전은 apps/android/gradle/libs.versions.toml 에서만 관리
+    planned:
+      - Jetpack Compose (Material3)
+      - Navigation Compose
+      - Hilt
+      - Kotlin Coroutines / Flow
+      - Retrofit + OkHttp + kotlinx.serialization
+      - okhttp-sse                            # 실시간 갱신(Q10) — 승인 대상
+      - firebase-messaging                    # 푸시(R9) — 승인 대상
+      - DataStore / Android Keystore 기반 암호화 저장소   # 세션 토큰
+      - ktlint (Gradle plugin)
+    versions: decide
+  build_config:
+    API_BASE_URL: https://oranganman.site/v1  # HTTPS만
+  user_provided_files:                        # Claude가 만들거나 읽지 않음(훅 차단)
+    - apps/android/app/google-services.json
+  signing:
+    note: 릴리스 서명은 CI Secrets/환경 변수로만. 키 파일은 저장소에 두지 않음
+  commands:
+    check: cd apps/android && ./gradlew ktlintCheck testDebugUnitTest assembleDebug
+
+# ─────────────────────────────────────────────────────────────
+# 4. 로컬 개발 환경
+# ─────────────────────────────────────────────────────────────
+local:
+  postgres:
+    compose_file: docker-compose.local.yml
+    image: postgres:18-alpine
+    container: mashlab-postgres-local
+    host: 127.0.0.1
+    port: 5432
+    user: mashlab
+    password: mashlab                          # 로컬 전용 기본값
+    default_db: mashlab
+    v21_dev_db: mashlab_v21                    # v21 마이그레이션 검증용 빈 DB. 사용자가 생성
+    create_v21_db: docker exec mashlab-postgres-local createdb -U mashlab mashlab_v21
+  env_file:
+    path: server-api/.env.local                # 예시: server-api/.env.local.example (Potato Meet 기준으로 갱신함)
+    loaded_by: server-api/migrations_v21/env.py (alembic). uvicorn/database.py 는 읽지 않음 → export 또는 --env-file
+    caution: >-
+      예시 파일의 DATABASE_URL은 postgresql:// 형식이라 SQLAlchemy가 psycopg2 드라이버를 찾는다.
+      설치된 드라이버는 psycopg(3)이므로 postgresql+psycopg:// 로 써야 한다.
+    example_database_url: postgresql+psycopg://mashlab:mashlab@127.0.0.1:5432/mashlab_v21
+  commands:
+    start_db: docker compose -f docker-compose.local.yml up -d
+    install: cd server-api && pip install -r requirements.txt
+    migrate: cd server-api && alembic -c alembic.v21.ini upgrade head     # v21만. alembic.ini(v1) 금지
+    run_api: cd server-api && uvicorn main:app --reload
+    test: cd server-api && DATABASE_URL=sqlite:// ADMIN_ENABLED=0 python -m unittest discover -s tests -v
+
+# ─────────────────────────────────────────────────────────────
+# 5. 운영 서버 (SSH) — Claude는 접속·변경하지 않음
+# ─────────────────────────────────────────────────────────────
+production:
+  domain: oranganman.site
+  public_paths_to_api: [/v1/*, /join*, /downloads*, /.well-known/*, /metrics, /docs, /openapi.json, /redoc, /admin-api/*, /rooms*, /ai/*]
+  app_dir: /home/linuxuser/projects/NNP-MashLab
+  compose: docker compose -f docker-compose.yml -f docker-compose.ai.yml   # 오버레이 필수
+  containers:
+    api: backend-api                # server-api, 내부 포트 8000
+    proxy: caddy-server             # 80/443
+    admin_web: admin-web
+    monitoring: [prometheus, grafana, node-exporter, cadvisor, postgres-exporter]
+  postgres:
+    install: host PostgreSQL 18 (컨테이너 아님)
+    host: 172.19.0.1
+    port: 5432
+    db_v21: potato_server_v2        # Potato Meet 대상
+    db_legacy: mashpotato-server-db # ok_* 레거시. 보관, 사용 금지
+    alembic: alembic -c alembic.v21.ini   # head 20261101_0004 (현재 head 유지) → 신규 20261108_0005는 계획만, 아직 미생성
+  qwen:
+    model: Qwen3-1.7B-Q8_0
+    model_file: /home/linuxuser/models/Qwen3-1.7B-Q8_0.gguf
+    binary: /home/linuxuser/.local/bin/llama          # llama.cpp
+    listen: 127.0.0.1:8080                            # OpenAI 호환 /v1/chat/completions
+    unix_socket: /run/conditional-ok/qwen.sock        # 컨테이너 → 호스트 다리 (QWEN_UNIX_SOCKET)
+    systemd:
+      - /etc/systemd/system/conditional-ok-qwen.service
+      - /etc/systemd/system/conditional-ok-qwen-proxy.socket
+      - /etc/systemd/system/conditional-ok-qwen-proxy.service
+    settings: {ctx_size: 8192, parallel: 1, threads: 4, reasoning: off}
+  backups:
+    dir: /home/linuxuser/conditional-ok-backups/postgres    # 매일, 14일 보관
+    systemd: [conditional-ok-db-backup.service, conditional-ok-db-backup.timer]
+  releases_dir: /home/linuxuser/conditional-ok-releases     # 컨테이너 /releases 로 읽기 전용 마운트
+  env_files:                         # 0600, 저장소에 없음
+    - .env
+    - .env.database
+  fcm_credentials:                   # planned (R9)
+    host_path: decide                # 호스트 파일, compose에서 읽기 전용 마운트
+    env: FCM_CREDENTIALS_FILE
+  deploy:
+    trigger: main 브랜치 push → GitHub Actions(.github/workflows/gitmain.yml) → infra/deploy.sh
+    steps: 백업 → 이미지 빌드 → 단위 테스트(sqlite) → alembic v21 upgrade head → API 컨테이너만 교체 → 상태 확인(실패 시 이전 이미지)
+    claude: main push·병합·deploy.sh 실행 금지(훅 차단). deploy-handoff 스킬로 PR 본문과 절차만 작성
+  rename_pending:                    # Q34: 운영 영향 있음, 별도 승인·배포 계획
+    - conditional-ok-* systemd 유닛
+    - /run/conditional-ok 소켓 경로
+    - /downloads/conditional-ok.apk
+    - /home/linuxuser/conditional-ok-*
+
+# ─────────────────────────────────────────────────────────────
+# 6. 환경 변수 (이름만, 값은 각 환경 파일에)
+# ─────────────────────────────────────────────────────────────
+env_vars:
+  server_existing:
+    DB_USER: DB 사용자
+    DB_PASSWORD: DB 비밀번호
+    DB_NAME: "potato_server_v2 (운영) / mashlab_v21 (로컬)"
+    DB_HOST: "172.19.0.1 (운영) / 127.0.0.1 (로컬)"
+    DB_PORT: "5432"
+    DATABASE_URL: "비우면 DB_* 사용. 쓰면 postgresql+psycopg://…"
+    APP_SESSION_SECRET: 세션 복구용, 안정적으로 유지
+    ADMIN_ENABLED: "0 (운영 현재 꺼짐, Q34). 2026-11-16 확인: 이 PC의 로컬 .env에는 1이 있음(값 미변경). 승인 없이 변경·활성화 금지"
+    QWEN_UNIX_SOCKET: /run/conditional-ok/qwen.sock (docker-compose.ai.yml)
+    ADMIN_*: 관리자 기능용(현재 미사용) — 예시 server-api/.env.admin.example
+    APK_PATH: "/releases/app-release.apk (public_routes.py 기본값)"
+    ASSETLINKS_PATH: "/releases/assetlinks.json (public_routes.py 기본값)"
+    GRAFANA_*/GF_*: 모니터링 (.env.example)
+  server_planned:                   # .env.example / server-api/.env.local.example 에 자리 추가함
+    FCM_CREDENTIALS_FILE: FCM 서비스 계정 키 파일 경로(R9)
+    MAX_MEMBERS: 모임 인원 상한, 부하 테스트로 결정(Q36). 로컬 예시는 임시 50
+  android_local:                    # apps/android/potatomeet.properties (예시 파일 있음, git 제외)
+    API_BASE_URL: https://oranganman.site/v1
+    POTATO_MEET_KEYSTORE_PATH / STORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD: 로컬 릴리스 서명용(값은 저장소에 없음)
+  example_files:
+    .env.example: 운영 루트 (Potato Meet 항목 추가)
+    server-api/.env.local.example: 로컬 (드라이버 형식·mashlab_v21 수정)
+    server-api/.env.admin.example: 관리자 (변경 없음)
+    apps/mobile/.env.example: 기존 RN 앱 (변경 없음, 컷오버 후 제거)
+    apps/android/potatomeet.properties.example: 새 앱 (신규)
+  ci_secrets_existing:               # GitHub 저장소 Secrets
+    - ANDROID_KEYSTORE_BASE64
+    - ANDROID_STORE_PASSWORD
+    - ANDROID_KEY_ALIAS
+    - ANDROID_KEY_PASSWORD
+    - SSH_HOST
+    - SSH_USER
+    - SSH_KEY
+    - APP_DIR
+
+# ─────────────────────────────────────────────────────────────
+# 7. 저장소 경로 지도
+# ─────────────────────────────────────────────────────────────
+repo_paths:
+  harness:                           # Claude Code 작업 환경 (이 zip)
+    CLAUDE.md: 매 세션 자동 로드 — 프로젝트 개요·진행 상태·어디를 볼지
+    .claude/settings.json: 훅 등록 (Claude 수정 금지)
+    .claude/hooks/: [lib.sh, session_start.sh, pre_guard.sh, post_check.sh]
+    .claude/state/: 훅 세션 마커·로그 (gitignore)
+    .claude/rules/:
+      always: [00-scope.md, 01-workflow.md, 02-repo-safety.md]
+      by_path: [android-kotlin.md, android-compose.md, android-gradle.md, server-schedule-api.md, server-db-alembic.md, server-ai-qwen.md, coordination.md, notifications.md, infra.md]
+    .claude/skills/: [feature-workflow, add-screen, schema-change, deploy-handoff]
+  docs:
+    docs/potato-meet/PRD.md: 페이지 P1~P9, 요구사항 R1~R9
+    docs/potato-meet/architecture.md: 구성·API·실시간·푸시·부하 테스트
+    docs/potato-meet/data-model.md: 재사용 v21 테이블 + 신규 12개(설계만, 리비전 0005 미생성)
+    docs/potato-meet/coordination-algorithm.md: 입력(30분 격자)·조율·투표·알림 규칙과 테스트 케이스
+    docs/potato-meet/open-questions.md: 결정 기록 Q1~Q39
+    docs/potato-meet/policy-diff-20261116.md: 옛 하네스 vs 확정 정책 비교표
+    docs/potato-meet/test-plan-20261116.md: 테스트 명세(미실행)
+    docs/potato-meet/environment.yaml: 이 파일
+  new_work:                          # 주 작업 대상 (아직 없음)
+    apps/android/: 새 Kotlin 앱
+    server-api/schedule/: [router.py, schemas.py, deps.py, service.py, collection.py, coordination.py, ai_summary.py, notifications.py, events.py]
+    server-api/db_v21/models/schedule.py: 신규 테이블 모델
+    server-api/migrations_v21/versions/20261108_0005_*.py: 신규 리비전
+    server-api/tests/test_schedule_*.py: 단위 테스트(sqlite)
+    server-api/tests/load/*.jmx: JMeter 계획(운영 주소·계정 넣지 않음)
+  reuse:
+    server-api/user_auth.py: /v1/auth (R1 — UI·DB 연결 완료)
+    server-api/database.py: DB 세션
+    server-api/db_v21/: v21 ORM (accounts, rooms, room_members, room_events …)
+    server-api/migrations_v21/ + alembic.v21.ini: v21 마이그레이션 체인
+    server-api/public_routes.py: /join 초대 페이지, assetlinks (패키지·서명 갱신 필요)
+  legacy_do_not_touch:
+    server-api/migrations/ + alembic.ini + alembic.local.ini: v1 (ok_*)
+    apps/mobile/: 기존 React Native 앱 (컷오버 후 제거)
+    server-api/workflow.py, workflow_models.py, optimizer.py, ai_conditions.py: 기존 API (컷오버 후 제거)
+    server-api/admin/, ops-dashboard/: 관리자 (현재 꺼짐, Q34)
+  ops_requires_approval:
+    - infra/
+    - docker-compose*.yml
+    - .github/
+    - server-api/Dockerfile
+    - server-api/requirements*
+    - prometheus.yml

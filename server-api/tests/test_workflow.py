@@ -4,14 +4,15 @@ os.environ["ADMIN_ENABLED"] = "0"
 import unittest
 from copy import deepcopy
 from unittest.mock import patch
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 import database as database_module
 database_module._engine = None
-from main import app
 from database import AIDraft, ConsentRow, Member, Proposal, RoomEvent, Submission, initialize, session
 from models import ConditionAvailableSlot, ConditionRolePreference, ProposalAssignment, ProposalConditionInput
 from workflow_models import Conditions, CreateMeeting
+from workflow import router as workflow_router
 from optimizer import solve
 from ai_conditions import ParsedCondition
 
@@ -23,17 +24,49 @@ def conditions(roles, **extra):
     return Conditions(roles=roles, availability=[{"date":"2026-10-17","start":540,"end":720}], **extra).model_dump()
 
 
+def _reset_sqlite_engine():
+    """Isolate each test on a fresh in-memory StaticPool DB.
+
+    Sibling modules (schedule/admin/auth) may leave DATABASE_URL on Postgres or
+    keep a shared sqlite:// engine. Reusing that engine makes Member token lookups
+    miss rows created in setUp → 401 유효하지 않은 참가자 인증입니다.
+    """
+    os.environ["DATABASE_URL"] = "sqlite://"
+    os.environ["ADMIN_ENABLED"] = "0"
+    previous = database_module._engine
+    database_module._engine = None
+    if previous is not None:
+        previous.dispose()
+    initialize()
+
+
+def _legacy_app() -> FastAPI:
+    """Workflow + public routes for Conditional OK regression (schedule cutover on main)."""
+    from public_routes import router as public_router
+
+    app = FastAPI()
+    app.include_router(workflow_router)
+    app.include_router(public_router)
+    return app
+
+
 class WorkflowTests(unittest.TestCase):
     def setUp(self):
-        initialize()
-        self.client=TestClient(app)
+        _reset_sqlite_engine()
+        self.client=TestClient(_legacy_app())
         self.host=self.client.post('/v1/meetings',json=CONFIG).json()
         self.id=self.host['meeting']['id']
         self.guest=self.client.post('/v1/meetings/join',json={"code":self.host['meeting']['code'],"name":"참여자"}).json()
 
+    def tearDown(self):
+        self.client.close()
+        previous = database_module._engine
+        database_module._engine = None
+        if previous is not None:
+            previous.dispose()
+
     def headers(self, actor):
         return {"Authorization":"Bearer "+actor['token']}
-
     def get(self):
         return self.client.get('/v1/meetings/'+self.id,headers=self.headers(self.host)).json()
 

@@ -22,6 +22,20 @@ from db_v21.models.proposal import (
     ProposalConsent,
 )
 from db_v21.models.room import Room, RoomMember, RoomRole
+from db_v21.models.schedule import (
+    NotificationLog,
+    NotificationSetting,
+    PushDevice,
+    ScheduleCandidate,
+    ScheduleCandidateMember,
+    ScheduleCollection,
+    ScheduleResponse,
+    ScheduleResponseRange,
+    ScheduleResult,
+    ScheduleRun,
+    ScheduleVote,
+    ScheduleVoteBallot,
+)
 
 __all__ = [
     "Account",
@@ -46,4 +60,16 @@ __all__ = [
     "AdminOtp",
     "AdminRateLimit",
     "IdempotencyRecord",
+    "ScheduleCollection",
+    "ScheduleResponse",
+    "ScheduleResponseRange",
+    "ScheduleRun",
+    "ScheduleCandidate",
+    "ScheduleCandidateMember",
+    "ScheduleVote",
+    "ScheduleVoteBallot",
+    "ScheduleResult",
+    "PushDevice",
+    "NotificationSetting",
+    "NotificationLog",
 ]
