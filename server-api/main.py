@@ -1,6 +1,7 @@
 from datetime import date, time
 import asyncio
 from contextlib import asynccontextmanager
+import logging
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -16,8 +17,10 @@ from user_auth import router as user_auth_router
 from admin.auth import router as admin_auth_router
 from admin.routes import router as admin_router
 from admin.security import enabled as admin_enabled
-from admin.lifecycle import sweep
-import logging
+from admin.lifecycle import sweep as admin_sweep
+from schedule import router as schedule_router
+from schedule import service as schedule_service
+from schedule.events import bind_loop
 
 
 
@@ -45,27 +48,61 @@ async def lifespan(app):
             if attempt == 29:
                 raise
             await asyncio.sleep(2)
-    task = None
+    bind_loop(asyncio.get_running_loop())
+    tasks = []
+
+    async def schedule_sweep_worker():
+        while True:
+            await asyncio.sleep(60)
+            try:
+                await asyncio.to_thread(schedule_service.sweep)
+            except Exception:
+                logging.getLogger(__name__).error(
+                    "Schedule sweep failed; retrying next interval", exc_info=True
+                )
+
+    # Potato Meet grace / 24h input / voting deadlines — always on
+    try:
+        await asyncio.to_thread(schedule_service.sweep)
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "Initial schedule sweep skipped", exc_info=True
+        )
+    tasks.append(asyncio.create_task(schedule_sweep_worker()))
+
     if admin_enabled():
         # Explicit migration must already be applied; never create admin tables here.
-        await asyncio.to_thread(sweep)
-        async def expiry_worker():
+        await asyncio.to_thread(admin_sweep)
+
+        async def admin_expiry_worker():
             while True:
                 await asyncio.sleep(60)
-                try: await asyncio.to_thread(sweep)
-                except Exception: logging.getLogger(__name__).error('Lifecycle sweep failed; retrying next interval')
-        task = asyncio.create_task(expiry_worker())
-    try: yield
+                try:
+                    await asyncio.to_thread(admin_sweep)
+                except Exception:
+                    logging.getLogger(__name__).error(
+                        "Lifecycle sweep failed; retrying next interval"
+                    )
+
+        tasks.append(asyncio.create_task(admin_expiry_worker()))
+    try:
+        yield
     finally:
-        if task:
+        bind_loop(None)
+        for task in tasks:
             task.cancel()
-            try: await task
-            except asyncio.CancelledError: pass
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
 
 app = FastAPI(lifespan=lifespan)
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 app.include_router(ai_router)
+# Potato Meet schedule first so overlapping /v1/meetings* use the new contract.
+# Legacy workflow routes that do not overlap (conditions/calculations/…) stay mounted.
+app.include_router(schedule_router)
 app.include_router(workflow_router)
 app.include_router(user_auth_router)
 app.include_router(public_router)
@@ -75,7 +112,7 @@ app.include_router(admin_router)
 @app.middleware('http')
 async def admin_lifecycle_checks(request, call_next):
     if admin_enabled() and (request.url.path.startswith(('/v1/', '/admin-api/', '/rooms'))):
-        try: await asyncio.to_thread(sweep)
+        try: await asyncio.to_thread(admin_sweep)
         except Exception:
             return JSONResponse(status_code=503, content={'detail':'관리 데이터 준비 상태를 확인해 주세요.'})
     response = await call_next(request)

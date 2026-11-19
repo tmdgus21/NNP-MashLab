@@ -64,9 +64,14 @@ python3 server-api/tests/live_rooms.py
 
 첫 명령은 모델 응답을 모킹한 계약/오류/기존 `/rooms` 회귀 검증이다. 두 번째는 실제 Qwen을 사용하는 한국어 10개 의미 검증이며 응답 본문과 시간을 출력한다. 세 번째는 실제 HTTPS 경로로 테스트용 방 1개를 만들고 기존 응답 `code`와 유효성 검사를 확인한다. 배포 직후 `/` 200으로 기동 준비를 확인한 후 실행한다.
 
+## 공유 클라이언트 (Potato Meet)
+
+`server-api/qwen_client.py`가 llama.cpp 호출·timeout·동시 추론 1개(Lock)를 공용한다. `/ai/parse-condition`과 `schedule/ai_summary.py`(후보 설명, 커밋 후 백그라운드, 실패 시 `ai_summary=NULL`)가 이를 쓴다. 요약은 후보·순위·확정을 바꾸지 않는다.
+
 ## 변경 파일
 
-- `server-api/ai_conditions.py`: Pydantic 모델, 한국어 prompt/examples, HTTPX 모델 호출, 검증 및 오류 처리.
+- `server-api/ai_conditions.py`: Pydantic 모델, 한국어 prompt/examples, 공유 클라이언트 호출, 검증 및 오류 처리.
+- `server-api/qwen_client.py`: 공통 HTTPX/UDS 클라이언트.
 - `server-api/main.py`: 원격 기존 `/rooms` 그대로 + AI router 등록. 로컬의 오래된 main.py는 원격 버전을 기준으로 동기화.
 - `server-api/requirements.txt`: HTTPX 추가.
 - `server-api/tests/test_api.py`, `live_korean.py`, `live_rooms.py`, `live_recovery.py`: 계약/장애/실제 추론/회귀 테스트. `live_recovery.py`는 운영 Qwen만 잠시 중단하므로 유지보수 시 명시적으로 실행한다.

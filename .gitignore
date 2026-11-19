@@ -12,6 +12,8 @@ venv/
 *.gguf
 *.log
 *.tmp
+.tmp-*/
+.tmp-harness-*/
 .env.*
 !.env.example
 *.jks
