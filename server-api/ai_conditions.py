@@ -1,14 +1,21 @@
 """Natural language -> validated constraints. This module never schedules a room."""
-import asyncio
 import json
-import os
 import re
 from datetime import date as CalendarDate
 from typing import Annotated, Literal
 
-import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+
+from qwen_client import (
+    QwenBusy,
+    QwenInvalidResponse,
+    QwenTimeout,
+    QwenUnavailable,
+    chat_completion,
+    inference_lock as _lock,
+    model_client,
+)
 
 
 class StrictModel(BaseModel):
@@ -102,70 +109,47 @@ def messages_for(request: ParseConditionRequest) -> list[dict[str, str]]:
     return messages
 
 router = APIRouter(prefix="/ai", tags=["AI condition parsing"])
-_lock = asyncio.Lock()
-
-
-def model_client() -> httpx.AsyncClient:
-    # Docker's loopback is separate. An optional Unix socket forwards to HOST 127.0.0.1:8080.
-    uds = os.getenv("QWEN_UNIX_SOCKET")
-    transport = httpx.AsyncHTTPTransport(uds=uds) if uds else None
-    return httpx.AsyncClient(
-        base_url="http://127.0.0.1:8080", transport=transport,
-        timeout=httpx.Timeout(60, connect=3, pool=3), trust_env=False,
-    )
 
 
 @router.post("/parse-condition", response_model=ParsedCondition)
 async def parse_condition(request: ParseConditionRequest) -> ParsedCondition:
     if _lock.locked():
         raise HTTPException(503, detail={"code": "AI_BUSY", "message": "조건 분석 중입니다. 잠시 후 재시도하세요."}, headers={"Retry-After": "3"})
-    async with _lock:
-        try:
-            async with asyncio.timeout(65):
-                async with model_client() as client:
-                    response = await client.post("/v1/chat/completions", json={
-                        "model": "Qwen3-1.7B-Q8_0",
-                        "messages": messages_for(request),
-                        "temperature": 0, "seed": 42, "max_tokens": 1200,
-                        "stream": False,
-                        "chat_template_kwargs": {"enable_thinking": False},
-                        "response_format": {"type": "json_object", "schema": ParsedCondition.model_json_schema()},
-                    })
-                    response.raise_for_status()
-                    payload = response.json()
-                    choice = payload["choices"][0]
-                    if not isinstance(choice, dict):
-                        raise ValueError("invalid model choice object")
-                    if choice.get("finish_reason") != "stop":
-                        raise ValueError("incomplete model response")
-                    content = choice["message"]["content"]
-                    if not isinstance(content, str) or len(content) > 24000:
-                        raise ValueError("invalid content")
-                    result = ParsedCondition.model_validate_json(content)
-                    # Reject invented entities/intervals rather than applying an ungrounded constraint.
-                    for item in result.role_preferences:
-                        if item.role not in request.text:
-                            raise ValueError("ungrounded role")
-                        if re.search(re.escape(item.role) + r"\s*(?:역할)?\s*(?:은|는|을|를)?\s*(?:못\s*(?:해|하)|불가능)", request.text):
-                            raise ValueError("negated role classified as preference")
-                    for role in result.role_unavailable:
-                        if role not in request.text:
-                            raise ValueError("ungrounded unavailable role")
-                    for item in result.companion_requirement:
-                        if item.person not in request.text:
-                            raise ValueError("ungrounded companion")
-                    if result.availability and not re.search(r"\d{1,2}(?::\d{2}|\s*시)", request.text):
-                        raise ValueError("ungrounded time")
-                    if set(result.role_unavailable) & {item.role for item in result.role_preferences}:
-                        raise ValueError("conflicting role classification")
-                    # Never invent a calendar date where neither user nor context specifies one.
-                    for interval in result.availability:
-                        if interval.date and interval.date != request.meeting_date and interval.date.isoformat() not in request.text:
-                            raise ValueError("ungrounded date")
-                    return result
-        except (httpx.TimeoutException, TimeoutError):
-            raise HTTPException(504, detail={"code": "AI_TIMEOUT", "message": "조건 분석 시간이 초과되었습니다."}) from None
-        except httpx.HTTPError:
-            raise HTTPException(503, detail={"code": "AI_UNAVAILABLE", "message": "조건 분석 모델에 연결할 수 없습니다."}) from None
-        except (ValidationError, ValueError, KeyError, IndexError, TypeError):
-            raise HTTPException(502, detail={"code": "AI_INVALID_RESPONSE", "message": "모델 응답을 검증하지 못했습니다. 조건을 구체적으로 다시 입력하세요."}) from None
+    try:
+        content = await chat_completion(
+            messages_for(request),
+            temperature=0,
+            seed=42,
+            max_tokens=1200,
+            response_format={"type": "json_object", "schema": ParsedCondition.model_json_schema()},
+        )
+        result = ParsedCondition.model_validate_json(content)
+        # Reject invented entities/intervals rather than applying an ungrounded constraint.
+        for item in result.role_preferences:
+            if item.role not in request.text:
+                raise ValueError("ungrounded role")
+            if re.search(re.escape(item.role) + r"\s*(?:역할)?\s*(?:은|는|을|를)?\s*(?:못\s*(?:해|하)|불가능)", request.text):
+                raise ValueError("negated role classified as preference")
+        for role in result.role_unavailable:
+            if role not in request.text:
+                raise ValueError("ungrounded unavailable role")
+        for item in result.companion_requirement:
+            if item.person not in request.text:
+                raise ValueError("ungrounded companion")
+        if result.availability and not re.search(r"\d{1,2}(?::\d{2}|\s*시)", request.text):
+            raise ValueError("ungrounded time")
+        if set(result.role_unavailable) & {item.role for item in result.role_preferences}:
+            raise ValueError("conflicting role classification")
+        # Never invent a calendar date where neither user nor context specifies one.
+        for interval in result.availability:
+            if interval.date and interval.date != request.meeting_date and interval.date.isoformat() not in request.text:
+                raise ValueError("ungrounded date")
+        return result
+    except QwenBusy:
+        raise HTTPException(503, detail={"code": "AI_BUSY", "message": "조건 분석 중입니다. 잠시 후 재시도하세요."}, headers={"Retry-After": "3"}) from None
+    except QwenTimeout:
+        raise HTTPException(504, detail={"code": "AI_TIMEOUT", "message": "조건 분석 시간이 초과되었습니다."}) from None
+    except QwenUnavailable:
+        raise HTTPException(503, detail={"code": "AI_UNAVAILABLE", "message": "조건 분석 모델에 연결할 수 없습니다."}) from None
+    except (QwenInvalidResponse, ValidationError, ValueError, KeyError, IndexError, TypeError):
+        raise HTTPException(502, detail={"code": "AI_INVALID_RESPONSE", "message": "모델 응답을 검증하지 못했습니다. 조건을 구체적으로 다시 입력하세요."}) from None

@@ -35,6 +35,18 @@ EXPECTED_TABLES = {
     "admin_otps",
     "admin_rate_limits",
     "idempotency_records",
+    "schedule_collections",
+    "schedule_responses",
+    "schedule_response_ranges",
+    "schedule_runs",
+    "schedule_candidates",
+    "schedule_candidate_members",
+    "schedule_votes",
+    "schedule_vote_ballots",
+    "schedule_results",
+    "push_devices",
+    "notification_settings",
+    "notification_log",
 }
 
 
@@ -70,8 +82,36 @@ class V21SchemaTests(unittest.TestCase):
                 insp = inspect(engine)
                 tables = set(insp.get_table_names()) - {"alembic_version"}
                 self.assertEqual(EXPECTED_TABLES, tables)
-                self.assertEqual(22, len(tables))
+                self.assertEqual(34, len(tables))
                 self.assertNotIn("room_cycle_archives", tables)
+                self.assertNotIn("scheduling_events", tables)
+
+                ballot_cols = {c["name"] for c in insp.get_columns("schedule_vote_ballots")}
+                self.assertEqual(
+                    {"run_id", "room_member_id", "submitted_at"}, ballot_cols
+                )
+                collection_uniques = {
+                    tuple(u["column_names"])
+                    for u in insp.get_unique_constraints("schedule_collections")
+                }
+                self.assertIn(("room_id", "cycle"), collection_uniques)
+
+                # 0001 declares PK + named UNIQUE on (proposal_id, room_member_id).
+                # SQLite keeps a separate UNIQUE; PostgreSQL attaches the name to the PK.
+                pci_pk = insp.get_pk_constraint("proposal_condition_inputs")
+                self.assertEqual(
+                    ["proposal_id", "room_member_id"], pci_pk["constrained_columns"]
+                )
+                pci_uq_names = {
+                    u["name"]
+                    for u in insp.get_unique_constraints("proposal_condition_inputs")
+                }
+                self.assertTrue(
+                    "uq_proposal_condition_inputs_proposal_member" in pci_uq_names
+                    or pci_pk.get("name")
+                    == "uq_proposal_condition_inputs_proposal_member",
+                    msg=f"missing named uniqueness: pk={pci_pk!r} uq={pci_uq_names!r}",
+                )
 
                 room_cols = {c["name"] for c in insp.get_columns("rooms")}
                 self.assertTrue(

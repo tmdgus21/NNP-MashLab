@@ -7,6 +7,7 @@ import httpx
 from fastapi.testclient import TestClient
 
 import ai_conditions as ai
+import qwen_client as qwen
 os.environ["DATABASE_URL"] = "sqlite://"
 import database as database_module
 database_module._engine = None
@@ -33,7 +34,7 @@ class ApiTests(unittest.TestCase):
             self.assertFalse(body["chat_template_kwargs"]["enable_thinking"])
             self.assertIn("schema", body["response_format"])
             return httpx.Response(status, json=output)
-        with patch.object(ai, "model_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://127.0.0.1:8080")):
+        with patch.object(qwen, "model_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://127.0.0.1:8080")):
             return self.client.post("/ai/parse-condition", json={"text": text, "meeting_date": meeting_date})
 
     def test_korean_schema_cases(self):
@@ -103,7 +104,7 @@ class ApiTests(unittest.TestCase):
         for error, expected in [(httpx.ReadTimeout("timeout"), 504), (httpx.ConnectError("offline"), 503)]:
             def handler(request):
                 raise error
-            with patch.object(ai, "model_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://127.0.0.1:8080")):
+            with patch.object(qwen, "model_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://127.0.0.1:8080")):
                 self.assertEqual(self.client.post("/ai/parse-condition", json={"text": "기록 선호"}).status_code, expected)
 
     def test_busy(self):

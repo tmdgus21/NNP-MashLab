@@ -12,6 +12,8 @@ venv/
 *.gguf
 *.log
 *.tmp
+.tmp-*/
+.tmp-harness-*/
 .env.*
 !.env.example
 *.jks
@@ -20,6 +22,15 @@ venv/
 .secrets/
 apps/mobile/src/config/runtime.generated.ts
 .cxx-mobile/
+
+# Potato Meet Android
+apps/android/local.properties
+apps/android/potatomeet.properties
+apps/android/.gradle/
+apps/android/**/build/
+apps/android/captures/
+apps/android/.idea/
+apps/android/*.iml
 
 ops-dashboard/dist/
 ops-dashboard/*.tsbuildinfo
