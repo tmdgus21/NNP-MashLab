@@ -37,7 +37,11 @@ def _dt(y, m, d, hh, mm=0):
 
 class ScheduleCollectionTests(unittest.TestCase):
     def setUp(self):
+        os.environ["DATABASE_URL"] = "sqlite://"
+        previous = database_module._engine
         database_module._engine = None
+        if previous is not None:
+            previous.dispose()
         initialize()
         summary_mod._background_enabled = False
         self.client = TestClient(_app())
@@ -45,6 +49,11 @@ class ScheduleCollectionTests(unittest.TestCase):
 
     def tearDown(self):
         summary_mod._background_enabled = True
+        self.client.close()
+        previous = database_module._engine
+        database_module._engine = None
+        if previous is not None:
+            previous.dispose()
 
     def _register(self, email: str | None = None):
         email = email or f"u-{secrets.token_hex(4)}@example.test"

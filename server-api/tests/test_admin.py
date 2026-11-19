@@ -14,6 +14,11 @@ from admin.lifecycle import expire, ensure
 
 class AdminTests(unittest.TestCase):
  def setUp(self):
+  os.environ['DATABASE_URL']='sqlite://'
+  previous=database_module._engine
+  database_module._engine=None
+  if previous is not None:
+   previous.dispose()
   self.env=patch.dict(os.environ,{'ADMIN_ENABLED':'1','ADMIN_SECRET':'local-test-secret-at-least-thirty-two-characters','ADMIN_ORIGIN':'https://testserver'});self.env.start()
   initialize()
   with session() as db,db.begin():
@@ -32,7 +37,13 @@ class AdminTests(unittest.TestCase):
   self.mail=patch('admin.security.send_otp',side_effect=lambda email,code:self.sent.append((email,code)));self.mail.start()
   self.csrf=self.client.get('/admin-api/auth/csrf').json()['csrf']
   self.headers={'Origin':'https://testserver','X-CSRF-Token':self.csrf}
- def tearDown(self): self.mail.stop();self.env.stop();self.client.close()
+ def tearDown(self):
+  self.mail.stop();self.env.stop();self.client.close()
+  previous=database_module._engine
+  database_module._engine=None
+  if previous is not None:
+   previous.dispose()
+  os.environ['ADMIN_ENABLED']='0'
  def login(self): return self.client.post('/admin-api/auth/login',json={'email':self.email,'password':'test-password-long'},headers=self.headers)
  def verify(self,challenge,code): return self.client.post('/admin-api/auth/verify',json={'challenge':challenge,'code':code},headers=self.headers)
  def auth(self):

@@ -42,7 +42,10 @@ class ScheduleSseSweepTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         # PG integration tests may leave DATABASE_URL pointing at Postgres.
         os.environ["DATABASE_URL"] = "sqlite://"
+        previous = database_module._engine
         database_module._engine = None
+        if previous is not None:
+            previous.dispose()
         initialize()
         summary_mod._background_enabled = False
         drain_pending()
@@ -51,6 +54,11 @@ class ScheduleSseSweepTests(unittest.IsolatedAsyncioTestCase):
     def tearDown(self):
         summary_mod._background_enabled = True
         drain_pending()
+        self.client.close()
+        previous = database_module._engine
+        database_module._engine = None
+        if previous is not None:
+            previous.dispose()
 
     def _register(self):
         email = f"s-{secrets.token_hex(4)}@example.test"

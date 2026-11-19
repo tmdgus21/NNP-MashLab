@@ -24,8 +24,21 @@ def response_for(result):
 
 class ApiTests(unittest.TestCase):
     def setUp(self):
+        os.environ["DATABASE_URL"] = "sqlite://"
+        os.environ["ADMIN_ENABLED"] = "0"
+        previous = database_module._engine
+        database_module._engine = None
+        if previous is not None:
+            previous.dispose()
         initialize()
         self.client = TestClient(app)
+
+    def tearDown(self):
+        self.client.close()
+        previous = database_module._engine
+        database_module._engine = None
+        if previous is not None:
+            previous.dispose()
 
     def call_model(self, output, text="기록을 선호해요", status=200, meeting_date="2026-10-17"):
         def handler(request):

@@ -50,13 +50,21 @@ class ScheduleVotingTests(unittest.TestCase):
     def setUp(self):
         # PG integration tests may leave DATABASE_URL pointing at Postgres.
         os.environ["DATABASE_URL"] = "sqlite://"
+        previous = database_module._engine
         database_module._engine = None
+        if previous is not None:
+            previous.dispose()
         initialize()
         summary_mod._background_enabled = False
         self.client = TestClient(_app())
 
     def tearDown(self):
         summary_mod._background_enabled = True
+        self.client.close()
+        previous = database_module._engine
+        database_module._engine = None
+        if previous is not None:
+            previous.dispose()
 
     def _register(self):
         email = f"v-{secrets.token_hex(4)}@example.test"

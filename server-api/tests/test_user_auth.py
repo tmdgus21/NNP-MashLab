@@ -28,10 +28,23 @@ CONFIG = {
 
 class UserAuthTests(unittest.TestCase):
     def setUp(self):
+        os.environ["DATABASE_URL"] = "sqlite://"
+        os.environ["ADMIN_ENABLED"] = "0"
+        previous = database_module._engine
+        database_module._engine = None
+        if previous is not None:
+            previous.dispose()
         initialize()
         self.client = TestClient(app)
         self.email = f"user-{secrets.token_hex(4)}@example.test"
         self.password = "long-enough-password"
+
+    def tearDown(self):
+        self.client.close()
+        previous = database_module._engine
+        database_module._engine = None
+        if previous is not None:
+            previous.dispose()
 
     def test_register_login_me_logout_and_guest_separation(self):
         created = self.client.post(

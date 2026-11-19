@@ -140,7 +140,11 @@ def _seed_run_with_candidates(*, summary=None):
 
 class ScheduleAiSummaryTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
+        os.environ["DATABASE_URL"] = "sqlite://"
+        previous = database_module._engine
         database_module._engine = None
+        if previous is not None:
+            previous.dispose()
         initialize()
         summary_mod._summary_client = None
         summary_mod._background_enabled = True
@@ -150,6 +154,10 @@ class ScheduleAiSummaryTests(unittest.IsolatedAsyncioTestCase):
     def tearDown(self):
         summary_mod._summary_client = None
         summary_mod._background_enabled = True
+        previous = database_module._engine
+        database_module._engine = None
+        if previous is not None:
+            previous.dispose()
 
     async def test_fills_ai_summary_from_fake_client(self):
         run_id, c1, c2 = _seed_run_with_candidates()
