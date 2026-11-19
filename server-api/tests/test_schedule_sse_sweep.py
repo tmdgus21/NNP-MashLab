@@ -40,6 +40,8 @@ def _app() -> FastAPI:
 
 class ScheduleSseSweepTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
+        # PG integration tests may leave DATABASE_URL pointing at Postgres.
+        os.environ["DATABASE_URL"] = "sqlite://"
         database_module._engine = None
         initialize()
         summary_mod._background_enabled = False

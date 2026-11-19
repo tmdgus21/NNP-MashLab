@@ -18,6 +18,7 @@ PG_URL = os.environ.get("SCHEDULE_PG_URL", "")
 class SchedulePostgresIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls._prev_database_url = os.environ.get("DATABASE_URL")
         os.environ["DATABASE_URL"] = PG_URL
         os.environ["ADMIN_ENABLED"] = "0"
         from pathlib import Path
@@ -38,6 +39,16 @@ class SchedulePostgresIntegrationTests(unittest.TestCase):
         import database as database_module
 
         database_module._engine = None
+
+    @classmethod
+    def tearDownClass(cls):
+        import database as database_module
+
+        database_module._engine = None
+        if cls._prev_database_url is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = cls._prev_database_url
 
     def test_end_to_end_sweep_and_candidates_summary_slot(self):
         import secrets
