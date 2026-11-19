@@ -194,8 +194,15 @@ class ScheduleSseSweepTests(unittest.IsolatedAsyncioTestCase):
 
         import concurrent.futures
 
+        # Overlapping callers must remain safe: PG races via IntegrityError;
+        # SQLite StaticPool serializes inside sweep() but both threads still run.
+        results = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-            list(pool.map(lambda _: svc.sweep(now=now), range(2)))
+            futures = [pool.submit(svc.sweep, now=now) for _ in range(2)]
+            for fut in concurrent.futures.as_completed(futures):
+                results.append(fut.result())
+        self.assertEqual(2, len(results))
+        self.assertGreaterEqual(sum(results), 1)
         with session() as db:
             runs = list(
                 db.scalars(select(ScheduleRun).where(ScheduleRun.room_id == mid))

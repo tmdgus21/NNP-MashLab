@@ -23,6 +23,15 @@ venv/
 apps/mobile/src/config/runtime.generated.ts
 .cxx-mobile/
 
+# Potato Meet Android
+apps/android/local.properties
+apps/android/potatomeet.properties
+apps/android/.gradle/
+apps/android/**/build/
+apps/android/captures/
+apps/android/.idea/
+apps/android/*.iml
+
 ops-dashboard/dist/
 ops-dashboard/*.tsbuildinfo
 ops-dashboard/test3.txt

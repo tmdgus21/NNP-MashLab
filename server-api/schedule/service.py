@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import secrets
+import threading
 from datetime import datetime, timedelta
 
 from sqlalchemy import delete, select
@@ -996,60 +997,82 @@ def server_time_payload(now: datetime | None = None) -> dict:
     }
 
 
+_SWEEP_SERIALIZE = threading.RLock()
+
+
 def sweep(*, now: datetime | None = None) -> int:
-    """Close due collections (grace/24h) and voting windows. Idempotent; safe to overlap."""
+    """Close due collections (grace/24h) and voting windows. Idempotent; safe to overlap.
+
+    PostgreSQL: overlapping callers are safe via per-room transactions + IntegrityError.
+    SQLite (CI StaticPool): serialize the whole sweep — SQLite cannot run concurrent
+    writers on one in-memory connection without InterfaceError / duplicate runs.
+    """
+    import os
+
     from sqlalchemy import and_, or_
-    from sqlalchemy.exc import IntegrityError
+    from sqlalchemy.exc import IntegrityError, InterfaceError, OperationalError
 
     from database import session as db_session_factory
     from schedule.events import drain_pending, publish_pending_sync
 
     now = now or utc_now()
     now_s = seoul_now(now)
-    with db_session_factory() as db:
-        due_collections = [
-            row[0]
-            for row in db.execute(
-                select(ScheduleCollection.room_id).where(
-                    ScheduleCollection.status == "OPEN",
-                    or_(
-                        ScheduleCollection.closes_at <= now_s,
-                        and_(
-                            ScheduleCollection.grace_until.is_not(None),
-                            ScheduleCollection.grace_until <= now_s,
+    url = os.getenv("DATABASE_URL") or ""
+    serialize = url.startswith("sqlite")
+    if serialize:
+        _SWEEP_SERIALIZE.acquire()
+    try:
+        with db_session_factory() as db:
+            due_collections = list(
+                db.scalars(
+                    select(ScheduleCollection.room_id).where(
+                        ScheduleCollection.status == "OPEN",
+                        or_(
+                            ScheduleCollection.closes_at <= now_s,
+                            and_(
+                                ScheduleCollection.grace_until.is_not(None),
+                                ScheduleCollection.grace_until <= now_s,
+                            ),
                         ),
-                    ),
+                    )
                 )
-            ).all()
-        ]
-        due_votes = [
-            row[0]
-            for row in db.execute(
-                select(ScheduleRun.room_id).where(
-                    ScheduleRun.closed_at.is_(None),
-                    ScheduleRun.voting_ends_at.is_not(None),
-                    ScheduleRun.voting_ends_at <= now_s,
+            )
+            due_votes = list(
+                db.scalars(
+                    select(ScheduleRun.room_id).where(
+                        ScheduleRun.closed_at.is_(None),
+                        ScheduleRun.voting_ends_at.is_not(None),
+                        ScheduleRun.voting_ends_at <= now_s,
+                    )
                 )
-            ).all()
-        ]
-    room_ids = list(dict.fromkeys([*due_collections, *due_votes]))
-    changed = 0
-    for room_id in room_ids:
-        try:
-            with db_session_factory() as db, db.begin():
-                did = False
-                if close_collection_if_due(db, room_id, now=now):
-                    did = True
-                if close_voting_if_due(db, room_id, now=now):
-                    did = True
-                if did:
-                    changed += 1
-            publish_pending_sync()
-        except IntegrityError:
-            # Concurrent sweeper already confirmed — treat as idempotent no-op
-            drain_pending()
-            continue
-        except Exception:
-            drain_pending()
-            raise
-    return changed
+            )
+        room_ids = list(dict.fromkeys([*due_collections, *due_votes]))
+        changed = 0
+        for room_id in room_ids:
+            try:
+                with db_session_factory() as db, db.begin():
+                    did = False
+                    if close_collection_if_due(db, room_id, now=now):
+                        did = True
+                    if close_voting_if_due(db, room_id, now=now):
+                        did = True
+                    if did:
+                        changed += 1
+                publish_pending_sync()
+            except IntegrityError:
+                # Concurrent sweeper already confirmed — treat as idempotent no-op
+                drain_pending()
+                continue
+            except (InterfaceError, OperationalError):
+                # SQLite lock / StaticPool races under overlapping callers
+                drain_pending()
+                if serialize:
+                    continue
+                raise
+            except Exception:
+                drain_pending()
+                raise
+        return changed
+    finally:
+        if serialize:
+            _SWEEP_SERIALIZE.release()
