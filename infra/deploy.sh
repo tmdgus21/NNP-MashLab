@@ -55,7 +55,55 @@ assert_v21_database_target() {
   echo "Preflight OK: Alembic v21 target DB_NAME=${db_name}"
 }
 
+# USER OTP HMAC + mail: never print secret values.
+assert_user_otp_runtime_env() {
+  python3 - <<'PY'
+from pathlib import Path
+
+def load(path: Path) -> dict[str, str]:
+    if not path.is_file():
+        return {}
+    out = {}
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        out[key.strip()] = value.strip().strip('"').strip("'")
+    return out
+
+vals = {}
+vals.update(load(Path(".env")))
+# .env.database wins for DB/session secrets (docker-compose.ai.yml env_file).
+vals.update(load(Path(".env.database")))
+secret = vals.get("APP_SESSION_SECRET") or vals.get("USER_OTP_SECRET") or ""
+if len(secret) < 16:
+    raise SystemExit(
+        "APP_SESSION_SECRET (or USER_OTP_SECRET) missing/too short. "
+        "Expected in .env.database via prepare_database_env.py. Refusing deploy."
+    )
+smtp_keys = (
+    "ADMIN_SMTP_HOST",
+    "ADMIN_SMTP_USER",
+    "ADMIN_SMTP_PASSWORD",
+    "ADMIN_SMTP_FROM",
+)
+missing = [k for k in smtp_keys if not vals.get(k)]
+if missing:
+    raise SystemExit(
+        "SMTP keys missing for USER OTP mail: "
+        + ", ".join(missing)
+        + ". Refusing deploy."
+    )
+print(
+    "Preflight OK: session secret + ADMIN_SMTP_* present "
+    f"(db_name={vals.get('DB_NAME', '')!s}; values not shown)"
+)
+PY
+}
+
 assert_v21_database_target
+assert_user_otp_runtime_env
 python3 infra/backup_database.py
 previous=$(docker inspect backend-api --format '{{.Image}}')
 "${compose[@]}" build server-api
