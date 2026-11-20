@@ -1,7 +1,39 @@
-import os, unittest, secrets
+import os, sys, types, unittest, secrets
 from datetime import timedelta
 from unittest.mock import patch
 os.environ['DATABASE_URL']='sqlite://'
+
+# Windows WDAC may block ortools native DLLs; stub before importing main/workflow.
+_ORTOOLS_STUBBED = False
+try:
+    import ortools.sat.python.cp_model  # noqa: F401
+except OSError:
+    _ORTOOLS_STUBBED = True
+    cp = types.ModuleType('ortools.sat.python.cp_model')
+    class _CpModel:
+        def new_bool_var(self, *a, **k): return 0
+        def add(self, *a, **k): return None
+        def add_exactly_one(self, *a, **k): return None
+        def add_at_most_one(self, *a, **k): return None
+        def maximize(self, *a, **k): return None
+    class _CpSolver:
+        OPTIMAL = 4
+        FEASIBLE = 2
+        INFEASIBLE = 3
+        UNKNOWN = 0
+        def __init__(self):
+            self.parameters = types.SimpleNamespace(max_time_in_seconds=0, num_search_workers=1, random_seed=42)
+        def solve(self, *a, **k): return self.UNKNOWN
+        def value(self, *a, **k): return 0
+        def status_name(self, status):
+            return {self.OPTIMAL: 'OPTIMAL', self.FEASIBLE: 'FEASIBLE', self.INFEASIBLE: 'INFEASIBLE'}.get(status, 'UNKNOWN')
+    cp.CpModel = _CpModel
+    cp.CpSolver = _CpSolver
+    sys.modules['ortools'] = types.ModuleType('ortools')
+    sys.modules['ortools.sat'] = types.ModuleType('ortools.sat')
+    sys.modules['ortools.sat.python'] = types.ModuleType('ortools.sat.python')
+    sys.modules['ortools.sat.python.cp_model'] = cp
+
 from fastapi.testclient import TestClient
 from sqlalchemy import select, delete
 from database import initialize, session, now, Room, Proposal, Submission
@@ -159,6 +191,7 @@ class AdminTests(unittest.TestCase):
    self.assertFalse(db.get(Account,oid).frozen);self.assertEqual(db.get(Account,oid).failures,5)
    row=db.scalar(select(AdminSession).where(AdminSession.token_hash==sec.digest(raw_token)));self.assertTrue(row.revoked)
   self.assertEqual(self.client.post('/admin-api/accounts/'+self.account_id+'/actions',json=body,headers=self.admin_headers).status_code,403)
+ @unittest.skipIf(_ORTOOLS_STUBBED, 'ortools blocked by WDAC; CP-SAT path not exercised')
  def test_extension_preserves_finalized_plan_and_requires_new_consent(self):
   self.auth();host=self.room();rid=host['meeting']['id'];headers={'Authorization':'Bearer '+host['token']};base='/v1/meetings/'+rid
   def view(): return self.client.get(base,headers=headers).json()

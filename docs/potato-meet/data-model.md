@@ -13,7 +13,7 @@
 |---|---|---|
 | `accounts` | 로그인 계정 (R1) | `account_type='USER'`, `login_email`, `password_hash` |
 | `account_sessions` | Bearer 토큰 | `token_hash`, `expires_at`, `revoked_at` |
-| `user_auth_challenges` | USER 이메일 OTP (R1, `20261120_0006`) | `email`, `purpose` REGISTER\|LOGIN, `challenge`, `code_digest`(HMAC), `password_hash`(가입 대기), `expires_at`, `sent_at`, `used_at`, `attempt_count` — **admin_otps와 분리** |
+| `user_auth_challenges` | USER 이메일 OTP (R1, `20261120_0006`) | `email`, `purpose` REGISTER\|LOGIN, `challenge` UNIQUE, `code_digest`(HMAC), `password_hash`(가입 대기), `expires_at`, `sent_at`, `used_at`, `attempt_count`; `account_id` FK **ON DELETE SET NULL** — **admin_otps와 분리** |
 | `rooms` | 모임 (R2) | `title`, `code`(8자리), `starts_at`, `ends_at`, `host_member_id`, `created_by_account_id`, `progress_status`, `lifecycle_status`, `revision`, `deleted_at` |
 | `room_members` | 방장/팀원 (R3) | `room_role` OWNER=방장 / MEMBER=팀원, `nickname`, `account_id`, `membership_status`, `request_key_hash`, `request_hash` |
 | `room_events` | 활동 기록 | `event_type`, `message`, `actor_member_id` |

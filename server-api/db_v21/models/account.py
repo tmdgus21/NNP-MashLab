@@ -97,11 +97,12 @@ class UserAuthChallenge(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     account_id: Mapped[str | None] = mapped_column(
-        ForeignKey("accounts.id", ondelete="CASCADE"), nullable=True, index=True
+        ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True, index=True
     )
     email: Mapped[str] = mapped_column(String(254), index=True)
     purpose: Mapped[str] = mapped_column(String(20))
-    challenge: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # UniqueConstraint only (no duplicate unique index).
+    challenge: Mapped[str] = mapped_column(String(64), unique=True)
     code_digest: Mapped[str] = mapped_column(String(64))
     # REGISTER only: argon2 hash until OTP verifies and Account is created.
     password_hash: Mapped[str | None] = mapped_column(String(512), nullable=True)

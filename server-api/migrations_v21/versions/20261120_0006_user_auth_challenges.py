@@ -5,6 +5,7 @@ Revises: 20261117_0005
 Create Date: 2026-11-20
 
 Does not alter admin_otps or existing accounts rows.
+FK account_id uses ON DELETE SET NULL so challenge history survives account removal.
 """
 from typing import Sequence, Union
 
@@ -46,10 +47,10 @@ def upgrade() -> None:
             name="ck_user_auth_challenges_attempts",
         ),
         sa.ForeignKeyConstraint(
-            ["account_id"], ["accounts.id"], ondelete="CASCADE"
+            ["account_id"], ["accounts.id"], ondelete="SET NULL"
         ),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("challenge"),
+        sa.UniqueConstraint("challenge", name="uq_user_auth_challenges_challenge"),
     )
     op.create_index(
         "ix_user_auth_challenges_account_id",
@@ -62,12 +63,6 @@ def upgrade() -> None:
         ["email"],
     )
     op.create_index(
-        "ix_user_auth_challenges_challenge",
-        "user_auth_challenges",
-        ["challenge"],
-        unique=True,
-    )
-    op.create_index(
         "ix_user_auth_challenges_expires_at",
         "user_auth_challenges",
         ["expires_at"],
@@ -76,7 +71,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index("ix_user_auth_challenges_expires_at", table_name="user_auth_challenges")
-    op.drop_index("ix_user_auth_challenges_challenge", table_name="user_auth_challenges")
     op.drop_index("ix_user_auth_challenges_email", table_name="user_auth_challenges")
     op.drop_index("ix_user_auth_challenges_account_id", table_name="user_auth_challenges")
     op.drop_table("user_auth_challenges")

@@ -251,6 +251,12 @@ def _assert_challenge_open(row: UserAuthChallenge) -> None:
         fail(429, "인증 시도 횟수를 초과했습니다. 다시 로그인해 주세요.")
 
 
+def _assert_challenge_resendable(row: UserAuthChallenge) -> None:
+    """Resend allowed after expiry; blocked only when already used."""
+    if row.used_at is not None:
+        fail(401, "이미 사용된 인증 요청입니다. 다시 시도해 주세요.")
+
+
 @router.post("/register", status_code=201)
 def register(body: Register, db=Depends(db_session)):
     email = validate_email(body.email)
@@ -274,7 +280,7 @@ def register(body: Register, db=Depends(db_session)):
 @router.post("/register/resend")
 def register_resend(body: ChallengeBody, db=Depends(db_session)):
     previous = _load_challenge(db, body.challenge, "REGISTER")
-    _assert_challenge_open(previous)
+    _assert_challenge_resendable(previous)
     if not previous.password_hash:
         fail(401, "인증 요청이 올바르지 않습니다.")
     row = _issue_challenge(
@@ -347,7 +353,7 @@ def login(body: Login, db=Depends(db_session)):
 @router.post("/login/resend")
 def login_resend(body: ChallengeBody, db=Depends(db_session)):
     previous = _load_challenge(db, body.challenge, "LOGIN")
-    _assert_challenge_open(previous)
+    _assert_challenge_resendable(previous)
     account = db.get(Account, previous.account_id) if previous.account_id else None
     if not account or account.account_type != "USER":
         fail(401, "인증 요청이 올바르지 않습니다.")

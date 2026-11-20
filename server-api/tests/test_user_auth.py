@@ -167,14 +167,7 @@ class UserAuthTests(unittest.TestCase):
         )
         self.assertEqual(expired.status_code, 401, expired.text)
 
-        # Force resend window elapsed
-        with session() as db, db.begin():
-            row = db.scalar(
-                select(UserAuthChallenge).where(UserAuthChallenge.challenge == challenge)
-            )
-            row.sent_at = now() - timedelta(seconds=61)
-            row.expires_at = now() + timedelta(minutes=5)
-            row.used_at = None
+        # Expired challenges may still be resent (60s window already elapsed via sent_at).
         resent = self.client.post(
             "/v1/auth/register/resend",
             json={"challenge": challenge},
