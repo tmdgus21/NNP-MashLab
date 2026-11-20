@@ -101,11 +101,11 @@ fun FaceRoot(
     LaunchedEffect(authState.isLoggedIn, authState.checkingSession) {
         if (authState.checkingSession) return@LaunchedEffect
         if (authState.isLoggedIn) {
+            val email = authState.email.orEmpty()
             loggedInNickname.value =
-                authState.nickname.ifBlank {
-                    authState.email.substringBefore('@').ifBlank { "사용자" }
-                }
-            loggedInId.value = authState.email
+                authState.nickname?.takeIf { it.isNotBlank() }
+                    ?: email.substringBefore('@').ifBlank { "사용자" }
+            loggedInId.value = email
             if (currentScreen.value == "login" || currentScreen.value == "signup") {
                 currentScreen.value = "home"
             }
@@ -150,17 +150,29 @@ fun FaceRoot(
             currentScreen.value == "login" -> {
                 LoginScreen(
                     isLoading = authState.loginLoading,
-                    onLoginSubmit = { email, password -> authViewModel.login(email, password) },
-                    onSignUpClick = { currentScreen.value = "signup" },
+                    otpPending = authState.otpPurpose == "LOGIN" && authState.pendingChallenge != null,
+                    onRequestOtp = { email, password -> authViewModel.login(email, password) },
+                    onVerifyOtp = { code -> authViewModel.verifyOtp(code) },
+                    onResendOtp = { authViewModel.resendOtp() },
+                    onSignUpClick = {
+                        authViewModel.clearPendingOtp()
+                        currentScreen.value = "signup"
+                    },
                 )
             }
             currentScreen.value == "signup" -> {
                 SignUpScreen(
                     isLoading = authState.registerLoading,
-                    onRegisterSubmit = { nickname, email, password, passwordConfirm ->
+                    otpPending = authState.otpPurpose == "REGISTER" && authState.pendingChallenge != null,
+                    onRequestOtp = { nickname, email, password, passwordConfirm ->
                         authViewModel.register(nickname, email, password, passwordConfirm)
                     },
-                    onBackClick = { currentScreen.value = "login" },
+                    onVerifyOtp = { code -> authViewModel.verifyOtp(code) },
+                    onResendOtp = { authViewModel.resendOtp() },
+                    onBackClick = {
+                        authViewModel.clearPendingOtp()
+                        currentScreen.value = "login"
+                    },
                 )
             }
             currentScreen.value in

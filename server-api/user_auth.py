@@ -1,5 +1,9 @@
-"""Email USER signup/login — separate from admin OTP and from GUEST meeting placeholders."""
+"""Email USER signup/login with OTP — separate from admin OTP and GUEST placeholders."""
+from __future__ import annotations
+
 import hashlib
+import hmac
+import os
 import re
 import secrets
 from datetime import timedelta, timezone
@@ -11,13 +15,20 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
 from database import session
-from models import Account, AccountSession, now
+from mail_otp import send_otp_email
+from models import Account, AccountSession, UserAuthChallenge, now
+
+OTP_TTL = timedelta(minutes=5)
+RESEND_AFTER = timedelta(seconds=60)
+MAX_ATTEMPTS = 5
+MAX_SENDS_PER_HOUR = 10
 
 
 def _utc(value):
     if value is None:
         return None
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
 
 router = APIRouter(prefix="/v1/auth", tags=["User authentication"])
 PASSWORDS = PasswordHasher()
@@ -40,9 +51,27 @@ class Login(Input):
     password: str = Field(min_length=1, max_length=1024)
 
 
+class ChallengeBody(Input):
+    challenge: str = Field(min_length=32, max_length=64)
+
+
+class VerifyBody(Input):
+    challenge: str = Field(min_length=32, max_length=64)
+    code: str = Field(pattern=r"^\d{6}$")
+
+
 def db_session():
-    with session() as db, db.begin():
-        yield db
+    # Commit on HTTPException so OTP attempt counters survive 4xx responses.
+    with session() as db:
+        try:
+            yield db
+            db.commit()
+        except HTTPException:
+            db.commit()
+            raise
+        except Exception:
+            db.rollback()
+            raise
 
 
 def fail(status: int, message: str):
@@ -51,6 +80,23 @@ def fail(status: int, message: str):
 
 def digest(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+def otp_secret() -> str:
+    secret = os.getenv("APP_SESSION_SECRET") or os.getenv("USER_OTP_SECRET")
+    if not secret and os.getenv("DATABASE_URL", "").startswith("sqlite"):
+        secret = "isolated-test-secret-not-for-production"
+    if not secret or len(secret) < 16:
+        fail(503, "세션 설정이 준비되지 않았습니다.")
+    return secret
+
+
+def otp_mac(challenge: str, code: str) -> str:
+    return hmac.new(
+        otp_secret().encode(),
+        f"{challenge}:{code}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
 
 
 def normalize_email(value: str) -> str:
@@ -90,23 +136,182 @@ def account_from_authorization(db, authorization: str | None) -> Account:
     return account
 
 
+def _challenge_response(row: UserAuthChallenge) -> dict:
+    return {
+        "challenge": row.challenge,
+        "expiresIn": 300,
+        "resendAfter": 60,
+        "purpose": row.purpose,
+    }
+
+
+def _rate_limit_sends(db, email: str, purpose: str) -> None:
+    cutoff = now() - timedelta(hours=1)
+    recent = list(
+        db.scalars(
+            select(UserAuthChallenge).where(
+                UserAuthChallenge.email == email,
+                UserAuthChallenge.purpose == purpose,
+                UserAuthChallenge.sent_at >= cutoff,
+            )
+        )
+    )
+    if len(recent) >= MAX_SENDS_PER_HOUR:
+        fail(429, "인증번호 요청이 너무 많습니다. 잠시 후 다시 시도하세요.")
+
+
+def _invalidate_open_challenges(db, email: str, purpose: str) -> None:
+    for row in db.scalars(
+        select(UserAuthChallenge).where(
+            UserAuthChallenge.email == email,
+            UserAuthChallenge.purpose == purpose,
+            UserAuthChallenge.used_at.is_(None),
+        )
+    ):
+        row.used_at = now()
+
+
+def _deliver_user_otp(email: str, code: str) -> None:
+    send_otp_email(
+        email,
+        code,
+        subject="[Potato Meet] 이메일 인증번호",
+        body=(
+            f"인증번호: {code}\n"
+            "5분 안에 입력해 주세요. 요청하지 않았다면 이 메일을 무시하세요."
+        ),
+    )
+
+
+def _issue_challenge(
+    db,
+    *,
+    email: str,
+    purpose: str,
+    account: Account | None,
+    password_hash: str | None,
+) -> UserAuthChallenge:
+    _rate_limit_sends(db, email, purpose)
+    latest = db.scalar(
+        select(UserAuthChallenge)
+        .where(
+            UserAuthChallenge.email == email,
+            UserAuthChallenge.purpose == purpose,
+            UserAuthChallenge.used_at.is_(None),
+        )
+        .order_by(UserAuthChallenge.sent_at.desc())
+    )
+    if latest and _utc(latest.sent_at) + RESEND_AFTER > now() and latest.used_at is None:
+        if _utc(latest.expires_at) > now():
+            fail(429, "인증번호 재발송은 60초 후 가능합니다.")
+
+    challenge = secrets.token_urlsafe(32)
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    try:
+        _deliver_user_otp(email, code)
+    except Exception:
+        fail(503, "인증 메일을 보내지 못했습니다. 잠시 후 다시 시도하세요.")
+
+    _invalidate_open_challenges(db, email, purpose)
+    row = UserAuthChallenge(
+        account_id=account.id if account else None,
+        email=email,
+        purpose=purpose,
+        challenge=challenge,
+        code_digest=otp_mac(challenge, code),
+        password_hash=password_hash,
+        expires_at=now() + OTP_TTL,
+        sent_at=now(),
+        used_at=None,
+        attempt_count=0,
+        max_attempts=MAX_ATTEMPTS,
+    )
+    db.add(row)
+    db.flush()
+    return row
+
+
+def _load_challenge(db, challenge: str, purpose: str) -> UserAuthChallenge:
+    row = db.scalar(
+        select(UserAuthChallenge)
+        .where(UserAuthChallenge.challenge == challenge)
+        .with_for_update()
+    )
+    if not row or row.purpose != purpose:
+        fail(401, "인증 요청이 올바르지 않습니다.")
+    return row
+
+
+def _assert_challenge_open(row: UserAuthChallenge) -> None:
+    if row.used_at is not None:
+        fail(401, "이미 사용된 인증 요청입니다. 다시 시도해 주세요.")
+    if _utc(row.expires_at) <= now():
+        fail(401, "인증번호가 만료됐습니다. 다시 요청해 주세요.")
+    if row.attempt_count >= row.max_attempts:
+        fail(429, "인증 시도 횟수를 초과했습니다. 다시 로그인해 주세요.")
+
+
 @router.post("/register", status_code=201)
 def register(body: Register, db=Depends(db_session)):
     email = validate_email(body.email)
     if len(body.password) < 12:
         fail(422, "비밀번호는 12자 이상이어야 합니다.")
-    existing = db.scalar(select(Account.id).where(Account.login_email == email))
-    if existing:
+    existing = db.scalar(
+        select(Account).where(Account.login_email == email, Account.account_type == "USER")
+    )
+    if existing and existing.account_status == "ACTIVE" and existing.approved:
+        fail(409, "이미 등록된 이메일입니다.")
+    row = _issue_challenge(
+        db,
+        email=email,
+        purpose="REGISTER",
+        account=None,
+        password_hash=PASSWORDS.hash(body.password),
+    )
+    return _challenge_response(row)
+
+
+@router.post("/register/resend")
+def register_resend(body: ChallengeBody, db=Depends(db_session)):
+    previous = _load_challenge(db, body.challenge, "REGISTER")
+    _assert_challenge_open(previous)
+    if not previous.password_hash:
+        fail(401, "인증 요청이 올바르지 않습니다.")
+    row = _issue_challenge(
+        db,
+        email=previous.email,
+        purpose="REGISTER",
+        account=None,
+        password_hash=previous.password_hash,
+    )
+    return _challenge_response(row)
+
+
+@router.post("/register/verify")
+def register_verify(body: VerifyBody, db=Depends(db_session)):
+    row = _load_challenge(db, body.challenge, "REGISTER")
+    _assert_challenge_open(row)
+    if not secrets.compare_digest(row.code_digest, otp_mac(body.challenge, body.code)):
+        row.attempt_count += 1
+        fail(401, "인증번호가 올바르지 않거나 만료됐습니다.")
+    if not row.password_hash:
+        fail(401, "인증 요청이 올바르지 않습니다.")
+    existing = db.scalar(
+        select(Account).where(Account.login_email == row.email, Account.account_type == "USER")
+    )
+    if existing and existing.account_status == "ACTIVE" and existing.approved:
         fail(409, "이미 등록된 이메일입니다.")
     account = Account(
-        login_email=email,
-        password_hash=PASSWORDS.hash(body.password),
+        login_email=row.email,
+        password_hash=row.password_hash,
         account_type="USER",
         account_status="ACTIVE",
         approved=True,
     )
     db.add(account)
     db.flush()
+    row.used_at = now()
+    row.account_id = account.id
     token, _ = issue_session(db, account)
     return {"accountId": account.id, "email": account.login_email, "token": token}
 
@@ -129,6 +334,46 @@ def login(body: Login, db=Depends(db_session)):
         fail(401, "이메일 또는 비밀번호를 확인하세요.")
     if account.account_status != "ACTIVE" or not account.approved:
         fail(403, "사용할 수 없는 계정입니다.")
+    row = _issue_challenge(
+        db,
+        email=email,
+        purpose="LOGIN",
+        account=account,
+        password_hash=None,
+    )
+    return _challenge_response(row)
+
+
+@router.post("/login/resend")
+def login_resend(body: ChallengeBody, db=Depends(db_session)):
+    previous = _load_challenge(db, body.challenge, "LOGIN")
+    _assert_challenge_open(previous)
+    account = db.get(Account, previous.account_id) if previous.account_id else None
+    if not account or account.account_type != "USER":
+        fail(401, "인증 요청이 올바르지 않습니다.")
+    row = _issue_challenge(
+        db,
+        email=previous.email,
+        purpose="LOGIN",
+        account=account,
+        password_hash=None,
+    )
+    return _challenge_response(row)
+
+
+@router.post("/login/verify")
+def login_verify(body: VerifyBody, db=Depends(db_session)):
+    row = _load_challenge(db, body.challenge, "LOGIN")
+    _assert_challenge_open(row)
+    if not secrets.compare_digest(row.code_digest, otp_mac(body.challenge, body.code)):
+        row.attempt_count += 1
+        fail(401, "인증번호가 올바르지 않거나 만료됐습니다.")
+    account = db.get(Account, row.account_id) if row.account_id else None
+    if not account or account.account_type != "USER":
+        fail(401, "인증 요청이 올바르지 않습니다.")
+    if account.account_status != "ACTIVE" or not account.approved:
+        fail(403, "사용할 수 없는 계정입니다.")
+    row.used_at = now()
     token, _ = issue_session(db, account)
     return {"accountId": account.id, "email": account.login_email, "token": token}
 

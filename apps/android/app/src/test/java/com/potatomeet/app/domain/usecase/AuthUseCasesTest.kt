@@ -1,5 +1,6 @@
 package com.potatomeet.app.domain.usecase
 
+import com.potatomeet.app.data.remote.dto.AuthChallengeResponse
 import com.potatomeet.app.data.remote.dto.AuthTokenResponse
 import com.potatomeet.app.data.remote.dto.MeResponse
 import com.potatomeet.app.data.repository.AuthRepository
@@ -16,26 +17,26 @@ import retrofit2.Response
 
 class AuthUseCasesTest {
     @Test
-    fun login_rejectsBlankEmail() =
+    fun startLogin_rejectsBlankEmail() =
         runBlocking {
-            val result = LoginUseCase(FakeAuthRepository()).invoke("  ", "password123456")
+            val result = StartLoginUseCase(FakeAuthRepository()).invoke("  ", "password123456")
             assertTrue(result.isFailure)
             assertEquals("이메일을 입력해 주세요.", result.exceptionOrNull()?.message)
         }
 
     @Test
-    fun login_rejectsInvalidEmail() =
+    fun startLogin_rejectsInvalidEmail() =
         runBlocking {
-            val result = LoginUseCase(FakeAuthRepository()).invoke("not-an-email", "password123456")
+            val result = StartLoginUseCase(FakeAuthRepository()).invoke("not-an-email", "password123456")
             assertTrue(result.isFailure)
             assertEquals("유효한 이메일을 입력해 주세요.", result.exceptionOrNull()?.message)
         }
 
     @Test
-    fun login_mapsNetworkError() =
+    fun startLogin_mapsNetworkError() =
         runBlocking {
             val repo = FakeAuthRepository(loginError = IOException("offline"))
-            val result = LoginUseCase(repo).invoke("a@b.com", "password123456")
+            val result = StartLoginUseCase(repo).invoke("a@b.com", "password123456")
             assertTrue(result.isFailure)
             assertEquals(
                 "네트워크에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.",
@@ -44,11 +45,19 @@ class AuthUseCasesTest {
         }
 
     @Test
-    fun login_successUsesStoredNickname() =
+    fun startLogin_successReturnsChallenge() =
+        runBlocking {
+            val result = StartLoginUseCase(FakeAuthRepository()).invoke("a@b.com", "password123456")
+            assertTrue(result.isSuccess)
+            assertEquals("chal-login", result.getOrNull()?.challenge)
+        }
+
+    @Test
+    fun verifyLogin_successUsesStoredNickname() =
         runBlocking {
             val repo =
                 FakeAuthRepository(
-                    loginResponse =
+                    loginVerifyResponse =
                         AuthTokenResponse(
                             accountId = "acc-1",
                             email = "a@b.com",
@@ -56,17 +65,17 @@ class AuthUseCasesTest {
                         ),
                     nickname = "감자",
                 )
-            val result = LoginUseCase(repo).invoke("a@b.com", "password123456")
+            val result = VerifyLoginUseCase(repo).invoke("chal", "123456", "a@b.com")
             assertTrue(result.isSuccess)
             assertEquals("감자", result.getOrNull()?.nickname)
             assertEquals("acc-1", result.getOrNull()?.accountId)
         }
 
     @Test
-    fun register_requiresPasswordLength12() =
+    fun startRegister_requiresPasswordLength12() =
         runBlocking {
             val result =
-                RegisterUseCase(FakeAuthRepository()).invoke(
+                StartRegisterUseCase(FakeAuthRepository()).invoke(
                     nickname = "감자",
                     email = "a@b.com",
                     password = "short",
@@ -77,10 +86,10 @@ class AuthUseCasesTest {
         }
 
     @Test
-    fun register_requiresPasswordMatch() =
+    fun startRegister_requiresPasswordMatch() =
         runBlocking {
             val result =
-                RegisterUseCase(FakeAuthRepository()).invoke(
+                StartRegisterUseCase(FakeAuthRepository()).invoke(
                     nickname = "감자",
                     email = "a@b.com",
                     password = "password123456",
@@ -91,13 +100,13 @@ class AuthUseCasesTest {
         }
 
     @Test
-    fun register_mapsConflictDetail() =
+    fun startRegister_mapsConflictDetail() =
         runBlocking {
             val body =
                 """{"detail":"already"}""".toResponseBody("application/json".toMediaType())
             val repo = FakeAuthRepository(registerError = HttpException(Response.error<Unit>(409, body)))
             val result =
-                RegisterUseCase(repo).invoke(
+                StartRegisterUseCase(repo).invoke(
                     nickname = "감자",
                     email = "a@b.com",
                     password = "password123456",
@@ -108,14 +117,13 @@ class AuthUseCasesTest {
         }
 
     @Test
-    fun register_success() =
+    fun verifyRegister_success() =
         runBlocking {
             val result =
-                RegisterUseCase(FakeAuthRepository()).invoke(
+                VerifyRegisterUseCase(FakeAuthRepository()).invoke(
+                    challenge = "chal",
+                    code = "123456",
                     nickname = "감자",
-                    email = "a@b.com",
-                    password = "password123456",
-                    passwordConfirm = "password123456",
                 )
             assertTrue(result.isSuccess)
             assertEquals("감자", result.getOrNull()?.nickname)
@@ -150,8 +158,10 @@ class AuthUseCasesTest {
 }
 
 private class FakeAuthRepository(
-    private val loginResponse: AuthTokenResponse? = null,
-    private val registerResponse: AuthTokenResponse? = null,
+    private val loginChallenge: AuthChallengeResponse? = null,
+    private val registerChallenge: AuthChallengeResponse? = null,
+    private val loginVerifyResponse: AuthTokenResponse? = null,
+    private val registerVerifyResponse: AuthTokenResponse? = null,
     private val meResponse: MeResponse? = null,
     private val nickname: String? = null,
     private var hasSessionFlag: Boolean = false,
@@ -161,24 +171,54 @@ private class FakeAuthRepository(
 ) : AuthRepository {
     var logoutCalled = false
 
-    override suspend fun login(
+    override suspend fun startLogin(
         email: String,
         password: String,
-    ): AuthTokenResponse {
+    ): AuthChallengeResponse {
         loginError?.let { throw it }
-        return loginResponse
-            ?: AuthTokenResponse(accountId = "id", email = email, token = "t")
+        return loginChallenge
+            ?: AuthChallengeResponse(
+                challenge = "chal-login",
+                expiresIn = 300,
+                resendAfter = 60,
+                purpose = "LOGIN",
+            )
     }
 
-    override suspend fun register(
+    override suspend fun resendLogin(challenge: String): AuthChallengeResponse =
+        AuthChallengeResponse(challenge = "chal-login-2", expiresIn = 300, resendAfter = 60, purpose = "LOGIN")
+
+    override suspend fun verifyLogin(
+        challenge: String,
+        code: String,
+    ): AuthTokenResponse =
+        loginVerifyResponse
+            ?: AuthTokenResponse(accountId = "id", email = "a@b.com", token = "t")
+
+    override suspend fun startRegister(
         email: String,
         password: String,
-        nickname: String,
-    ): AuthTokenResponse {
+    ): AuthChallengeResponse {
         registerError?.let { throw it }
-        return registerResponse
-            ?: AuthTokenResponse(accountId = "id", email = email, token = "t")
+        return registerChallenge
+            ?: AuthChallengeResponse(
+                challenge = "chal-reg",
+                expiresIn = 300,
+                resendAfter = 60,
+                purpose = "REGISTER",
+            )
     }
+
+    override suspend fun resendRegister(challenge: String): AuthChallengeResponse =
+        AuthChallengeResponse(challenge = "chal-reg-2", expiresIn = 300, resendAfter = 60, purpose = "REGISTER")
+
+    override suspend fun verifyRegister(
+        challenge: String,
+        code: String,
+        nickname: String,
+    ): AuthTokenResponse =
+        registerVerifyResponse
+            ?: AuthTokenResponse(accountId = "id", email = "a@b.com", token = "t")
 
     override suspend fun me(): MeResponse {
         meError?.let { throw it }

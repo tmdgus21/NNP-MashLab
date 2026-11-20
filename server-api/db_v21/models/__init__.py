@@ -1,4 +1,9 @@
-from db_v21.models.account import Account, AccountSession, PasswordResetToken
+from db_v21.models.account import (
+    Account,
+    AccountSession,
+    PasswordResetToken,
+    UserAuthChallenge,
+)
 from db_v21.models.admin import (
     AdminAuditLog,
     AdminOtp,
@@ -41,6 +46,7 @@ __all__ = [
     "Account",
     "AccountSession",
     "PasswordResetToken",
+    "UserAuthChallenge",
     "Room",
     "RoomMember",
     "RoomRole",
