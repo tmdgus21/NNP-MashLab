@@ -110,18 +110,20 @@ fun SwipableCalendarWidget(
     onMonthChange: (Int) -> Unit,
     onDayChange: (Int) -> Unit,
     onMonthSwiped: (() -> Unit)? = null,
-    hasSlotOrApptCheck: (month: Int, day: Int) -> Boolean
+    hasSlotOrApptCheck: (month: Int, day: Int) -> Boolean,
+    isDayEnabled: (year: Int, month: Int, day: Int) -> Boolean = { _, _, _ -> true },
 ) {
     val daysOfWeek = listOf("일", "월", "화", "수", "목", "금", "토")
+    val baseYear = remember { Calendar.getInstance().get(Calendar.YEAR) }
 
     val totalPages = 4000
-    val initialPage = 2000 + (calendarYear - 2026) * 12 + (calendarMonth - 1)
+    val initialPage = 2000 + (calendarYear - baseYear) * 12 + (calendarMonth - 1)
     val pagerState = rememberPagerState(initialPage = initialPage) { totalPages }
 
     LaunchedEffect(pagerState.currentPage) {
         val diffFromInitial = pagerState.currentPage - 2000
         val baseCal = Calendar.getInstance().apply {
-            set(2026, Calendar.JANUARY, 1)
+            set(baseYear, Calendar.JANUARY, 1)
             add(Calendar.MONTH, diffFromInitial)
         }
         val newYear = baseCal.get(Calendar.YEAR)
@@ -205,7 +207,7 @@ fun SwipableCalendarWidget(
         ) { page ->
             val diff = page - 2000
             val pageCal = Calendar.getInstance().apply {
-                set(2026, Calendar.JANUARY, 1)
+                set(baseYear, Calendar.JANUARY, 1)
                 add(Calendar.MONTH, diff)
             }
             val pYear = pageCal.get(Calendar.YEAR)
@@ -225,6 +227,7 @@ fun SwipableCalendarWidget(
                         Box(modifier = Modifier.aspectRatio(1f))
                     } else {
                         val dayNumber = index - pFirstDayOfWeek + 1
+                        val enabled = isDayEnabled(pYear, pMonth, dayNumber)
                         val isSelected = (pYear == calendarYear && pMonth == calendarMonth && dayNumber == selectedDay)
                         val hasMark = hasSlotOrApptCheck(pMonth, dayNumber)
 
@@ -239,7 +242,7 @@ fun SwipableCalendarWidget(
                                     color = if (hasMark && !isSelected) Color(0xFFFFD54F) else Color.Transparent,
                                     shape = RoundedCornerShape(12.dp)
                                 )
-                                .clickable {
+                                .clickable(enabled = enabled) {
                                     if (pYear != calendarYear || pMonth != calendarMonth) {
                                         onYearChange(pYear)
                                         onMonthChange(pMonth)
@@ -265,7 +268,7 @@ fun SwipableCalendarWidget(
                                     text = "$dayNumber",
                                     fontSize = 13.sp,
                                     fontWeight = if (isSelected || hasMark) FontWeight.Bold else FontWeight.Normal,
-                                    color = Color.Black
+                                    color = if (enabled) Color.Black else Color(0xFFCCCCCC)
                                 )
                             }
                         }

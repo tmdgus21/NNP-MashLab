@@ -96,8 +96,10 @@ import com.potatomeet.app.ui.face.components.LockWheelColumn
 import com.potatomeet.app.ui.face.components.RecommendationCard
 import com.potatomeet.app.ui.face.components.SeamlessInputBox
 import com.potatomeet.app.ui.face.components.StepIndicatorItem
-import com.potatomeet.app.ui.face.components.SwipableCalendarWidget
+import com.potatomeet.app.ui.face.components.MultiDateCalendarPicker
 import com.potatomeet.app.ui.face.components.TopLogoHeader
+import java.time.LocalDate
+import java.time.YearMonth
 
 @Composable
 fun CreateAppointmentStep1Screen(
@@ -111,15 +113,17 @@ fun CreateAppointmentStep1Screen(
     onLocationChange: (String) -> Unit,
     nickname: String = "",
     onNicknameChange: (String) -> Unit = {},
-    startDate: String = "",
-    onStartDateChange: (String) -> Unit = {},
-    endDate: String = "",
-    onEndDateChange: (String) -> Unit = {},
+    selectedDates: List<String> = emptyList(),
+    onToggleSelectedDate: (String) -> Unit = {},
+    onClearSelectedDates: () -> Unit = {},
+    minSelectableDate: LocalDate = LocalDate.now(),
+    maxSelectableDate: LocalDate = LocalDate.now().plusMonths(1),
     isLoading: Boolean = false,
     onBackClick: () -> Unit,
     onNextClick: () -> Unit,
     onStepClick: (String) -> Unit
 ) {
+    var visibleMonth by remember { mutableStateOf(YearMonth.from(minSelectableDate)) }
     Column(modifier = Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier
@@ -138,6 +142,23 @@ fun CreateAppointmentStep1Screen(
         ) {
             Spacer(modifier = Modifier.height(8.dp))
 
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(text = "모임 만들기", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+                Surface(color = Color(0xFF2196F3), shape = RoundedCornerShape(6.dp)) {
+                    Text(
+                        text = "복수 날짜 선택",
+                        fontSize = 11.sp,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.CenterVertically) {
                 StepIndicatorItem(stepNumber = "1", title = "모임 정보", isActive = true, onClick = { onStepClick("create_step1") }, activeTextSize = 12.sp)
                 StepIndicatorItem(stepNumber = "2", title = "친구 초대", isActive = false, onClick = { onStepClick("create_step2") })
@@ -156,7 +177,7 @@ fun CreateAppointmentStep1Screen(
                     Text(text = "모임 정보", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    Text(text = "모임 이름", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF555555))
+                    Text(text = "모임 이름 *", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF555555))
                     Spacer(modifier = Modifier.height(6.dp))
                     OutlinedTextField(
                         value = appointmentName,
@@ -169,7 +190,7 @@ fun CreateAppointmentStep1Screen(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    Text(text = "이 모임에서 쓸 닉네임", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF555555))
+                    Text(text = "이 모임에서 쓸 닉네임 *", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF555555))
                     Spacer(modifier = Modifier.height(6.dp))
                     OutlinedTextField(
                         value = nickname,
@@ -180,30 +201,19 @@ fun CreateAppointmentStep1Screen(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                    Text(text = "날짜 범위 (YYYY-MM-DD)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF555555))
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = startDate,
-                            onValueChange = onStartDateChange,
-                            enabled = !isLoading,
-                            placeholder = { Text("시작일", color = Color(0xFFAAAAAA)) },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
-                        )
-                        OutlinedTextField(
-                            value = endDate,
-                            onValueChange = onEndDateChange,
-                            enabled = !isLoading,
-                            placeholder = { Text("종료일", color = Color(0xFFAAAAAA)) },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
-                        )
-                    }
+                    MultiDateCalendarPicker(
+                        selectedDates = selectedDates,
+                        onToggleDate = onToggleSelectedDate,
+                        onClear = onClearSelectedDates,
+                        minDate = minSelectableDate,
+                        maxDate = maxSelectableDate,
+                        visibleMonth = visibleMonth,
+                        onPrevMonth = { visibleMonth = visibleMonth.minusMonths(1) },
+                        onNextMonth = { visibleMonth = visibleMonth.plusMonths(1) },
+                        enabled = !isLoading,
+                    )
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Text(text = "모임 설명 (선택·미전송)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF555555))

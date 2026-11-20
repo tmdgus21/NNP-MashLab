@@ -67,8 +67,7 @@ fun FaceRoot(
     val duration = remember { mutableStateOf("") }
     val location = remember { mutableStateOf("") }
     val roomNickname = remember { mutableStateOf("") }
-    val startDate = remember { mutableStateOf("") }
-    val endDate = remember { mutableStateOf("") }
+    val selectedDates = remember { mutableStateListOf<String>() }
 
     val createdTimeSlots = remember { mutableStateListOf<TimeSlot>() }
     val selectedFriendsForNew = remember { mutableStateMapOf<String, Boolean>() }
@@ -111,11 +110,6 @@ fun FaceRoot(
             }
             meetingViewModel.refreshList()
             meetingViewModel.loadServerBounds()
-            if (startDate.value.isBlank()) {
-                val (s, e) = meetingViewModel.defaultDateRange()
-                startDate.value = s
-                endDate.value = e
-            }
         } else if (currentScreen.value !in setOf("login", "signup")) {
             meetingViewModel.clearActive()
             currentScreen.value = "login"
@@ -251,6 +245,12 @@ fun FaceRoot(
                                 )
                             }
                             "create_step1" -> {
+                                val today = java.time.LocalDate.now()
+                                val maxEnd =
+                                    meetingState.maxEndDate
+                                        ?.takeIf { it.isNotBlank() }
+                                        ?.let { runCatching { java.time.LocalDate.parse(it.take(10)) }.getOrNull() }
+                                        ?: today.plusMonths(1)
                                 CreateAppointmentStep1Screen(
                                     appointmentName = appointmentName.value,
                                     onAppointmentNameChange = { appointmentName.value = it },
@@ -262,18 +262,21 @@ fun FaceRoot(
                                     onLocationChange = { location.value = it },
                                     nickname = roomNickname.value,
                                     onNicknameChange = { roomNickname.value = it },
-                                    startDate = startDate.value,
-                                    onStartDateChange = { startDate.value = it },
-                                    endDate = endDate.value,
-                                    onEndDateChange = { endDate.value = it },
+                                    selectedDates = selectedDates.toList(),
+                                    onToggleSelectedDate = { iso ->
+                                        if (selectedDates.contains(iso)) selectedDates.remove(iso)
+                                        else selectedDates.add(iso)
+                                    },
+                                    onClearSelectedDates = { selectedDates.clear() },
+                                    minSelectableDate = today,
+                                    maxSelectableDate = maxEnd,
                                     isLoading = meetingState.mutating,
                                     onBackClick = { currentScreen.value = "home" },
                                     onNextClick = {
                                         meetingViewModel.createMeeting(
                                             title = appointmentName.value,
                                             nickname = roomNickname.value.ifBlank { loggedInNickname.value },
-                                            startDate = startDate.value,
-                                            endDate = endDate.value,
+                                            selectedDates = selectedDates.toList(),
                                         )
                                     },
                                     onStepClick = { step -> currentScreen.value = step },
@@ -295,6 +298,21 @@ fun FaceRoot(
                                 )
                             }
                             "create_step3" -> {
+                                val allowed =
+                                    meetingState.activeMeeting?.selectedDates
+                                        ?.takeIf { it.isNotEmpty() }
+                                        ?: selectedDates.toList()
+                                LaunchedEffect(allowed) {
+                                    val first =
+                                        allowed.mapNotNull {
+                                            runCatching { java.time.LocalDate.parse(it.take(10)) }.getOrNull()
+                                        }.minOrNull()
+                                    if (first != null) {
+                                        sharedCalendarYear = first.year
+                                        sharedCalendarMonth = first.monthValue
+                                        sharedSelectedDay = first.dayOfMonth
+                                    }
+                                }
                                 CreateAppointmentStep3TimeScreen(
                                     timeSlotsList = createdTimeSlots,
                                     appointmentsList = appointmentsList,
@@ -311,6 +329,7 @@ fun FaceRoot(
                                     onMonthChange = { sharedCalendarMonth = it },
                                     selectedCalendarDay = sharedSelectedDay,
                                     onDayChange = { sharedSelectedDay = it },
+                                    allowedIsoDates = allowed,
                                     onBackClick = { currentScreen.value = "create_step2" },
                                     onStepClick = { step -> currentScreen.value = step },
                                     onNextClick = { inputSlot ->

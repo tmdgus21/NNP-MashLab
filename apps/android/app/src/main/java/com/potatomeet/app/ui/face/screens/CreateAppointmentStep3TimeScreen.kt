@@ -112,10 +112,17 @@ fun CreateAppointmentStep3TimeScreen(
     onMonthChange: (Int) -> Unit,
     selectedCalendarDay: Int,
     onDayChange: (Int) -> Unit,
+    allowedIsoDates: List<String> = emptyList(),
     onBackClick: () -> Unit,
     onStepClick: (String) -> Unit,
     onNextClick: (TimeSlot?) -> Unit
 ) {
+    val allowed =
+        remember(allowedIsoDates) {
+            allowedIsoDates.mapNotNull {
+                runCatching { java.time.LocalDate.parse(it.take(10)) }.getOrNull()
+            }.toSet()
+        }
     var showTimePickerModal by remember { mutableStateOf(false) }
 
     val currentCalendar = remember { Calendar.getInstance() }
@@ -169,6 +176,15 @@ fun CreateAppointmentStep3TimeScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
 
+                    if (allowed.isNotEmpty()) {
+                        Text(
+                            text = "선택 날짜 ${allowed.size}개만 시간을 입력할 수 있어요",
+                            fontSize = 12.sp,
+                            color = Color(0xFFFF8F00),
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
                     SwipableCalendarWidget(
                         calendarYear = calendarYear,
                         calendarMonth = calendarMonth,
@@ -185,7 +201,11 @@ fun CreateAppointmentStep3TimeScreen(
                             } || appointmentsList.any { appt ->
                                 appt.timeInfo.contains("${m}월 ${d}일")
                             }
-                        }
+                        },
+                        isDayEnabled = { y, m, d ->
+                            if (allowed.isEmpty()) true
+                            else allowed.contains(java.time.LocalDate.of(y, m, d))
+                        },
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))

@@ -14,14 +14,14 @@
 | `accounts` | 로그인 계정 (R1) | `account_type='USER'`, `login_email`, `password_hash` |
 | `account_sessions` | Bearer 토큰 | `token_hash`, `expires_at`, `revoked_at` |
 | `user_auth_challenges` | USER 이메일 OTP (R1, `20261120_0006`) | `email`, `purpose` REGISTER\|LOGIN, `challenge` UNIQUE, `code_digest`(HMAC), `password_hash`(가입 대기), `expires_at`, `sent_at`, `used_at`, `attempt_count`; `account_id` FK **ON DELETE SET NULL** — **admin_otps와 분리** |
-| `rooms` | 모임 (R2) | `title`, `code`(8자리), `starts_at`, `ends_at`, `host_member_id`, `created_by_account_id`, `progress_status`, `lifecycle_status`, `revision`, `deleted_at` |
+| `rooms` | 모임 (R2) | `title`, `code`(8자리), `starts_at`, `ends_at`(선택일 min~max 호환 범위), `meeting_settings.selectedDates`(`YYYY-MM-DD[]`), `host_member_id`, `created_by_account_id`, `progress_status`, `lifecycle_status`, `revision`, `deleted_at` |
 | `room_members` | 방장/팀원 (R3) | `room_role` OWNER=방장 / MEMBER=팀원, `nickname`, `account_id`, `membership_status`, `request_key_hash`, `request_hash` |
 | `room_events` | 활동 기록 | `event_type`, `message`, `actor_member_id` |
 
 사용하지 않음(건드리지 않음): `condition_submissions`, `condition_available_slots`(입력 기간·마감 구조와 맞지 않아 신규 테이블 사용), `room_roles`, `condition_role_preferences`, `ai_drafts`, `proposals*`, `room_controls` 등 CP-SAT/관리 관련.
 
 ### 값 매핑 규칙
-- 날짜 범위 → `rooms.starts_at` = 시작일 00:00 Asia/Seoul, `rooms.ends_at` = **종료일 다음날** 00:00 Asia/Seoul (기존 CHECK `ends_at > starts_at` 충족)
+- 복수 날짜 → `meeting_settings.selectedDates` = 선택일 ISO 목록. `rooms.starts_at` = 최소일 00:00 Asia/Seoul, `rooms.ends_at` = **최대일 다음날** 00:00 Asia/Seoul. 레거시 범위만 있는 모임은 `[starts_at, ends_at)` 연속일을 선택일로 취급
 - 상태 매핑 (기존 CHECK 안에서만 사용)
 
 | 앱 상태 | `progress_status` | `lifecycle_status` |

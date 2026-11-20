@@ -32,15 +32,13 @@ constructor(
     suspend fun create(
         title: String,
         nickname: String,
-        startDate: String,
-        endDate: String,
+        selectedDates: List<String>,
     ): MeetingDto =
         api.createMeeting(
             CreateMeetingRequest(
                 title = title,
                 nickname = nickname,
-                startDate = startDate,
-                endDate = endDate,
+                selectedDates = selectedDates.sorted(),
             ),
         )
 

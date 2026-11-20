@@ -5,6 +5,7 @@ import asyncio
 
 from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import StreamingResponse
+from pydantic import ValidationError
 
 from schedule import service
 from schedule.deps import (
@@ -24,6 +25,15 @@ from schedule.schemas import (
     VoteIn,
 )
 from schedule.timeutil import to_seoul
+
+
+def _validation_message(exc: ValidationError) -> str:
+    err = exc.errors()[0] if exc.errors() else {}
+    msg = str(err.get("msg") or "요청이 올바르지 않습니다.")
+    prefix = "Value error, "
+    if msg.startswith(prefix):
+        return msg[len(prefix) :]
+    return msg
 
 router = APIRouter(prefix="/v1", tags=["Potato Meet schedule"])
 
@@ -57,7 +67,12 @@ def list_meetings(account=Depends(require_account), db=Depends(db_session)):
 
 
 def _potato_create_body(body: dict) -> bool:
-    return "startDate" in body or "start_date" in body
+    return (
+        "startDate" in body
+        or "start_date" in body
+        or "selectedDates" in body
+        or "selected_dates" in body
+    )
 
 
 def _potato_join_body(body: dict) -> bool:
@@ -78,7 +93,10 @@ def create_meeting(
         from user_auth import account_from_authorization
 
         account = account_from_authorization(db, authorization)
-        parsed = CreateMeetingIn.model_validate(body)
+        try:
+            parsed = CreateMeetingIn.model_validate(body)
+        except ValidationError as exc:
+            fail(422, _validation_message(exc))
         return service.create_meeting(db, account, parsed)
     from workflow import create_meeting as legacy_create
     from workflow_models import CreateMeeting

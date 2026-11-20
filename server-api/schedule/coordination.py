@@ -126,6 +126,7 @@ def compute_candidates(
     now: datetime,
     scope_starts_at: datetime,
     scope_ends_at: datetime,
+    allowed_dates: set[date] | None = None,
 ) -> list[Candidate]:
     """Return sorted candidates: |I| DESC → duration DESC → start ASC."""
     if len(member_ranges) < MIN_PEOPLE:
@@ -145,7 +146,8 @@ def compute_candidates(
     d = cutoff.date()
     end_day = (scope_end - timedelta(microseconds=1)).date()
     while d <= end_day:
-        days.append(d)
+        if allowed_dates is None or d in allowed_dates:
+            days.append(d)
         d += timedelta(days=1)
 
     all_candidates: list[Candidate] = []

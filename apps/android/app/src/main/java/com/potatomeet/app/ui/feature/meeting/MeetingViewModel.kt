@@ -69,12 +69,12 @@ constructor(
     fun createMeeting(
         title: String,
         nickname: String,
-        startDate: String,
-        endDate: String,
+        selectedDates: List<String>,
     ) {
         viewModelScope.launch {
             val t = title.trim()
             val n = nickname.trim()
+            val dates = selectedDates.map { it.trim() }.filter { it.isNotEmpty() }.distinct().sorted()
             when {
                 t.isBlank() -> {
                     _events.tryEmit(MeetingEvent.Toast("모임 이름을 입력해 주세요."))
@@ -84,14 +84,14 @@ constructor(
                     _events.tryEmit(MeetingEvent.Toast("닉네임을 입력해 주세요."))
                     return@launch
                 }
-                startDate.isBlank() || endDate.isBlank() -> {
-                    _events.tryEmit(MeetingEvent.Toast("시작일·종료일을 입력해 주세요."))
+                dates.isEmpty() -> {
+                    _events.tryEmit(MeetingEvent.Toast("날짜를 1개 이상 선택해 주세요."))
                     return@launch
                 }
             }
             _uiState.update { it.copy(mutating = true, errorMessage = null) }
             runCatching {
-                meetingRepository.create(t, n, startDate, endDate)
+                meetingRepository.create(t, n, dates)
             }.onSuccess { meeting ->
                 _uiState.update {
                     it.copy(
