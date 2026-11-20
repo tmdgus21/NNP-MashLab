@@ -1,6 +1,5 @@
-import os, secrets, hashlib, hmac, smtplib, ssl, ipaddress
+import os, secrets, hashlib, hmac, ipaddress
 from datetime import datetime, timezone, timedelta
-from email.message import EmailMessage
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError, InvalidHashError
 from fastapi import HTTPException, Request
@@ -148,13 +147,11 @@ def authenticate(db, request, write=False, super_only=False):
 
 
 def send_otp(email, code):
-    host = os.environ['ADMIN_SMTP_HOST']
-    message = EmailMessage()
-    message['From'] = os.environ['ADMIN_SMTP_FROM']
-    message['To'] = email
-    message['Subject'] = '[조건부 OK] 관리자 로그인 인증번호'
-    message.set_content(f'인증번호: {code}\n5분 안에 입력해 주세요. 요청하지 않았다면 관리자에게 문의하세요.')
-    with smtplib.SMTP(host, int(os.getenv('ADMIN_SMTP_PORT', '587')), timeout=10) as smtp:
-        smtp.starttls(context=ssl.create_default_context())
-        smtp.login(os.environ['ADMIN_SMTP_USER'], os.environ['ADMIN_SMTP_PASSWORD'])
-        smtp.send_message(message)
+    from mail_otp import send_otp_email
+
+    send_otp_email(
+        email,
+        code,
+        subject='[조건부 OK] 관리자 로그인 인증번호',
+        body=f'인증번호: {code}\n5분 안에 입력해 주세요. 요청하지 않았다면 관리자에게 문의하세요.',
+    )

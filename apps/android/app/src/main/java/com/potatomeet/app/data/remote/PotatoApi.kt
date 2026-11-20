@@ -1,6 +1,9 @@
 package com.potatomeet.app.data.remote
 
+import com.potatomeet.app.data.remote.dto.AuthChallengeRequest
+import com.potatomeet.app.data.remote.dto.AuthChallengeResponse
 import com.potatomeet.app.data.remote.dto.AuthTokenResponse
+import com.potatomeet.app.data.remote.dto.AuthVerifyRequest
 import com.potatomeet.app.data.remote.dto.CandidatesResponse
 import com.potatomeet.app.data.remote.dto.CollectionResponse
 import com.potatomeet.app.data.remote.dto.CreateMeetingRequest
@@ -26,10 +29,22 @@ import retrofit2.http.Path
 /** Paths relative to BuildConfig.API_BASE_URL (…/v1). */
 interface PotatoApi {
     @POST("auth/register")
-    suspend fun register(@Body body: RegisterRequest): AuthTokenResponse
+    suspend fun register(@Body body: RegisterRequest): AuthChallengeResponse
+
+    @POST("auth/register/resend")
+    suspend fun registerResend(@Body body: AuthChallengeRequest): AuthChallengeResponse
+
+    @POST("auth/register/verify")
+    suspend fun registerVerify(@Body body: AuthVerifyRequest): AuthTokenResponse
 
     @POST("auth/login")
-    suspend fun login(@Body body: LoginRequest): AuthTokenResponse
+    suspend fun login(@Body body: LoginRequest): AuthChallengeResponse
+
+    @POST("auth/login/resend")
+    suspend fun loginResend(@Body body: AuthChallengeRequest): AuthChallengeResponse
+
+    @POST("auth/login/verify")
+    suspend fun loginVerify(@Body body: AuthVerifyRequest): AuthTokenResponse
 
     @GET("auth/me")
     suspend fun me(): MeResponse

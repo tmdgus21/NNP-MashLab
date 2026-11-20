@@ -47,6 +47,7 @@ EXPECTED_TABLES = {
     "push_devices",
     "notification_settings",
     "notification_log",
+    "user_auth_challenges",
 }
 
 
@@ -82,7 +83,7 @@ class V21SchemaTests(unittest.TestCase):
                 insp = inspect(engine)
                 tables = set(insp.get_table_names()) - {"alembic_version"}
                 self.assertEqual(EXPECTED_TABLES, tables)
-                self.assertEqual(34, len(tables))
+                self.assertEqual(len(EXPECTED_TABLES), len(tables))
                 self.assertNotIn("room_cycle_archives", tables)
                 self.assertNotIn("scheduling_events", tables)
 

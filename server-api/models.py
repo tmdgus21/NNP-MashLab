@@ -24,6 +24,7 @@ from db_v21 import (  # noqa: F401 — register metadata
     ConditionSubmission,
     IdempotencyRecord,
     PasswordResetToken,
+    UserAuthChallenge,
     Proposal,
     ProposalAssignment,
     ProposalConditionInput,

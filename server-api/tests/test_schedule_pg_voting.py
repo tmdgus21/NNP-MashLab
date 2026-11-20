@@ -77,14 +77,12 @@ class SchedulePostgresVotingTests(unittest.TestCase):
         app.include_router(schedule_router)
         client = TestClient(app)
 
+        from tests.auth_helpers import auth_headers
+
         def reg(nick_prefix):
-            email = f"{nick_prefix}-{secrets.token_hex(3)}@example.test"
-            r = client.post(
-                "/v1/auth/register",
-                json={"email": email, "password": "long-enough-password"},
+            return auth_headers(
+                client, email=f"{nick_prefix}-{secrets.token_hex(3)}@example.test"
             )
-            self.assertEqual(201, r.status_code, r.text)
-            return {"Authorization": f"Bearer {r.json()['token']}"}
 
         h1, h2, h3 = reg("a"), reg("b"), reg("c")
         today = seoul_today()
