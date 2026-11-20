@@ -149,7 +149,7 @@ fun LoginScreen(
             modifier = Modifier.fillMaxWidth().height(52.dp),
             shape = RoundedCornerShape(26.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Color(0xFFFFD54F),
+                focusedBorderColor = Color(0xFFFF9800),
                 unfocusedBorderColor = Color(0xFFE0E0E0),
                 focusedContainerColor = Color.White,
                 unfocusedContainerColor = Color.White
@@ -166,15 +166,20 @@ fun LoginScreen(
             visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             trailingIcon = {
-                val image = if (passwordVisible) "👁️‍🗨️" else "👁️‍🗨️"
-                IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                    Text(text = image, fontSize = 16.sp)
-                }
+                Text(
+                    text = if (passwordVisible) "숨김" else "표시",
+                    fontSize = 12.sp,
+                    color = Color.Gray,
+                    modifier =
+                        Modifier
+                            .clickable(enabled = !isLoading) { passwordVisible = !passwordVisible }
+                            .padding(8.dp),
+                )
             },
             modifier = Modifier.fillMaxWidth().height(52.dp),
             shape = RoundedCornerShape(26.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Color(0xFFFFD54F),
+                focusedBorderColor = Color(0xFFFF9800),
                 unfocusedBorderColor = Color(0xFFE0E0E0),
                 focusedContainerColor = Color.White,
                 unfocusedContainerColor = Color.White
@@ -191,7 +196,7 @@ fun LoginScreen(
                 onClick = {
                     if (otpPending) onResendOtp() else onRequestOtp(inputId, inputPw)
                 },
-                modifier = Modifier.height(52.dp),
+                modifier = Modifier.weight(1f).height(52.dp),
                 enabled = !isLoading,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (otpPending) Color(0xFFE8F5E9) else Color(0xFFFFD54F)
@@ -214,10 +219,10 @@ fun LoginScreen(
                 singleLine = true,
                 enabled = !isLoading && otpPending,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.weight(1f).height(52.dp),
+                modifier = Modifier.weight(1.1f).height(52.dp),
                 shape = RoundedCornerShape(26.dp),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color(0xFFFFD54F),
+                    focusedBorderColor = Color(0xFFFF9800),
                     unfocusedBorderColor = Color(0xFFE0E0E0),
                     focusedContainerColor = Color.White,
                     unfocusedContainerColor = Color.White
@@ -251,7 +256,7 @@ fun LoginScreen(
             } else {
                 Text(
                     text = if (otpPending) "인증하고 로그인" else "로그인하기",
-                    fontSize = 17.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
                 )

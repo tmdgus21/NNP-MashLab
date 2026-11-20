@@ -229,10 +229,35 @@ fun HomeScreen(
 
                 if (appointmentsList.isEmpty()) {
                     Box(
-                        modifier = Modifier.fillMaxWidth().height(90.dp).clip(RoundedCornerShape(16.dp)).background(Color.White),
-                        contentAlignment = Alignment.Center
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .height(180.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color.White),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Text(text = "모임이 없습니다.", fontSize = 14.sp, color = Color(0xFFAAAAAA))
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "모임이 없습니다. 모임을 추가하시겠습니까?",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF666666),
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Button(
+                                onClick = onCreateAppointmentClick,
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F)),
+                                shape = RoundedCornerShape(20.dp),
+                            ) {
+                                Text(
+                                    text = "모임 추가하기",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF3C1E1E),
+                                )
+                            }
+                        }
                     }
                 } else {
                     LazyColumn(
@@ -278,34 +303,47 @@ fun HomeScreen(
                                         }
                                     }
                                     Spacer(modifier = Modifier.height(6.dp))
-                                    Text(text = "📅 ${appt.timeInfo}", fontSize = 13.sp, color = Color(0xFF666666))
-                                    Text(text = "📍 ${appt.location} (${appt.category})", fontSize = 13.sp, color = Color(0xFF666666))
+                                    Text(
+                                        text =
+                                            if (appt.status.equals("CONFIRMED", true)) {
+                                                "📅 확정 · ${appt.timeInfo}"
+                                            } else if (appt.selectedDates.isNotEmpty()) {
+                                                "📅 후보일 ${appt.selectedDates.size}개 · ${appt.timeInfo}"
+                                            } else {
+                                                "📅 ${appt.timeInfo}"
+                                            },
+                                        fontSize = 13.sp,
+                                        color = Color(0xFF666666),
+                                    )
                                 }
                             }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(80.dp))
+                Spacer(modifier = Modifier.height(90.dp))
             }
         }
 
         Box(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 20.dp, bottom = 20.dp)
+            modifier =
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(20.dp),
         ) {
             Button(
                 onClick = onCreateAppointmentClick,
-                modifier = Modifier
-                    .width(130.dp)
-                    .height(38.dp),
-                contentPadding = PaddingValues(0.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F)),
-                shape = RoundedCornerShape(19.dp),
-                elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp)
+                shape = RoundedCornerShape(28.dp),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp),
+                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
             ) {
-                Text(text = "+ 모임 만들기", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3C1E1E))
+                Text(
+                    text = "+ 모임 만들기",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF3C1E1E),
+                )
             }
         }
     }

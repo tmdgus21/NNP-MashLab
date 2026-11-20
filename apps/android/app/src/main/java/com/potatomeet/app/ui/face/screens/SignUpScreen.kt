@@ -171,14 +171,20 @@ fun SignUpScreen(
             visualTransformation = if (pwVisible) VisualTransformation.None else PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             trailingIcon = {
-                IconButton(onClick = { pwVisible = !pwVisible }) {
-                    Text(text = "👁️‍🗨️", fontSize = 16.sp)
-                }
+                Text(
+                    text = if (pwVisible) "숨김" else "표시",
+                    fontSize = 12.sp,
+                    color = Color.Gray,
+                    modifier =
+                        Modifier
+                            .clickable(enabled = !isLoading) { pwVisible = !pwVisible }
+                            .padding(8.dp),
+                )
             },
             modifier = Modifier.fillMaxWidth().height(52.dp),
             shape = RoundedCornerShape(26.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Color(0xFFFFD54F),
+                focusedBorderColor = Color(0xFFFF9800),
                 unfocusedBorderColor = Color(0xFFE0E0E0),
                 focusedContainerColor = Color.White,
                 unfocusedContainerColor = Color.White
@@ -195,9 +201,15 @@ fun SignUpScreen(
             visualTransformation = if (pwConfirmVisible) VisualTransformation.None else PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             trailingIcon = {
-                IconButton(onClick = { pwConfirmVisible = !pwConfirmVisible }) {
-                    Text(text = "👁️‍🗨️", fontSize = 16.sp)
-                }
+                Text(
+                    text = if (pwConfirmVisible) "숨김" else "표시",
+                    fontSize = 12.sp,
+                    color = Color.Gray,
+                    modifier =
+                        Modifier
+                            .clickable(enabled = !isLoading) { pwConfirmVisible = !pwConfirmVisible }
+                            .padding(8.dp),
+                )
             },
             modifier = Modifier.fillMaxWidth().height(52.dp),
             shape = RoundedCornerShape(26.dp),

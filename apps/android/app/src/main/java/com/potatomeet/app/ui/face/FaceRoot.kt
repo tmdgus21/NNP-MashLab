@@ -37,6 +37,7 @@ import com.potatomeet.app.ui.face.screens.HomeScreen
 import com.potatomeet.app.ui.face.screens.LoginScreen
 import com.potatomeet.app.ui.face.screens.MyPageScreen
 import com.potatomeet.app.ui.face.screens.ResultScreen
+import com.potatomeet.app.ui.face.screens.RoomDetailScreen
 import com.potatomeet.app.ui.face.screens.SignUpScreen
 import com.potatomeet.app.ui.feature.auth.AuthEvent
 import com.potatomeet.app.ui.feature.auth.AuthViewModel
@@ -72,6 +73,7 @@ fun FaceRoot(
     val createdTimeSlots = remember { mutableStateListOf<TimeSlot>() }
     val selectedFriendsForNew = remember { mutableStateMapOf<String, Boolean>() }
     val selectedAiRecommendationTime = remember { mutableStateOf("") }
+    val detailAppointment = remember { mutableStateOf<Appointment?>(null) }
 
     val currentCalendar = remember { Calendar.getInstance() }
     var sharedCalendarYear by remember { mutableStateOf(currentCalendar.get(Calendar.YEAR)) }
@@ -127,6 +129,7 @@ fun FaceRoot(
             "create_step3" -> currentScreen.value = "create_step2"
             "create_step4" -> currentScreen.value = "create_step3"
             "create_ai_recommendation" -> currentScreen.value = "create_step4"
+            "room_detail" -> currentScreen.value = "home"
             "result" -> currentScreen.value = "home"
         }
     }
@@ -179,13 +182,14 @@ fun FaceRoot(
                     "create_step3",
                     "create_step4",
                     "create_ai_recommendation",
+                    "room_detail",
                     "result",
                 )
             -> {
                 Scaffold(
                     containerColor = Color(0xFFFFFCF3),
                     bottomBar = {
-                        if (currentScreen.value != "result") {
+                        if (currentScreen.value !in setOf("result", "room_detail")) {
                             CustomBottomBar(
                                 currentRoute = currentScreen.value,
                                 onTabSelected = { route: String -> currentScreen.value = route },
@@ -225,15 +229,61 @@ fun FaceRoot(
                                         currentScreen.value = "create_step1"
                                     },
                                     onOpenAppointment = { appt ->
+                                        detailAppointment.value = appt
                                         if (appt.meetingId.isNotBlank()) {
                                             meetingViewModel.openMeetingById(appt.meetingId)
                                         }
+                                        currentScreen.value = "room_detail"
                                     },
                                     onJoinClick = { code, nick ->
                                         meetingViewModel.joinMeeting(code, nick)
                                     },
                                     isMutating = meetingState.mutating || meetingState.loading,
                                 )
+                            }
+                            "room_detail" -> {
+                                val appt =
+                                    detailAppointment.value
+                                        ?: meetingState.activeMeeting?.toAppointment()
+                                if (appt == null) {
+                                    currentScreen.value = "home"
+                                } else {
+                                    RoomDetailScreen(
+                                        appointment =
+                                            appt.copy(
+                                                selectedDates =
+                                                    meetingState.activeMeeting?.selectedDates
+                                                        ?.takeIf { it.isNotEmpty() }
+                                                        ?: appt.selectedDates,
+                                                invitedFriends =
+                                                    meetingState.activeMeeting?.members
+                                                        ?.map { it.nickname }
+                                                        ?.takeIf { it.isNotEmpty() }
+                                                        ?: appt.invitedFriends,
+                                                code =
+                                                    meetingState.activeMeeting?.code
+                                                        ?.takeIf { it.isNotBlank() }
+                                                        ?: appt.code,
+                                            ),
+                                        onBackClick = { currentScreen.value = "home" },
+                                        onEditAvailabilityClick = {
+                                            if (appt.meetingId.isNotBlank()) {
+                                                meetingViewModel.openMeetingById(appt.meetingId)
+                                            }
+                                            currentScreen.value = "create_step3"
+                                        },
+                                        onAiResultClick = {
+                                            if (appt.meetingId.isNotBlank()) {
+                                                meetingViewModel.openMeetingById(appt.meetingId)
+                                                meetingViewModel.refreshCandidates(appt.meetingId)
+                                            }
+                                            currentScreen.value = "create_ai_recommendation"
+                                        },
+                                        onInviteClick = {
+                                            currentScreen.value = "create_step2"
+                                        },
+                                    )
+                                }
                             }
                             "friends" -> FriendsScreen(isAdmin = false)
                             "mypage" -> {
@@ -410,6 +460,9 @@ fun FaceRoot(
                                     }
                                 val voting = meetingState.candidatesStatus.equals("VOTING", ignoreCase = true)
                                 AiRecommendationScreen(
+                                    meetingTitle =
+                                        meetingState.activeMeeting?.title
+                                            ?: appointmentName.value,
                                     myTimeSlots = createdTimeSlots,
                                     invitedFriends =
                                         meetingState.activeMeeting?.members?.map { it.nickname }.orEmpty(),
@@ -501,6 +554,7 @@ private fun MeetingDto.toAppointment(): Appointment =
         revision = revision,
         isOwner = members.any { it.id == myMemberId && it.role.equals("OWNER", true) },
         collectionId = collectionId,
+        selectedDates = selectedDates,
     )
 
 private fun Appointment.toMeetingStub(): MeetingDto =

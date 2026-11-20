@@ -103,11 +103,12 @@ import com.potatomeet.app.ui.face.components.TopLogoHeader
 fun AiRecommendationScreen(
     myTimeSlots: List<TimeSlot>,
     invitedFriends: List<String>,
+    meetingTitle: String = "",
     apiRecommendations: List<RecommendationOption>? = null,
     aiSummary: String? = null,
     multiSelectIds: Set<String> = emptySet(),
     onToggleCandidateId: ((String) -> Unit)? = null,
-    confirmLabel: String = "이 시간으로 확정하기",
+    confirmLabel: String = "이 시간으로 최종 확정하기",
     isLoading: Boolean = false,
     onBackClick: () -> Unit,
     onConfirmFinal: (String) -> Unit,
@@ -191,30 +192,27 @@ fun AiRecommendationScreen(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(modifier = Modifier.height(16.dp))
-
+            Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "AI가 최적의 시간을 찾았어요!",
+                text = "AI 결과 화면 ✨",
                 fontSize = 22.sp,
                 fontWeight = FontWeight.ExtraBold,
                 color = Color(0xFF333333),
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Start
-            ) {
-                Text(
-                    text = "추천 시간",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF333333)
-                )
-            }
-            Spacer(modifier = Modifier.height(12.dp))
+                textAlign = TextAlign.Start,
+            )
+            Text(
+                text =
+                    if (meetingTitle.isNotBlank()) {
+                        "'$meetingTitle' 모임을 위한 최적의 시간 후보입니다."
+                    } else {
+                        "모임을 위한 최적의 시간 후보입니다."
+                    },
+                fontSize = 13.sp,
+                color = Color(0xFF777777),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(modifier = Modifier.height(16.dp))
 
             if (overlappingRecommendations.isEmpty()) {
                 Box(
