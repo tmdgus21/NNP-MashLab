@@ -206,19 +206,41 @@ fun CreateAppointmentStep1Screen(
                     }
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    Text(text = "무엇을 할까요?", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF555555))
+                    Text(text = "모임 설명 (선택·미전송)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF555555))
                     Spacer(modifier = Modifier.height(6.dp))
-                    OutlinedTextField(value = category, onValueChange = onCategoryChange, enabled = !isLoading, placeholder = { Text("예) 식사, 카페, 스터디", color = Color(0xFFAAAAAA)) }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp))
+                    OutlinedTextField(
+                        value = category,
+                        onValueChange = onCategoryChange,
+                        enabled = !isLoading,
+                        placeholder = { Text("모임에 대한 간단한 설명", color = Color(0xFFAAAAAA)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                    )
                     Spacer(modifier = Modifier.height(12.dp))
-
-                    Text(text = "예상 소요시간", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF555555))
+                    Text(text = "예상 소요시간 (참고·미전송)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF555555))
                     Spacer(modifier = Modifier.height(6.dp))
-                    OutlinedTextField(value = duration, onValueChange = onDurationChange, enabled = !isLoading, placeholder = { Text("예) 2시간 (참고용)", color = Color(0xFFAAAAAA)) }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp))
+                    OutlinedTextField(
+                        value = duration,
+                        onValueChange = onDurationChange,
+                        enabled = !isLoading,
+                        placeholder = { Text("예) 2시간", color = Color(0xFFAAAAAA)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                    )
                     Spacer(modifier = Modifier.height(12.dp))
-
-                    Text(text = "장소", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF555555))
+                    Text(text = "장소 (참고·미전송)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF555555))
                     Spacer(modifier = Modifier.height(6.dp))
-                    OutlinedTextField(value = location, onValueChange = onLocationChange, enabled = !isLoading, placeholder = { Text("장소를 입력해주세요 (참고용)", color = Color(0xFFAAAAAA)) }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp))
+                    OutlinedTextField(
+                        value = location,
+                        onValueChange = onLocationChange,
+                        enabled = !isLoading,
+                        placeholder = { Text("장소를 입력해주세요", color = Color(0xFFAAAAAA)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                    )
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))

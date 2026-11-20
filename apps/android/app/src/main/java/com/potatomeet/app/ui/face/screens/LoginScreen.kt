@@ -104,14 +104,16 @@ import com.potatomeet.app.ui.face.components.TopLogoHeader
 @Composable
 fun LoginScreen(
     isLoading: Boolean = false,
-    onLoginSubmit: (email: String, password: String) -> Unit,
+    otpPending: Boolean = false,
+    onRequestOtp: (email: String, password: String) -> Unit,
+    onVerifyOtp: (code: String) -> Unit,
+    onResendOtp: () -> Unit = {},
     onSignUpClick: () -> Unit,
 ) {
     var inputId by remember { mutableStateOf("") }
     var inputPw by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var inputAuthCode by remember { mutableStateOf("") }
-    var isGoogleVerified by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     Column(
@@ -180,7 +182,6 @@ fun LoginScreen(
         )
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Google UI kept for face design; not required for /v1/auth email login.
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -188,40 +189,31 @@ fun LoginScreen(
         ) {
             Button(
                 onClick = {
-                    isGoogleVerified = true
-                    Toast.makeText(context, "이메일 로그인을 사용해 주세요. (구글 연동 준비 중)", Toast.LENGTH_SHORT).show()
+                    if (otpPending) onResendOtp() else onRequestOtp(inputId, inputPw)
                 },
                 modifier = Modifier.height(52.dp),
                 enabled = !isLoading,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isGoogleVerified) Color(0xFFE8F5E9) else Color(0xFFFFD54F)
+                    containerColor = if (otpPending) Color(0xFFE8F5E9) else Color(0xFFFFD54F)
                 ),
                 shape = RoundedCornerShape(26.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier.size(22.dp).clip(CircleShape).background(Color.White),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(text = "G", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4285F4))
-                    }
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = if (isGoogleVerified) "인증완료" else "인증코드 보내기",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isGoogleVerified) Color(0xFF2E7D32) else Color(0xFF3C1E1E)
-                    )
-                }
+                Text(
+                    text = if (otpPending) "재발송" else "인증코드 보내기",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (otpPending) Color(0xFF2E7D32) else Color(0xFF3C1E1E)
+                )
             }
 
             OutlinedTextField(
                 value = inputAuthCode,
-                onValueChange = { inputAuthCode = it },
+                onValueChange = { inputAuthCode = it.filter { ch -> ch.isDigit() }.take(6) },
                 placeholder = { Text("인증코드 입력", color = Color(0xFFAAAAAA), fontSize = 13.sp) },
                 singleLine = true,
-                enabled = !isLoading,
+                enabled = !isLoading && otpPending,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.weight(1f).height(52.dp),
                 shape = RoundedCornerShape(26.dp),
                 colors = OutlinedTextFieldDefaults.colors(
@@ -236,7 +228,15 @@ fun LoginScreen(
         Spacer(modifier = Modifier.height(20.dp))
 
         Button(
-            onClick = { onLoginSubmit(inputId, inputPw) },
+            onClick = {
+                if (!otpPending) {
+                    onRequestOtp(inputId, inputPw)
+                } else if (inputAuthCode.length != 6) {
+                    Toast.makeText(context, "인증코드 6자리를 입력해 주세요.", Toast.LENGTH_SHORT).show()
+                } else {
+                    onVerifyOtp(inputAuthCode)
+                }
+            },
             enabled = !isLoading,
             modifier = Modifier.fillMaxWidth().height(52.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4A3B32)),
@@ -249,7 +249,12 @@ fun LoginScreen(
                     strokeWidth = 2.dp,
                 )
             } else {
-                Text(text = "로그인하기", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Text(
+                    text = if (otpPending) "인증하고 로그인" else "로그인하기",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                )
             }
         }
 

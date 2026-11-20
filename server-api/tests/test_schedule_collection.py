@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-import secrets
 import unittest
 from datetime import date, datetime, timedelta
 
@@ -22,6 +21,7 @@ from schedule.constants import SEOUL
 from schedule.router import router as schedule_router
 from schedule.timeutil import format_iso
 from user_auth import router as auth_router
+from tests.auth_helpers import register_verified
 
 
 def _app() -> FastAPI:
@@ -56,14 +56,8 @@ class ScheduleCollectionTests(unittest.TestCase):
             previous.dispose()
 
     def _register(self, email: str | None = None):
-        email = email or f"u-{secrets.token_hex(4)}@example.test"
-        res = self.client.post(
-            "/v1/auth/register",
-            json={"email": email, "password": "long-enough-password"},
-        )
-        self.assertEqual(201, res.status_code, res.text)
-        token = res.json()["token"]
-        return email, {"Authorization": f"Bearer {token}"}
+        created = register_verified(self.client, email=email)
+        return created["email"], {"Authorization": f"Bearer {created['token']}"}
 
     def _create(self, headers, title="모임", nick="방장", start=None, end=None):
         start = start or date(2026, 11, 20)

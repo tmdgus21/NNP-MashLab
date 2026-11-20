@@ -29,6 +29,7 @@ from schedule.events import drain_pending, hub, queue_event
 from schedule.router import router as schedule_router
 from schedule.timeutil import ceil_to_slot, seoul_today
 from user_auth import router as auth_router
+from tests.auth_helpers import auth_headers
 
 
 def _app() -> FastAPI:
@@ -61,13 +62,7 @@ class ScheduleSseSweepTests(unittest.IsolatedAsyncioTestCase):
             previous.dispose()
 
     def _register(self):
-        email = f"s-{secrets.token_hex(4)}@example.test"
-        res = self.client.post(
-            "/v1/auth/register",
-            json={"email": email, "password": "long-enough-password"},
-        )
-        self.assertEqual(201, res.status_code, res.text)
-        return {"Authorization": f"Bearer {res.json()['token']}"}
+        return auth_headers(self.client, email=f"s-{secrets.token_hex(4)}@example.test")
 
     def _create(self, headers, nick="A"):
         today = seoul_today()

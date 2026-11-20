@@ -33,6 +33,7 @@ from schedule.constants import SEOUL
 from schedule.router import router as schedule_router
 from schedule.timeutil import ceil_to_slot, seoul_today
 from user_auth import router as auth_router
+from tests.auth_helpers import auth_headers
 
 
 def _app() -> FastAPI:
@@ -67,13 +68,7 @@ class ScheduleVotingTests(unittest.TestCase):
             previous.dispose()
 
     def _register(self):
-        email = f"v-{secrets.token_hex(4)}@example.test"
-        res = self.client.post(
-            "/v1/auth/register",
-            json={"email": email, "password": "long-enough-password"},
-        )
-        self.assertEqual(201, res.status_code, res.text)
-        return {"Authorization": f"Bearer {res.json()['token']}"}
+        return auth_headers(self.client, email=f"v-{secrets.token_hex(4)}@example.test")
 
     def _create_meeting(self, headers, nick="A"):
         today = seoul_today()

@@ -19,7 +19,8 @@ https://oranganman.site ── Caddy ── server-api:8000 (FastAPI, Docker)
 ```
 server-api/
 ├── main.py                       # 라우터 등록 (컷오버 때 workflow_router → schedule_router 교체)
-├── user_auth.py                  # 재사용: /v1/auth register·login·me·logout, account_from_authorization()
+├── user_auth.py                  # /v1/auth register·login(+OTP verify/resend)·me·logout, account_from_authorization()
+├── mail_otp.py                   # 공통 SMTP OTP 발송 (admin·user 공유, 원문 미로그)
 ├── database.py                   # 재사용: session(), engine
 ├── db_v21/models/schedule.py     # 신규 테이블 (data-model.md)
 ├── migrations_v21/versions/      # 신규 리비전 20261108_0005 ~
@@ -53,7 +54,11 @@ server-api/
 ## API (신규 라우터)
 | 메서드 · 경로 | 설명 | 권한 | R | 페이지 |
 |---|---|---|---|---|
-| `POST /v1/auth/register` · `login` · `GET me` · `POST logout` | **기존 그대로** | – | R1 | P1 |
+| `POST /v1/auth/register` | 이메일·비밀번호 → OTP challenge (계정·토큰 없음) | 공개 | R1 | P1 |
+| `POST /v1/auth/register/verify` · `resend` | OTP 검증 후 계정 ACTIVE + 토큰 / 재발송 | challenge | R1 | P1 |
+| `POST /v1/auth/login` | 비밀번호 검증 → OTP challenge (토큰 없음) | 공개 | R1 | P1 |
+| `POST /v1/auth/login/verify` · `resend` | OTP 검증 후 토큰 / 재발송 | challenge | R1 | P1 |
+| `GET /v1/auth/me` · `POST /v1/auth/logout` | 세션 조회·폐기 | Bearer | R1 | P1 |
 | `GET /v1/meetings` | 내 모임 목록 | 로그인 | R2·R3 | P2 |
 | `POST /v1/meetings` | 생성 `{title, nickname, startDate, endDate}` → OWNER. 모임 길이(duration) 필드 없음. 범위: 오늘 ~ 오늘+1개월(서버 한국 시각) | 로그인 | R2 | P3 |
 | `GET /v1/time` | 서버 시각 `{serverTime, timezone:"Asia/Seoul", maxEndDate}` — 앱 날짜 선택기 기준 | – | R2 | P3 |
