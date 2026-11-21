@@ -354,9 +354,11 @@ def collection_view(db, room: Room, member: RoomMember, *, now: datetime | None 
     members = _active_members(db, room.id)
     done_ids = _done_member_ids(db, col.id)
     ranges = _member_ranges(db, col.id, done_ids if done_ids else None)
+    my_submitted = db.get(ScheduleResponse, (col.id, member.id)) is not None
     my_ranges = _member_ranges(db, col.id, {member.id}).get(member.id, [])
-    # Prefill from previous cycles on READJUST if no current response
-    if col.kind == "READJUST" and not my_ranges:
+    # Prefill from previous cycles on READJUST only when never submitted this cycle
+    # (empty ranges + submitted means all-unavailable; do not overwrite).
+    if col.kind == "READJUST" and not my_submitted:
         my_ranges = _prefill_ranges(db, room.id, member.id, col)
     counts = slot_availability_counts(
         ranges,
@@ -385,6 +387,7 @@ def collection_view(db, room: Room, member: RoomMember, *, now: datetime | None 
         "extendedCount": col.extended_count,
         "doneCount": len(done_ids),
         "memberCount": len(members),
+        "mySubmitted": my_submitted,
         "myAvailable": [
             {"start": format_iso(s), "end": format_iso(e)} for s, e in my_ranges
         ],
@@ -422,6 +425,7 @@ def submit_response(
     collection_id: str,
     available: list[tuple[datetime, datetime]],
     *,
+    all_unavailable: bool = False,
     now: datetime | None = None,
 ) -> dict:
     now = now or utc_now()
@@ -444,11 +448,17 @@ def submit_response(
     if _is_legacy_room(db, room):
         fail(409, "이전 앱 모임에서는 입력할 수 없습니다.")
 
+    if all_unavailable and available:
+        fail(422, "전체 불가능일 때는 가능 시간을 함께 보낼 수 없습니다.")
+
     allowed = set(
         selected_dates_for_room(room.meeting_settings, room.starts_at, room.ends_at)
     )
     try:
-        if not available:
+        if all_unavailable:
+            # Explicit empty availability (distinct from legacy empty → full scope).
+            ranges = []
+        elif not available:
             ranges = default_full_scope(
                 col.scope_starts_at,
                 col.scope_ends_at,

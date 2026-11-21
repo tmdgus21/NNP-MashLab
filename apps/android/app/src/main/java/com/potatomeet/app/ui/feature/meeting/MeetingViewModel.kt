@@ -215,8 +215,12 @@ class MeetingViewModel
             }
         }
 
-        fun submitAvailability(ranges: List<Pair<String, String>>) {
+        fun submitAvailability(
+            ranges: List<Pair<String, String>>,
+            allUnavailable: Boolean = false,
+        ) {
             val meeting = _uiState.value.activeMeeting ?: return
+            if (_uiState.value.mutating) return
             val collectionId = meeting.collectionId ?: _uiState.value.collection?.id
             if (collectionId.isNullOrBlank()) {
                 _events.tryEmit(MeetingEvent.Toast("입력 기간을 불러오지 못했습니다."))
@@ -225,12 +229,16 @@ class MeetingViewModel
             viewModelScope.launch {
                 _uiState.update { it.copy(mutating = true) }
                 runCatching {
-                    meetingRepository.submitAvailability(meeting.id, collectionId, ranges)
+                    meetingRepository.submitAvailability(
+                        meeting.id,
+                        collectionId,
+                        ranges,
+                        allUnavailable = allUnavailable,
+                    )
                 }.onSuccess { col ->
                     _uiState.update { it.copy(mutating = false, collection = col) }
-                    _events.tryEmit(MeetingEvent.Toast("가능 시간을 저장했습니다."))
+                    _events.tryEmit(MeetingEvent.Toast("불가능 시간을 서버에 저장했습니다."))
                     refreshActive()
-                    // Legacy route; FaceRoot no longer uses step4. Keep for restore callers.
                     _events.tryEmit(MeetingEvent.Navigate("room_detail"))
                 }.onFailure { e ->
                     fail(e)

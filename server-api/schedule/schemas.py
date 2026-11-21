@@ -67,7 +67,11 @@ class JoinMeetingIn(ApiModel):
 
 
 class SubmitResponseIn(ApiModel):
-    available: list[TimeRangeIn] = Field(default_factory=list, max_length=500)
+    # Empty available historically means "all remaining scope is available".
+    # allUnavailable=true + available=[] means truly no availability.
+    # Raise max to cover ~1 month of alternating 30-min available cells (~744).
+    available: list[TimeRangeIn] = Field(default_factory=list, max_length=1000)
+    all_unavailable: bool = False
 
 
 class VoteIn(ApiModel):

@@ -53,6 +53,7 @@ object TimeFmt {
     ): String {
         val zdt =
             java.time.ZonedDateTime.of(year, month, day, hour, minute, 0, 0, SEOUL)
-        return zdt.toOffsetDateTime().toString()
+        // Always include seconds for stable API payloads.
+        return zdt.toOffsetDateTime().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
     }
 }

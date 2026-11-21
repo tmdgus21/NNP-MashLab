@@ -213,7 +213,14 @@ def put_response(
     room = load_room(db, room_id)
     member = require_member(db, room, account.id)
     available = [(to_seoul(r.start), to_seoul(r.end)) for r in body.available]
-    return service.submit_response(db, room, member, collection_id, available)
+    return service.submit_response(
+        db,
+        room,
+        member,
+        collection_id,
+        available,
+        all_unavailable=body.all_unavailable,
+    )
 
 
 @router.get("/meetings/{room_id}/candidates")
