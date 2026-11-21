@@ -33,7 +33,7 @@ from schedule.constants import SEOUL
 from schedule.router import router as schedule_router
 from schedule.timeutil import ceil_to_slot, seoul_today
 from user_auth import router as auth_router
-from tests.auth_helpers import auth_headers
+from tests.auth_helpers import auth_headers, set_nickname
 
 
 def _app() -> FastAPI:
@@ -71,6 +71,7 @@ class ScheduleVotingTests(unittest.TestCase):
         return auth_headers(self.client, email=f"v-{secrets.token_hex(4)}@example.test")
 
     def _create_meeting(self, headers, nick="A"):
+        set_nickname(self.client, headers, nick)
         today = seoul_today()
         res = self.client.post(
             "/v1/meetings",
@@ -85,17 +86,19 @@ class ScheduleVotingTests(unittest.TestCase):
         self.assertEqual(201, res.status_code, res.text)
         return res.json()
 
+    def _join(self, headers, code, nick):
+        set_nickname(self.client, headers, nick)
+        return self.client.post(
+            "/v1/meetings/join", headers=headers, json={"code": code, "nickname": nick}
+        )
+
     def _enter_voting_two_candidates(self, h1, h2):
         """A/B long window + C middle → 2 candidates, voting_ends far in future."""
         meeting = self._create_meeting(h1, nick="A")
         mid, code, cid = meeting["id"], meeting["code"], meeting["collectionId"]
-        self.client.post(
-            "/v1/meetings/join", headers=h2, json={"code": code, "nickname": "B"}
-        )
+        self._join(h2, code, "B")
         h3 = self._register()
-        self.client.post(
-            "/v1/meetings/join", headers=h3, json={"code": code, "nickname": "C"}
-        )
+        self._join(h3, code, "C")
 
         now = datetime.now(SEOUL)
         # Windows start ≥ now+4h so Q30 keeps ≥1h voting even if wall clock advances slightly

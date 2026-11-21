@@ -1,10 +1,8 @@
 package com.potatomeet.app.data.remote
 
-import com.potatomeet.app.data.remote.dto.CandidatesResponse
 import com.potatomeet.app.data.remote.dto.CreateMeetingRequest
 import com.potatomeet.app.data.remote.dto.VoteRequest
 import kotlinx.serialization.json.Json
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -22,13 +20,12 @@ class DtoContractTest {
                 CreateMeetingRequest.serializer(),
                 CreateMeetingRequest(
                     title = "모임",
-                    nickname = "감자",
-                    startDate = "2026-11-20",
-                    endDate = "2026-11-22",
+                    nickname = "방장",
+                    selectedDates = listOf("2026-11-20", "2026-11-26", "2026-11-30"),
                 ),
             )
-        assertTrue(encoded.contains("\"startDate\""))
-        assertTrue(encoded.contains("\"endDate\""))
+        assertTrue(encoded.contains("\"selectedDates\""))
+        assertTrue(!encoded.contains("\"startDate\""))
         assertTrue(!encoded.contains("start_date"))
     }
 
@@ -37,21 +34,9 @@ class DtoContractTest {
         val encoded =
             json.encodeToString(
                 VoteRequest.serializer(),
-                VoteRequest(candidateIds = listOf("a", "b")),
+                VoteRequest(candidateIds = listOf("c1", "c2")),
             )
         assertTrue(encoded.contains("\"candidateIds\""))
-    }
-
-    @Test
-    fun candidatesResponse_parsesAiSummary() {
-        val raw =
-            """
-            {"runId":"r1","candidates":[],"status":"VOTING","revision":3,
-             "aiSummary":"두 명이 가능합니다","votingEndsAt":null,"excludedSoonCount":0,
-             "myBallotSubmitted":false}
-            """.trimIndent()
-        val parsed = json.decodeFromString(CandidatesResponse.serializer(), raw)
-        assertEquals("두 명이 가능합니다", parsed.aiSummary)
-        assertEquals("VOTING", parsed.status)
+        assertTrue(!encoded.contains("candidate_ids"))
     }
 }

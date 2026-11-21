@@ -96,9 +96,13 @@ def ensure_guest_account(db, nickname: str = "") -> Account:
     """Disposable GUEST account for anonymous create/join (not email USER signup)."""
     from argon2 import PasswordHasher
 
+    from nickname_generator import generate_nickname
+
+    display = nickname.strip()[:30] if nickname and nickname.strip() else generate_nickname()
     account = Account(
         login_email=f"guest-{uid()}@local.invalid",
         password_hash=PasswordHasher().hash(uid()),
+        nickname=display,
         account_type="GUEST",
         account_status="ACTIVE",
         approved=True,

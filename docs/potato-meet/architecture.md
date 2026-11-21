@@ -60,13 +60,13 @@ server-api/
 | `POST /v1/auth/login/verify` · `resend` | OTP 검증 후 토큰 / 재발송 | challenge | R1 | P1 |
 | `GET /v1/auth/me` · `POST /v1/auth/logout` | 세션 조회·폐기 | Bearer | R1 | P1 |
 | `GET /v1/meetings` | 내 모임 목록 | 로그인 | R2·R3 | P2 |
-| `POST /v1/meetings` | 생성 `{title, nickname, startDate, endDate}` → OWNER. 모임 길이(duration) 필드 없음. 범위: 오늘 ~ 오늘+1개월(서버 한국 시각) | 로그인 | R2 | P3 |
+| `POST /v1/meetings` | 생성 `{title, nickname, selectedDates[]}` 우선(또는 하위호환 `startDate`+`endDate`). 둘 다 보내면 422. 모임 길이 없음. 날짜: 오늘~오늘+1개월(KST). `meeting_settings.selectedDates` 저장, `starts_at`/`ends_at`=min/max | 로그인 | R2 | P3 |
 | `GET /v1/time` | 서버 시각 `{serverTime, timezone:"Asia/Seoul", maxEndDate}` — 앱 날짜 선택기 기준 | – | R2 | P3 |
 | `POST /v1/meetings/join` | 참여 `{code, nickname}` → MEMBER. **입력 OPEN 또는 3분 유예 중에만**(Q14). 입력 마감·후보 계산 시작 이후·투표·확정·진행 중·지난 모임·조율 불가·기존 앱 모임·삭제는 **409**. 유예 중 참여는 `grace_until` 취소 | 로그인 | R3 | P4 |
 | `GET /v1/meetings/{id}` | 상세 + 멤버 + 상태 | 멤버 | R3 | P4 |
 | `DELETE /v1/meetings/{id}` | 삭제 `{expectedRevision}` | **OWNER** | R8 | P4 |
-| `GET /v1/meetings/{id}/collection` | 현재 입력 기간: 범위, 마감 시각, 완료 k/N, 내 답(재조정이면 미리 채운 답), **칸별 가능 인원 수(30분 단위, 멤버 식별자 없음)**, `graceUntil`, 재조정이면 **`nearMisses`(조금만 늘리면 되는 구간, 인원 수만)** | 멤버 | R4·R5 | P5 |
-| `PUT /v1/meetings/{id}/collections/{collectionId}/response` | 내 입력 제출·수정 `{available:[{start,end}]}`(30분 경계). **처음** 전원 완료(≥2)로 전이될 때만 `grace_until=now+3분`. 유예 중 재제출은 내용만 저장·**유예 시각 유지**. 유예/`closes_at` 중 먼저 도래한 쪽으로 마감 → 완료자 ≥2면 조율 | 멤버, OPEN(유예 포함)·마감 전. 기존 앱 모임은 409 | R4·R5 | P5 |
+| `GET /v1/meetings/{id}/collection` | 현재 입력 기간: 범위, 마감 시각, 완료 k/N, `mySubmitted`, `myAvailable`(전체 불가능이면 [] + submitted true), **칸별 가능 인원 수(30분 단위, 멤버 식별자 없음)**, `graceUntil`, 재조정이면 **`nearMisses`(조금만 늘리면 되는 구간, 인원 수만)** | 멤버 | R4·R5 | P5 |
+| `PUT /v1/meetings/{id}/collections/{collectionId}/response` | 내 입력 제출·수정 `{available:[{start,end}], allUnavailable?}`. `available=[]` + `allUnavailable` 없음/false → 기존처럼 남은 scope 전체 가능. `allUnavailable=true` + `available=[]` → 전체 불가능(빈 ranges 저장). 둘 다 범위 있으면 422. `available` 최대 1000. 30분 경계. **처음** 전원 완료(≥2)로 전이될 때만 `grace_until=now+3분`. 유예 중 재제출은 내용만 저장·**유예 시각 유지**. 유예/`closes_at` 중 먼저 도래한 쪽으로 마감 → 완료자 ≥2면 조율 | 멤버, OPEN(유예 포함)·마감 전. 기존 앱 모임은 409 | R4·R5 | P5 |
 | `GET /v1/meetings/{id}/candidates` | 최신 후보(정렬: 인원 DESC→길이 DESC→시작 ASC) + **후보별 가능 멤버 닉네임** + 득표 수 + 마감 시각 + AI 요약 | 멤버 | R6·R7 | P6·P7 |
 | `PUT /v1/meetings/{id}/votes/me` | 중복 투표 `{candidateIds}` (빈 배열 = 빈 투표, 완료로 셈). 검증: 완료자만(403), 본인이 가능한 후보만(422), VOTING·마감 전(409) | 멤버(그 조율 완료자), VOTING | R7 | P7 |
 | `GET /v1/meetings/{id}/result` | 확정 결과 | 멤버 | R7 | P8 |

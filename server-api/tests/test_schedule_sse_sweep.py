@@ -29,7 +29,7 @@ from schedule.events import drain_pending, hub, queue_event
 from schedule.router import router as schedule_router
 from schedule.timeutil import ceil_to_slot, seoul_today
 from user_auth import router as auth_router
-from tests.auth_helpers import auth_headers
+from tests.auth_helpers import auth_headers, set_nickname
 
 
 def _app() -> FastAPI:
@@ -65,6 +65,7 @@ class ScheduleSseSweepTests(unittest.IsolatedAsyncioTestCase):
         return auth_headers(self.client, email=f"s-{secrets.token_hex(4)}@example.test")
 
     def _create(self, headers, nick="A"):
+        set_nickname(self.client, headers, nick)
         today = seoul_today()
         res = self.client.post(
             "/v1/meetings",
@@ -78,6 +79,12 @@ class ScheduleSseSweepTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(201, res.status_code, res.text)
         return res.json()
+
+    def _join(self, headers, code, nick):
+        set_nickname(self.client, headers, nick)
+        return self.client.post(
+            "/v1/meetings/join", headers=headers, json={"code": code, "nickname": nick}
+        )
 
     async def test_sse_receives_queued_event(self):
         h1 = self._register()
@@ -99,9 +106,7 @@ class ScheduleSseSweepTests(unittest.IsolatedAsyncioTestCase):
         h2 = self._register()
         meeting = self._create(h1)
         mid, code, cid = meeting["id"], meeting["code"], meeting["collectionId"]
-        self.client.post(
-            "/v1/meetings/join", headers=h2, json={"code": code, "nickname": "B"}
-        )
+        self._join(h2, code, "B")
         now = datetime.now(SEOUL)
         start = ceil_to_slot(now + timedelta(hours=4))
         end = start + timedelta(hours=2)
@@ -137,9 +142,7 @@ class ScheduleSseSweepTests(unittest.IsolatedAsyncioTestCase):
         h2 = self._register()
         meeting = self._create(h1)
         mid, code, cid = meeting["id"], meeting["code"], meeting["collectionId"]
-        self.client.post(
-            "/v1/meetings/join", headers=h2, json={"code": code, "nickname": "B"}
-        )
+        self._join(h2, code, "B")
         now = datetime.now(SEOUL)
         start = ceil_to_slot(now + timedelta(hours=5))
         end = start + timedelta(hours=2)
@@ -174,9 +177,7 @@ class ScheduleSseSweepTests(unittest.IsolatedAsyncioTestCase):
         h2 = self._register()
         meeting = self._create(h1)
         mid, code, cid = meeting["id"], meeting["code"], meeting["collectionId"]
-        self.client.post(
-            "/v1/meetings/join", headers=h2, json={"code": code, "nickname": "B"}
-        )
+        self._join(h2, code, "B")
         now = datetime.now(SEOUL)
         start = ceil_to_slot(now + timedelta(hours=5))
         end = start + timedelta(hours=2)
@@ -221,9 +222,7 @@ class ScheduleSseSweepTests(unittest.IsolatedAsyncioTestCase):
         h2 = self._register()
         meeting = self._create(h1)
         mid, code, cid = meeting["id"], meeting["code"], meeting["collectionId"]
-        self.client.post(
-            "/v1/meetings/join", headers=h2, json={"code": code, "nickname": "B"}
-        )
+        self._join(h2, code, "B")
         now = datetime.now(SEOUL)
         start = ceil_to_slot(now + timedelta(hours=5))
         end = start + timedelta(hours=2)

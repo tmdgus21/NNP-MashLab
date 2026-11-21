@@ -4,7 +4,6 @@ import com.potatomeet.app.data.remote.dto.AuthChallengeResponse
 import com.potatomeet.app.data.remote.dto.AuthTokenResponse
 import com.potatomeet.app.data.remote.dto.MeResponse
 import com.potatomeet.app.data.repository.AuthRepository
-import java.io.IOException
 import kotlinx.coroutines.runBlocking
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
@@ -14,6 +13,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import retrofit2.HttpException
 import retrofit2.Response
+import java.io.IOException
 
 class AuthUseCasesTest {
     @Test
@@ -126,7 +126,7 @@ class AuthUseCasesTest {
                     nickname = "감자",
                 )
             assertTrue(result.isSuccess)
-            assertEquals("감자", result.getOrNull()?.nickname)
+            assertEquals("행복한감자100", result.getOrNull()?.nickname)
             assertEquals("a@b.com", result.getOrNull()?.email)
         }
 
@@ -215,16 +215,33 @@ private class FakeAuthRepository(
     override suspend fun verifyRegister(
         challenge: String,
         code: String,
-        nickname: String,
     ): AuthTokenResponse =
         registerVerifyResponse
-            ?: AuthTokenResponse(accountId = "id", email = "a@b.com", token = "t")
+            ?: AuthTokenResponse(
+                accountId = "id",
+                email = "a@b.com",
+                token = "t",
+                nickname = "행복한감자100",
+            )
 
     override suspend fun me(): MeResponse {
         meError?.let { throw it }
         return meResponse
-            ?: MeResponse(accountId = "id", email = "a@b.com", accountType = "user")
+            ?: MeResponse(
+                accountId = "id",
+                email = "a@b.com",
+                accountType = "user",
+                nickname = nickname ?: "행복한감자100",
+            )
     }
+
+    override suspend fun updateNickname(nickname: String): MeResponse =
+        MeResponse(
+            accountId = "id",
+            email = "a@b.com",
+            accountType = "user",
+            nickname = nickname,
+        )
 
     override suspend fun logout() {
         logoutCalled = true
