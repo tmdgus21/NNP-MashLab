@@ -18,10 +18,11 @@ class AvailabilityConverterTest {
             AvailabilityConverter.toAvailablePayload(
                 selectedIsoDates = listOf("2026-11-21"),
                 unavailable = unavailable,
+                scopeStartsAt = "2026-11-21T00:00:00+09:00",
+                scopeEndsAt = "2026-11-22T00:00:00+09:00",
             )
         assertFalse(payload.allUnavailable)
         assertTrue(payload.ranges.isNotEmpty())
-        // Day should split around 09:00-10:00 hole (OffsetDateTime may omit :00 seconds).
         assertTrue(payload.ranges.any { it.first.contains("T00:00") && it.first.contains("+09:00") })
         assertTrue(payload.ranges.any { it.second.contains("T09:00") && it.second.contains("+09:00") })
         assertTrue(payload.ranges.any { it.first.contains("T10:00") && it.first.contains("+09:00") })
@@ -33,26 +34,98 @@ class AvailabilityConverterTest {
     }
 
     @Test
-    fun allUnavailable_whenEverySlotMarked() {
+    fun todayPastSlots_areExcludedFromPayload() {
+        // Server scope starts mid-day (current-time ceil); early morning must not be sent.
+        val payload =
+            AvailabilityConverter.toAvailablePayload(
+                selectedIsoDates = listOf("2026-11-21"),
+                unavailable = emptyList(),
+                scopeStartsAt = "2026-11-21T14:30:00+09:00",
+                scopeEndsAt = "2026-11-22T00:00:00+09:00",
+            )
+        assertFalse(payload.allUnavailable)
+        assertEquals(1, payload.ranges.size)
+        assertTrue(payload.ranges.single().first.contains("T14:30"))
+        assertTrue(payload.ranges.single().second.startsWith("2026-11-22"))
+        assertFalse(payload.ranges.any { it.first.contains("T00:00") })
+    }
+
+    @Test
+    fun futureDate_keepsFullDayWhenInScope() {
+        val payload =
+            AvailabilityConverter.toAvailablePayload(
+                selectedIsoDates = listOf("2026-11-25"),
+                unavailable = emptyList(),
+                scopeStartsAt = "2026-11-21T14:30:00+09:00",
+                scopeEndsAt = "2026-11-26T00:00:00+09:00",
+            )
+        assertFalse(payload.allUnavailable)
+        assertTrue(payload.ranges.any { it.first.startsWith("2026-11-25") && it.first.contains("T00:00") })
+        assertTrue(payload.ranges.any { it.second.startsWith("2026-11-26") && it.second.contains("T00:00") })
+    }
+
+    @Test
+    fun multiDate_clipsOnlyTodayAndKeepsFuture() {
+        val payload =
+            AvailabilityConverter.toAvailablePayload(
+                selectedIsoDates = listOf("2026-11-21", "2026-11-23"),
+                unavailable =
+                    listOf(
+                        UnavailableSlot("2026-11-23", 10, 0, 10, 30),
+                    ),
+                scopeStartsAt = "2026-11-21T18:00:00+09:00",
+                scopeEndsAt = "2026-11-24T00:00:00+09:00",
+            )
+        assertFalse(payload.allUnavailable)
+        assertTrue(payload.ranges.any { it.first.contains("2026-11-21T18:00") })
+        assertTrue(payload.ranges.any { it.first.startsWith("2026-11-23") && it.first.contains("T00:00") })
+        assertTrue(payload.ranges.any { it.second.contains("T10:00") })
+        assertTrue(payload.ranges.any { it.first.contains("T10:30") })
+    }
+
+    @Test
+    fun midnightBoundary_endUsesNextDay() {
+        val unavailable =
+            halfHourSlotsForDate("2026-11-22").filterNot { it.startHour == 23 && it.startMin == 30 }
+        val payload =
+            AvailabilityConverter.toAvailablePayload(
+                selectedIsoDates = listOf("2026-11-22"),
+                unavailable = unavailable,
+                scopeStartsAt = "2026-11-22T00:00:00+09:00",
+                scopeEndsAt = "2026-11-23T00:00:00+09:00",
+            )
+        assertEquals(1, payload.ranges.size)
+        assertTrue(payload.ranges.single().first.contains("T23:30"))
+        assertTrue(payload.ranges.single().second.startsWith("2026-11-23"))
+        assertTrue(payload.ranges.single().second.contains("T00:00"))
+    }
+
+    @Test
+    fun allUnavailable_onlyMarksInScopeSlots() {
         val all = halfHourSlotsForDate("2026-11-21")
         val payload =
             AvailabilityConverter.toAvailablePayload(
                 selectedIsoDates = listOf("2026-11-21"),
                 unavailable = all,
+                scopeStartsAt = "2026-11-21T12:00:00+09:00",
+                scopeEndsAt = "2026-11-22T00:00:00+09:00",
             )
         assertTrue(payload.allUnavailable)
         assertTrue(payload.ranges.isEmpty())
     }
 
     @Test
-    fun restore_allUnavailable_marksAllSlots() {
+    fun restore_allUnavailable_onlyInScope() {
         val slots =
             AvailabilityConverter.toUnavailableSlots(
                 selectedIsoDates = listOf("2026-11-21"),
                 myAvailable = emptyList(),
                 mySubmitted = true,
+                scopeStartsAt = "2026-11-21T20:00:00+09:00",
+                scopeEndsAt = "2026-11-22T00:00:00+09:00",
             )
-        assertEquals(48, slots.size)
+        assertEquals(8, slots.size) // 20:00..24:00 → 8 half hours
+        assertTrue(slots.all { it.startHour >= 20 })
     }
 
     @Test
@@ -62,45 +135,54 @@ class AvailabilityConverterTest {
                 selectedIsoDates = listOf("2026-11-21"),
                 myAvailable = emptyList(),
                 mySubmitted = false,
+                scopeStartsAt = "2026-11-21T14:00:00+09:00",
+                scopeEndsAt = "2026-11-22T00:00:00+09:00",
             )
         assertTrue(slots.isEmpty())
     }
 
     @Test
-    fun restore_partialAvailable_marksComplement() {
+    fun restore_partialAvailable_marksComplementInScope() {
         val slots =
             AvailabilityConverter.toUnavailableSlots(
                 selectedIsoDates = listOf("2026-11-21"),
                 myAvailable =
                     listOf(
                         TimeRangeDto(
-                            start = "2026-11-21T00:00:00+09:00",
-                            end = "2026-11-21T09:00:00+09:00",
+                            start = "2026-11-21T14:00:00+09:00",
+                            end = "2026-11-21T15:00:00+09:00",
                         ),
                         TimeRangeDto(
-                            start = "2026-11-21T10:00:00+09:00",
+                            start = "2026-11-21T16:00:00+09:00",
                             end = "2026-11-22T00:00:00+09:00",
                         ),
                     ),
                 mySubmitted = true,
+                scopeStartsAt = "2026-11-21T14:00:00+09:00",
+                scopeEndsAt = "2026-11-22T00:00:00+09:00",
             )
         assertEquals(2, slots.size)
-        assertTrue(slots.any { it.startHour == 9 && it.startMin == 0 })
-        assertTrue(slots.any { it.startHour == 9 && it.startMin == 30 })
+        assertTrue(slots.any { it.startHour == 15 && it.startMin == 0 })
+        assertTrue(slots.any { it.startHour == 15 && it.startMin == 30 })
     }
 
     @Test
-    fun endOfDay_usesNextMidnight() {
-        val unavailable = halfHourSlotsForDate("2026-11-21").filterNot { it.startHour == 23 && it.startMin == 30 }
-        val payload =
-            AvailabilityConverter.toAvailablePayload(
-                selectedIsoDates = listOf("2026-11-21"),
-                unavailable = unavailable,
-            )
-        assertEquals(1, payload.ranges.size)
-        assertTrue(payload.ranges.single().first.contains("T23:30"))
-        assertTrue(payload.ranges.single().first.contains("+09:00"))
-        assertTrue(payload.ranges.single().second.contains("T00:00"))
-        assertTrue(payload.ranges.single().second.startsWith("2026-11-22"))
+    fun pastSlot_isNotSelectable() {
+        val past = UnavailableSlot("2026-11-21", 10, 0, 10, 30)
+        val future = UnavailableSlot("2026-11-21", 15, 0, 15, 30)
+        assertFalse(
+            AvailabilityConverter.isSlotInScope(
+                past,
+                "2026-11-21T14:30:00+09:00",
+                "2026-11-22T00:00:00+09:00",
+            ),
+        )
+        assertTrue(
+            AvailabilityConverter.isSlotInScope(
+                future,
+                "2026-11-21T14:30:00+09:00",
+                "2026-11-22T00:00:00+09:00",
+            ),
+        )
     }
 }

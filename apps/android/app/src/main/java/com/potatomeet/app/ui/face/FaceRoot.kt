@@ -329,10 +329,14 @@ fun FaceRoot(
                                     if (meetingId.isNullOrBlank()) return@LaunchedEffect
                                     meetingViewModel.refreshCollection(meetingId)
                                 }
+                                val scopeStartsAt = meetingState.collection?.scopeStartsAt
+                                val scopeEndsAt = meetingState.collection?.scopeEndsAt
                                 LaunchedEffect(
                                     meetingState.collection?.id,
                                     meetingState.collection?.mySubmitted,
                                     meetingState.collection?.revision,
+                                    meetingState.collection?.scopeStartsAt,
+                                    meetingState.collection?.scopeEndsAt,
                                     dates,
                                     hydrated,
                                 ) {
@@ -344,6 +348,8 @@ fun FaceRoot(
                                                 selectedIsoDates = dates,
                                                 myAvailable = col.myAvailable,
                                                 mySubmitted = col.mySubmitted,
+                                                scopeStartsAt = col.scopeStartsAt,
+                                                scopeEndsAt = col.scopeEndsAt,
                                             )
                                         localUnavailable.clear()
                                         localUnavailable.addAll(restored)
@@ -353,9 +359,19 @@ fun FaceRoot(
                                 EditUnavailableScreen(
                                     selectedIsoDates = dates,
                                     unavailableSlots = localUnavailable.toList(),
+                                    scopeStartsAt = scopeStartsAt,
+                                    scopeEndsAt = scopeEndsAt,
                                     saving = meetingState.mutating,
                                     onToggleSlot = { slot ->
                                         if (meetingState.mutating) return@EditUnavailableScreen
+                                        if (!AvailabilityConverter.isSlotInScope(
+                                                slot,
+                                                scopeStartsAt,
+                                                scopeEndsAt,
+                                            )
+                                        ) {
+                                            return@EditUnavailableScreen
+                                        }
                                         val idx =
                                             localUnavailable.indexOfFirst { it.matches(slot) }
                                         if (idx >= 0) {
@@ -371,6 +387,8 @@ fun FaceRoot(
                                             AvailabilityConverter.toAvailablePayload(
                                                 selectedIsoDates = dates,
                                                 unavailable = localUnavailable.toList(),
+                                                scopeStartsAt = scopeStartsAt,
+                                                scopeEndsAt = scopeEndsAt,
                                             )
                                         meetingViewModel.submitAvailability(
                                             payload.ranges,

@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.potatomeet.app.ui.face.AvailabilityConverter
 import com.potatomeet.app.ui.face.UnavailableSlot
 import com.potatomeet.app.ui.face.components.TopLogoHeader
 import com.potatomeet.app.ui.face.halfHourSlotsForDate
@@ -46,6 +47,8 @@ import java.util.Locale
 fun EditUnavailableScreen(
     selectedIsoDates: List<String>,
     unavailableSlots: List<UnavailableSlot>,
+    scopeStartsAt: String? = null,
+    scopeEndsAt: String? = null,
     saving: Boolean = false,
     onToggleSlot: (UnavailableSlot) -> Unit,
     onBackClick: () -> Unit,
@@ -104,8 +107,10 @@ fun EditUnavailableScreen(
                 )
                 TextButton(
                     onClick = {
-                        // Clear only the active date so other dates keep their selections.
                         daySlots.forEach { slot ->
+                            if (!AvailabilityConverter.isSlotInScope(slot, scopeStartsAt, scopeEndsAt)) {
+                                return@forEach
+                            }
                             if (unavailableSlots.any { it.matches(slot) }) {
                                 onToggleSlot(slot)
                             }
@@ -121,7 +126,7 @@ fun EditUnavailableScreen(
                 color = Color(0xFF777777),
             )
             Text(
-                text = "선택한 칸은 불가능 시간입니다. 저장하면 서버에 반영됩니다.",
+                text = "선택한 칸은 불가능 시간입니다. 지난 시간은 선택할 수 없습니다.",
                 fontSize = 12.sp,
                 color = Color(0xFF888888),
             )
@@ -182,7 +187,6 @@ fun EditUnavailableScreen(
                         }
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        // Two half-hour cells per hour row (24 rows × 2 = 48 slots).
                         daySlots.chunked(2).forEach { pair ->
                             Row(
                                 modifier =
@@ -192,12 +196,20 @@ fun EditUnavailableScreen(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
                                 pair.forEach { slot ->
+                                    val selectable =
+                                        AvailabilityConverter.isSlotInScope(
+                                            slot,
+                                            scopeStartsAt,
+                                            scopeEndsAt,
+                                        )
                                     val isMarked =
-                                        unavailableSlots.any { it.matches(slot) }
+                                        selectable &&
+                                            unavailableSlots.any { it.matches(slot) }
                                     HalfHourCell(
                                         modifier = Modifier.weight(1f),
                                         label = slot.timeLabel(),
                                         isMarked = isMarked,
+                                        enabled = selectable,
                                         onClick = { onToggleSlot(slot) },
                                     )
                                 }
@@ -242,14 +254,27 @@ private fun HalfHourCell(
     modifier: Modifier = Modifier,
     label: String,
     isMarked: Boolean,
+    enabled: Boolean,
     onClick: () -> Unit,
 ) {
+    val bg =
+        when {
+            !enabled -> Color(0xFFEEEEEE)
+            isMarked -> Color(0xFFFFCCBC)
+            else -> Color(0xFFF5F5F5)
+        }
     Column(
         modifier =
             modifier
                 .clip(RoundedCornerShape(8.dp))
-                .background(if (isMarked) Color(0xFFFFCCBC) else Color(0xFFF5F5F5))
-                .clickable(onClick = onClick)
+                .background(bg)
+                .then(
+                    if (enabled) {
+                        Modifier.clickable(onClick = onClick)
+                    } else {
+                        Modifier
+                    },
+                )
                 .padding(horizontal = 8.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
@@ -257,15 +282,25 @@ private fun HalfHourCell(
             text = label,
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
-            color = Color(0xFF333333),
+            color = if (enabled) Color(0xFF333333) else Color(0xFF9E9E9E),
             maxLines = 2,
             softWrap = true,
         )
         Text(
-            text = if (isMarked) "불가능" else "가능",
+            text =
+                when {
+                    !enabled -> "지난 시간"
+                    isMarked -> "불가능"
+                    else -> "가능"
+                },
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
-            color = if (isMarked) Color(0xFFD32F2F) else Color(0xFF388E3C),
+            color =
+                when {
+                    !enabled -> Color(0xFF9E9E9E)
+                    isMarked -> Color(0xFFD32F2F)
+                    else -> Color(0xFF388E3C)
+                },
         )
     }
 }
