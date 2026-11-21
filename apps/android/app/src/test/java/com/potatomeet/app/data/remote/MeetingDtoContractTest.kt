@@ -55,11 +55,14 @@ class MeetingDtoContractTest {
               "scopeStartsAt":"2026-11-20T00:00:00+09:00",
               "scopeEndsAt":"2026-11-21T00:00:00+09:00",
               "slotCounts":[{"start":"2026-11-20T10:00:00+09:00","end":"2026-11-20T10:30:00+09:00","count":2}],
+              "mySubmitted":true,
               "myAvailable":[]
             }
             """.trimIndent()
         val dto = json.decodeFromString(CollectionResponse.serializer(), raw)
         assertEquals(1, dto.slotCounts.size)
         assertEquals(2, dto.slotCounts.first().count)
+        assertEquals(true, dto.mySubmitted)
+        assertTrue(dto.myAvailable.isEmpty())
     }
 }

@@ -58,6 +58,7 @@ data class TimeRangeDto(
 @Serializable
 data class SubmitResponseRequest(
     val available: List<TimeRangeDto>,
+    val allUnavailable: Boolean = false,
 )
 
 @Serializable
@@ -80,6 +81,7 @@ data class CollectionResponse(
     val extendedCount: Int = 0,
     val doneCount: Int = 0,
     val memberCount: Int = 0,
+    val mySubmitted: Boolean = false,
     val myAvailable: List<TimeRangeDto> = emptyList(),
     val slotCounts: List<SlotCountDto> = emptyList(),
     val nearMisses: List<JsonElement> = emptyList(),

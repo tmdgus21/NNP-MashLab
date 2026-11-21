@@ -45,7 +45,7 @@ import com.potatomeet.app.ui.feature.meeting.MeetingViewModel
 
 /**
  * Face navigation: Home → CreateRoom → RoomDetail → EditUnavailable / AiResult.
- * Auth OTP + schedule APIs wired; unavailable slots are local-only (not submitted).
+ * Auth OTP + schedule APIs wired; EditUnavailable submits 30-min availability.
  */
 @Composable
 fun FaceRoot(
@@ -320,10 +320,42 @@ fun FaceRoot(
                                         ?.takeIf { it.isNotEmpty() }
                                         ?: detailAppointment.value?.selectedDates.orEmpty()
                                             .ifEmpty { selectedDates.toList() }
+                                val meetingId = meetingState.activeMeeting?.id
+                                var hydrated by remember(meetingId, currentScreen.value) {
+                                    mutableStateOf(false)
+                                }
+                                LaunchedEffect(meetingId, currentScreen.value) {
+                                    hydrated = false
+                                    if (meetingId.isNullOrBlank()) return@LaunchedEffect
+                                    meetingViewModel.refreshCollection(meetingId)
+                                }
+                                LaunchedEffect(
+                                    meetingState.collection?.id,
+                                    meetingState.collection?.mySubmitted,
+                                    meetingState.collection?.revision,
+                                    dates,
+                                    hydrated,
+                                ) {
+                                    if (hydrated) return@LaunchedEffect
+                                    val col = meetingState.collection ?: return@LaunchedEffect
+                                    if (meetingId != null && col.id.isNotBlank()) {
+                                        val restored =
+                                            AvailabilityConverter.toUnavailableSlots(
+                                                selectedIsoDates = dates,
+                                                myAvailable = col.myAvailable,
+                                                mySubmitted = col.mySubmitted,
+                                            )
+                                        localUnavailable.clear()
+                                        localUnavailable.addAll(restored)
+                                        hydrated = true
+                                    }
+                                }
                                 EditUnavailableScreen(
                                     selectedIsoDates = dates,
                                     unavailableSlots = localUnavailable.toList(),
+                                    saving = meetingState.mutating,
                                     onToggleSlot = { slot ->
+                                        if (meetingState.mutating) return@EditUnavailableScreen
                                         val idx =
                                             localUnavailable.indexOfFirst { it.matches(slot) }
                                         if (idx >= 0) {
@@ -334,13 +366,16 @@ fun FaceRoot(
                                     },
                                     onBackClick = { currentScreen.value = "room_detail" },
                                     onSaveClick = {
-                                        Toast
-                                            .makeText(
-                                                context,
-                                                "현재 시간 입력은 저장되지 않습니다",
-                                                Toast.LENGTH_SHORT,
-                                            ).show()
-                                        currentScreen.value = "room_detail"
+                                        if (meetingState.mutating) return@EditUnavailableScreen
+                                        val payload =
+                                            AvailabilityConverter.toAvailablePayload(
+                                                selectedIsoDates = dates,
+                                                unavailable = localUnavailable.toList(),
+                                            )
+                                        meetingViewModel.submitAvailability(
+                                            payload.ranges,
+                                            allUnavailable = payload.allUnavailable,
+                                        )
                                     },
                                 )
                             }

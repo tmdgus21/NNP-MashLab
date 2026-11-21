@@ -58,12 +58,14 @@ class MeetingRepository
             meetingId: String,
             collectionId: String,
             ranges: List<Pair<String, String>>,
+            allUnavailable: Boolean = false,
         ): CollectionResponse =
             api.submitResponse(
                 meetingId,
                 collectionId,
                 SubmitResponseRequest(
                     available = ranges.map { (s, e) -> TimeRangeDto(start = s, end = e) },
+                    allUnavailable = allUnavailable,
                 ),
             )
 

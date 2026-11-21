@@ -46,6 +46,7 @@ import java.util.Locale
 fun EditUnavailableScreen(
     selectedIsoDates: List<String>,
     unavailableSlots: List<UnavailableSlot>,
+    saving: Boolean = false,
     onToggleSlot: (UnavailableSlot) -> Unit,
     onBackClick: () -> Unit,
     onSaveClick: () -> Unit,
@@ -120,7 +121,7 @@ fun EditUnavailableScreen(
                 color = Color(0xFF777777),
             )
             Text(
-                text = "지금은 화면에만 반영되며 서버에 저장되지 않습니다.",
+                text = "선택한 칸은 불가능 시간입니다. 저장하면 서버에 반영됩니다.",
                 fontSize = 12.sp,
                 color = Color(0xFF888888),
             )
@@ -220,12 +221,13 @@ fun EditUnavailableScreen(
         ) {
             Button(
                 onClick = onSaveClick,
+                enabled = !saving && dateTabs.isNotEmpty(),
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F)),
                 shape = RoundedCornerShape(26.dp),
             ) {
                 Text(
-                    text = "불가능 시간 저장",
+                    text = if (saving) "저장 중…" else "불가능 시간 저장",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF3C1E1E),
