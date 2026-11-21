@@ -47,3 +47,14 @@ def auth_headers(
     """Bearer headers for a freshly registered USER."""
     token = register_verified(client, email=email, password=password)["token"]
     return {"Authorization": f"Bearer {token}"}
+
+
+def set_nickname(client: TestClient, headers: dict[str, str], nickname: str) -> None:
+    """Set accounts.nickname so create/join copy it into room_members."""
+    res = client.patch(
+        "/v1/auth/me/nickname",
+        headers=headers,
+        json={"nickname": nickname},
+    )
+    if res.status_code != 200:
+        raise AssertionError(f"patch nickname {res.status_code}: {res.text}")

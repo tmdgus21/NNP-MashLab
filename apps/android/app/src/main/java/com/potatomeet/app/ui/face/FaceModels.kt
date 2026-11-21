@@ -71,6 +71,7 @@ data class Appointment(
     val revision: Int = 0,
     val isOwner: Boolean = false,
     val collectionId: String? = null,
+    val selectedDates: List<String> = emptyList(),
 )
 
 data class RecommendationOption(

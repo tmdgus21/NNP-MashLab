@@ -23,6 +23,8 @@ class Account(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     login_email: Mapped[str] = mapped_column(String(254), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(512))
+    # Display name for Potato Meet (duplicates allowed across accounts).
+    nickname: Mapped[str] = mapped_column(String(30), default="")
     account_type: Mapped[str] = mapped_column(String(20), default="USER")
     account_status: Mapped[str] = mapped_column(String(20), default="ACTIVE")
     # Admin-security fields (used when account_type=ADMIN; preserved from ok_admin_accounts)

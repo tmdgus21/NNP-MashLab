@@ -60,7 +60,7 @@ server-api/
 | `POST /v1/auth/login/verify` · `resend` | OTP 검증 후 토큰 / 재발송 | challenge | R1 | P1 |
 | `GET /v1/auth/me` · `POST /v1/auth/logout` | 세션 조회·폐기 | Bearer | R1 | P1 |
 | `GET /v1/meetings` | 내 모임 목록 | 로그인 | R2·R3 | P2 |
-| `POST /v1/meetings` | 생성 `{title, nickname, startDate, endDate}` → OWNER. 모임 길이(duration) 필드 없음. 범위: 오늘 ~ 오늘+1개월(서버 한국 시각) | 로그인 | R2 | P3 |
+| `POST /v1/meetings` | 생성 `{title, nickname, selectedDates[]}` 우선(또는 하위호환 `startDate`+`endDate`). 둘 다 보내면 422. 모임 길이 없음. 날짜: 오늘~오늘+1개월(KST). `meeting_settings.selectedDates` 저장, `starts_at`/`ends_at`=min/max | 로그인 | R2 | P3 |
 | `GET /v1/time` | 서버 시각 `{serverTime, timezone:"Asia/Seoul", maxEndDate}` — 앱 날짜 선택기 기준 | – | R2 | P3 |
 | `POST /v1/meetings/join` | 참여 `{code, nickname}` → MEMBER. **입력 OPEN 또는 3분 유예 중에만**(Q14). 입력 마감·후보 계산 시작 이후·투표·확정·진행 중·지난 모임·조율 불가·기존 앱 모임·삭제는 **409**. 유예 중 참여는 `grace_until` 취소 | 로그인 | R3 | P4 |
 | `GET /v1/meetings/{id}` | 상세 + 멤버 + 상태 | 멤버 | R3 | P4 |

@@ -19,9 +19,12 @@ def main():
             if account: parser.error('Account already exists')
             password=getpass.getpass('Password (at least 12 characters): ')
             if len(password)<12 or password!=getpass.getpass('Confirm password: '): parser.error('Password confirmation failed')
+            from nickname_generator import generate_nickname
+
             account=Account(
                 login_email=email,
                 password_hash=PASSWORDS.hash(password),
+                nickname=generate_nickname(),
                 account_type='ADMIN',
                 account_status='ACTIVE',
                 admin_role=args.role,

@@ -21,7 +21,7 @@ from schedule.constants import SEOUL
 from schedule.router import router as schedule_router
 from schedule.timeutil import format_iso
 from user_auth import router as auth_router
-from tests.auth_helpers import register_verified
+from tests.auth_helpers import register_verified, set_nickname
 
 
 def _app() -> FastAPI:
@@ -70,6 +70,7 @@ class ScheduleCollectionTests(unittest.TestCase):
         today = seoul_today()
         start = today
         end = today + timedelta(days=2)
+        set_nickname(self.client, headers, nick)
         res = self.client.post(
             "/v1/meetings",
             headers=headers,
@@ -82,6 +83,14 @@ class ScheduleCollectionTests(unittest.TestCase):
         )
         self.assertEqual(201, res.status_code, res.text)
         return res.json()
+
+    def _join(self, headers, code, nick):
+        set_nickname(self.client, headers, nick)
+        return self.client.post(
+            "/v1/meetings/join",
+            headers=headers,
+            json={"code": code, "nickname": nick},
+        )
 
     def test_t2_boundary_and_resubmit(self):
         _, h = self._register()
@@ -133,11 +142,7 @@ class ScheduleCollectionTests(unittest.TestCase):
         cid = meeting["collectionId"]
 
         _, h2 = self._register()
-        join = self.client.post(
-            "/v1/meetings/join",
-            headers=h2,
-            json={"code": code, "nickname": "B"},
-        )
+        join = self._join(h2, code, "B")
         self.assertEqual(201, join.status_code, join.text)
 
         # both submit
@@ -156,11 +161,7 @@ class ScheduleCollectionTests(unittest.TestCase):
 
         # third joins → grace cleared
         _, h3 = self._register()
-        j3 = self.client.post(
-            "/v1/meetings/join",
-            headers=h3,
-            json={"code": code, "nickname": "C"},
-        )
+        j3 = self._join(h3, code, "C")
         self.assertEqual(201, j3.status_code, j3.text)
         col2 = self.client.get(f"/v1/meetings/{mid}/collection", headers=h1)
         self.assertIsNone(col2.json()["graceUntil"])
@@ -184,13 +185,9 @@ class ScheduleCollectionTests(unittest.TestCase):
         mid = meeting["id"]
         cid = meeting["collectionId"]
         _, h2 = self._register()
-        self.client.post(
-            "/v1/meetings/join", headers=h2, json={"code": code, "nickname": "B"}
-        )
+        self._join(h2, code, "B")
         _, h3 = self._register()
-        self.client.post(
-            "/v1/meetings/join", headers=h3, json={"code": code, "nickname": "C"}
-        )
+        self._join(h3, code, "C")
 
         # Build specific availability via service with locked room
         with session() as db, db.begin():
@@ -257,9 +254,7 @@ class ScheduleCollectionTests(unittest.TestCase):
         mid = meeting["id"]
         cid = meeting["collectionId"]
         _, h2 = self._register()
-        self.client.post(
-            "/v1/meetings/join", headers=h2, json={"code": code, "nickname": "B"}
-        )
+        self._join(h2, code, "B")
         day0 = datetime.now(SEOUL).date()
         now = datetime(day0.year, day0.month, day0.day, 9, 0, tzinfo=SEOUL)
         with session() as db, db.begin():
@@ -285,11 +280,7 @@ class ScheduleCollectionTests(unittest.TestCase):
             svc.close_collection_if_due(db, mid, now=now + timedelta(minutes=1))
 
         _, h3 = self._register()
-        locked = self.client.post(
-            "/v1/meetings/join",
-            headers=h3,
-            json={"code": code, "nickname": "C"},
-        )
+        locked = self._join(h3, code, "C")
         self.assertEqual(409, locked.status_code, locked.text)
 
     def test_t4_extend_when_one_done(self):
@@ -304,9 +295,7 @@ class ScheduleCollectionTests(unittest.TestCase):
         cid = meeting["collectionId"]
         code = meeting["code"]
         _, h2 = self._register()
-        self.client.post(
-            "/v1/meetings/join", headers=h2, json={"code": code, "nickname": "B"}
-        )
+        self._join(h2, code, "B")
         day0 = datetime.now(SEOUL).date()
         now = datetime(day0.year, day0.month, day0.day, 9, 0, tzinfo=SEOUL)
         with session() as db, db.begin():
@@ -349,9 +338,7 @@ class ScheduleCollectionTests(unittest.TestCase):
         cid = meeting["collectionId"]
         code = meeting["code"]
         _, h2 = self._register()
-        self.client.post(
-            "/v1/meetings/join", headers=h2, json={"code": code, "nickname": "B"}
-        )
+        self._join(h2, code, "B")
         day0 = datetime.now(SEOUL).date()
         now = datetime(day0.year, day0.month, day0.day, 9, 0, tzinfo=SEOUL)
         with session() as db, db.begin():

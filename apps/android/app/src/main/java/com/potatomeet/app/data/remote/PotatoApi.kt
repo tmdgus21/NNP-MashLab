@@ -12,6 +12,7 @@ import com.potatomeet.app.data.remote.dto.LoginRequest
 import com.potatomeet.app.data.remote.dto.MeResponse
 import com.potatomeet.app.data.remote.dto.MeetingDto
 import com.potatomeet.app.data.remote.dto.MeetingListResponse
+import com.potatomeet.app.data.remote.dto.NicknamePatchRequest
 import com.potatomeet.app.data.remote.dto.RegisterRequest
 import com.potatomeet.app.data.remote.dto.ResultResponse
 import com.potatomeet.app.data.remote.dto.RevisionRequest
@@ -22,6 +23,7 @@ import kotlinx.serialization.json.JsonObject
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.HTTP
+import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
@@ -29,25 +31,42 @@ import retrofit2.http.Path
 /** Paths relative to BuildConfig.API_BASE_URL (…/v1). */
 interface PotatoApi {
     @POST("auth/register")
-    suspend fun register(@Body body: RegisterRequest): AuthChallengeResponse
+    suspend fun register(
+        @Body body: RegisterRequest,
+    ): AuthChallengeResponse
 
     @POST("auth/register/resend")
-    suspend fun registerResend(@Body body: AuthChallengeRequest): AuthChallengeResponse
+    suspend fun registerResend(
+        @Body body: AuthChallengeRequest,
+    ): AuthChallengeResponse
 
     @POST("auth/register/verify")
-    suspend fun registerVerify(@Body body: AuthVerifyRequest): AuthTokenResponse
+    suspend fun registerVerify(
+        @Body body: AuthVerifyRequest,
+    ): AuthTokenResponse
 
     @POST("auth/login")
-    suspend fun login(@Body body: LoginRequest): AuthChallengeResponse
+    suspend fun login(
+        @Body body: LoginRequest,
+    ): AuthChallengeResponse
 
     @POST("auth/login/resend")
-    suspend fun loginResend(@Body body: AuthChallengeRequest): AuthChallengeResponse
+    suspend fun loginResend(
+        @Body body: AuthChallengeRequest,
+    ): AuthChallengeResponse
 
     @POST("auth/login/verify")
-    suspend fun loginVerify(@Body body: AuthVerifyRequest): AuthTokenResponse
+    suspend fun loginVerify(
+        @Body body: AuthVerifyRequest,
+    ): AuthTokenResponse
 
     @GET("auth/me")
     suspend fun me(): MeResponse
+
+    @PATCH("auth/me/nickname")
+    suspend fun patchNickname(
+        @Body body: NicknamePatchRequest,
+    ): MeResponse
 
     @POST("auth/logout")
     suspend fun logout()
@@ -59,13 +78,19 @@ interface PotatoApi {
     suspend fun listMeetings(): MeetingListResponse
 
     @POST("meetings")
-    suspend fun createMeeting(@Body body: CreateMeetingRequest): MeetingDto
+    suspend fun createMeeting(
+        @Body body: CreateMeetingRequest,
+    ): MeetingDto
 
     @POST("meetings/join")
-    suspend fun joinMeeting(@Body body: JoinMeetingRequest): MeetingDto
+    suspend fun joinMeeting(
+        @Body body: JoinMeetingRequest,
+    ): MeetingDto
 
     @GET("meetings/{id}")
-    suspend fun getMeeting(@Path("id") id: String): MeetingDto
+    suspend fun getMeeting(
+        @Path("id") id: String,
+    ): MeetingDto
 
     @HTTP(method = "DELETE", path = "meetings/{id}", hasBody = true)
     suspend fun deleteMeeting(
@@ -74,7 +99,9 @@ interface PotatoApi {
     ): JsonObject
 
     @GET("meetings/{id}/collection")
-    suspend fun getCollection(@Path("id") id: String): CollectionResponse
+    suspend fun getCollection(
+        @Path("id") id: String,
+    ): CollectionResponse
 
     @PUT("meetings/{id}/collections/{collectionId}/response")
     suspend fun submitResponse(
@@ -84,7 +111,9 @@ interface PotatoApi {
     ): CollectionResponse
 
     @GET("meetings/{id}/candidates")
-    suspend fun getCandidates(@Path("id") id: String): CandidatesResponse
+    suspend fun getCandidates(
+        @Path("id") id: String,
+    ): CandidatesResponse
 
     @PUT("meetings/{id}/votes/me")
     suspend fun submitVotes(
@@ -93,5 +122,7 @@ interface PotatoApi {
     ): CandidatesResponse
 
     @GET("meetings/{id}/result")
-    suspend fun getResult(@Path("id") id: String): ResultResponse
+    suspend fun getResult(
+        @Path("id") id: String,
+    ): ResultResponse
 }

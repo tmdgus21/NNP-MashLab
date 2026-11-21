@@ -60,6 +60,59 @@ def validate_meeting_dates(start_date: date, end_date: date, now: datetime | Non
         raise ValueError("종료일은 오늘부터 1개월 이내여야 합니다.")
 
 
+def validate_selected_dates(
+    dates: list[date], now: datetime | None = None
+) -> list[date]:
+    """Normalize selected calendar days (unique, sorted). At least one day."""
+    today = seoul_today(now)
+    max_end = add_calendar_months(today, 1)
+    if not dates:
+        raise ValueError("날짜를 1개 이상 선택해 주세요.")
+    uniq = sorted(set(dates))
+    for day in uniq:
+        if day < today:
+            raise ValueError("과거 날짜는 선택할 수 없습니다.")
+        if day > max_end:
+            raise ValueError("날짜는 오늘부터 1개월 이내여야 합니다.")
+    return uniq
+
+
+def expand_dates_in_bounds(starts_at: datetime, ends_at: datetime) -> list[date]:
+    """Inclusive calendar days covered by [starts_at, ends_at) in Seoul."""
+    start = to_seoul(starts_at).date()
+    end_exclusive = to_seoul(ends_at)
+    last = (end_exclusive - timedelta(microseconds=1)).date()
+    if last < start:
+        return []
+    out: list[date] = []
+    day = start
+    while day <= last:
+        out.append(day)
+        day += timedelta(days=1)
+    return out
+
+
+def selected_dates_for_room(
+    meeting_settings: dict | None,
+    starts_at: datetime,
+    ends_at: datetime,
+) -> list[date]:
+    """Explicit selectedDates, or legacy continuous expansion of room bounds."""
+    settings = meeting_settings or {}
+    raw = settings.get("selectedDates")
+    if raw is None:
+        raw = settings.get("selected_dates")
+    if isinstance(raw, list) and raw:
+        parsed: list[date] = []
+        for item in raw:
+            if isinstance(item, date) and not isinstance(item, datetime):
+                parsed.append(item)
+            else:
+                parsed.append(date.fromisoformat(str(item)[:10]))
+        return sorted(set(parsed))
+    return expand_dates_in_bounds(starts_at, ends_at)
+
+
 def is_slot_aligned(dt: datetime) -> bool:
     local = to_seoul(dt)
     return local.second == 0 and local.microsecond == 0 and local.minute % SLOT_MINUTES == 0

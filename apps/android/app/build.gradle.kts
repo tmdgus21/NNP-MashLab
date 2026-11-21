@@ -10,13 +10,16 @@ plugins {
     alias(libs.plugins.ktlint)
 }
 
-val localProps = Properties().apply {
-    val f = rootProject.file("potatomeet.properties")
-    if (f.exists()) f.inputStream().use { load(it) }
-}
+val localProps =
+    Properties().apply {
+        val f = rootProject.file("potatomeet.properties")
+        if (f.exists()) f.inputStream().use { load(it) }
+    }
 val apiBaseUrl =
-    (localProps.getProperty("API_BASE_URL")
-        ?: "https://oranganman.site/v1").trimEnd('/')
+    (
+        localProps.getProperty("API_BASE_URL")
+            ?: "https://oranganman.site/v1"
+    ).trimEnd('/')
 
 android {
     namespace = "com.potatomeet.app"

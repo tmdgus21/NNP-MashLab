@@ -45,10 +45,12 @@ from schedule.timeutil import (
     ceil_to_slot,
     format_iso,
     room_bounds_from_dates,
+    selected_dates_for_room,
     seoul_now,
     seoul_today,
     to_seoul,
     validate_meeting_dates,
+    validate_selected_dates,
 )
 
 
@@ -182,10 +184,28 @@ def _open_new_collection(
 def create_meeting(db, account, body, *, now: datetime | None = None) -> dict:
     now = now or utc_now()
     try:
-        validate_meeting_dates(body.start_date, body.end_date, now)
+        if body.selected_dates is not None:
+            selected = validate_selected_dates(body.selected_dates, now)
+            starts_at, ends_at = room_bounds_from_dates(selected[0], selected[-1])
+            settings = {
+                "selectedDates": [d.isoformat() for d in selected],
+            }
+        else:
+            validate_meeting_dates(body.start_date, body.end_date, now)
+            starts_at, ends_at = room_bounds_from_dates(
+                body.start_date, body.end_date
+            )
+            # Legacy range mode: expand to explicit selectedDates for new rooms.
+            from schedule.timeutil import expand_dates_in_bounds
+
+            selected = expand_dates_in_bounds(starts_at, ends_at)
+            settings = {
+                "startDate": body.start_date.isoformat(),
+                "endDate": body.end_date.isoformat(),
+                "selectedDates": [d.isoformat() for d in selected],
+            }
     except ValueError as exc:
         fail(422, str(exc))
-    starts_at, ends_at = room_bounds_from_dates(body.start_date, body.end_date)
     room_id, member_id = uid(), uid()
     code = _new_code(db)
     room = Room(
@@ -198,22 +218,22 @@ def create_meeting(db, account, body, *, now: datetime | None = None) -> dict:
         ends_at=ends_at,
         lifecycle_status="COLLECTING_CONDITIONS",
         progress_status="collecting",
-        meeting_settings={
-            "startDate": body.start_date.isoformat(),
-            "endDate": body.end_date.isoformat(),
-        },
+        meeting_settings=settings,
         revision=1,
         dirty=False,
         current_round=0,
     )
     db.add(room)
     db.flush()
+    display_name = (account.nickname or "").strip()
+    if not display_name:
+        fail(422, "계정 닉네임이 없습니다. 마이페이지에서 닉네임을 설정해 주세요.")
     db.add(
         RoomMember(
             id=member_id,
             room_id=room_id,
             account_id=account.id,
-            nickname=body.nickname,
+            nickname=display_name[:30],
             room_role="OWNER",
             membership_status="ACTIVE",
         )
@@ -253,20 +273,16 @@ def join_meeting(db, account, body, *, now: datetime | None = None) -> dict:
     limit = _max_members()
     if limit is not None and len(_active_members(db, room.id)) >= limit:
         fail(409, "모임 인원이 가득 찼습니다.")
-    # Nickname unique
-    taken = db.scalar(
-        select(RoomMember.id).where(
-            RoomMember.room_id == room.id, RoomMember.nickname == body.nickname
-        )
-    )
-    if taken:
-        fail(409, "이미 사용 중인 닉네임입니다.")
+    display_name = (account.nickname or "").strip()
+    if not display_name:
+        fail(422, "계정 닉네임이 없습니다. 마이페이지에서 닉네임을 설정해 주세요.")
+    # Same display nickname across different accounts is allowed; uniqueness is account_id.
     db.add(
         RoomMember(
             id=uid(),
             room_id=room.id,
             account_id=account.id,
-            nickname=body.nickname,
+            nickname=display_name[:30],
             room_role="MEMBER",
             membership_status="ACTIVE",
         )
@@ -288,6 +304,9 @@ def meeting_view(db, room: Room, account_id: str, *, now: datetime | None = None
     members = _active_members(db, room.id)
     me = next((m for m in members if m.account_id == account_id), None)
     col = _open_collection(db, room.id)
+    selected = selected_dates_for_room(
+        room.meeting_settings, room.starts_at, room.ends_at
+    )
     return {
         "id": room.id,
         "code": room.code,
@@ -296,6 +315,7 @@ def meeting_view(db, room: Room, account_id: str, *, now: datetime | None = None
         "revision": room.revision,
         "startsAt": format_iso(room.starts_at),
         "endsAt": format_iso(room.ends_at),
+        "selectedDates": [d.isoformat() for d in selected],
         "serverTime": format_iso(seoul_now(now)),
         "timezone": "Asia/Seoul",
         "legacy": _is_legacy_room(db, room),
@@ -424,14 +444,23 @@ def submit_response(
     if _is_legacy_room(db, room):
         fail(409, "이전 앱 모임에서는 입력할 수 없습니다.")
 
+    allowed = set(
+        selected_dates_for_room(room.meeting_settings, room.starts_at, room.ends_at)
+    )
     try:
         if not available:
-            ranges = default_full_scope(col.scope_starts_at, col.scope_ends_at, now)
+            ranges = default_full_scope(
+                col.scope_starts_at,
+                col.scope_ends_at,
+                now,
+                allowed_dates=allowed,
+            )
         else:
             ranges = validate_available_ranges(
                 available,
                 scope_starts_at=col.scope_starts_at,
                 scope_ends_at=col.scope_ends_at,
+                allowed_dates=allowed,
             )
     except ValueError as exc:
         fail(422, str(exc))
@@ -560,11 +589,15 @@ def run_coordination(
     now: datetime,
 ) -> None:
     ranges = _member_ranges(db, col.id, done_ids)
+    allowed = set(
+        selected_dates_for_room(room.meeting_settings, room.starts_at, room.ends_at)
+    )
     candidates = compute_candidates(
         ranges,
         now=now,
         scope_starts_at=col.scope_starts_at,
         scope_ends_at=col.scope_ends_at,
+        allowed_dates=allowed,
     )
     run = ScheduleRun(
         id=uid(),

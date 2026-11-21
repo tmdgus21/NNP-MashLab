@@ -1,10 +1,31 @@
 """Collection helpers: range validation, slot counts, near-miss hints."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from schedule.constants import MAX_HINTS, MIN_CANDIDATE_MINUTES, MIN_PEOPLE, SLOT_MINUTES
-from schedule.timeutil import ceil_to_slot, format_iso, is_slot_aligned, to_seoul
+from schedule.timeutil import (
+    ceil_to_slot,
+    day_start_seoul,
+    format_iso,
+    is_slot_aligned,
+    to_seoul,
+)
+
+
+def _range_calendar_days(start: datetime, end: datetime) -> list[date]:
+    """Inclusive Seoul calendar days touched by [start, end)."""
+    s, e = to_seoul(start), to_seoul(end)
+    if e <= s:
+        return []
+    first = s.date()
+    last = (e - timedelta(microseconds=1)).date()
+    out: list[date] = []
+    day = first
+    while day <= last:
+        out.append(day)
+        day += timedelta(days=1)
+    return out
 
 
 def validate_available_ranges(
@@ -12,6 +33,7 @@ def validate_available_ranges(
     *,
     scope_starts_at: datetime,
     scope_ends_at: datetime,
+    allowed_dates: set[date] | None = None,
 ) -> list[tuple[datetime, datetime]]:
     scope_start = to_seoul(scope_starts_at)
     scope_end = to_seoul(scope_ends_at)
@@ -24,6 +46,10 @@ def validate_available_ranges(
             raise ValueError("30분 단위 시간을 입력해 주세요.")
         if s < scope_start or e > scope_end:
             raise ValueError("모임 날짜 범위 안의 시간만 제출해 주세요.")
+        if allowed_dates is not None:
+            days = _range_calendar_days(s, e)
+            if not days or any(day not in allowed_dates for day in days):
+                raise ValueError("선택한 모임 날짜의 시간만 제출해 주세요.")
         cleaned.append((s, e))
     # Merge overlapping / adjacent for storage stability (optional but helpful)
     cleaned.sort(key=lambda x: x[0])
@@ -37,17 +63,33 @@ def validate_available_ranges(
 
 
 def default_full_scope(
-    scope_starts_at: datetime, scope_ends_at: datetime, now: datetime
+    scope_starts_at: datetime,
+    scope_ends_at: datetime,
+    now: datetime,
+    *,
+    allowed_dates: set[date] | None = None,
 ) -> list[tuple[datetime, datetime]]:
-    """Entire remaining scope as available (default when client sends empty unavailable)."""
-    start = max(to_seoul(scope_starts_at), ceil_to_slot(now))
+    """Remaining selected (or continuous) scope as available when client sends empty list."""
+    cutoff = max(to_seoul(scope_starts_at), ceil_to_slot(now))
     end = to_seoul(scope_ends_at)
-    if end <= start:
+    if end <= cutoff:
         return []
-    # Align start/end to slots
-    if not is_slot_aligned(start):
-        start = ceil_to_slot(start)
-    return [(start, end)] if end > start else []
+    if allowed_dates is None:
+        start = cutoff if is_slot_aligned(cutoff) else ceil_to_slot(cutoff)
+        return [(start, end)] if end > start else []
+    ranges: list[tuple[datetime, datetime]] = []
+    for day in sorted(allowed_dates):
+        day_start = day_start_seoul(day)
+        day_end = day_start + timedelta(days=1)
+        s = max(day_start, cutoff)
+        e = min(day_end, end)
+        if e <= s:
+            continue
+        if not is_slot_aligned(s):
+            s = ceil_to_slot(s)
+        if e > s:
+            ranges.append((s, e))
+    return ranges
 
 
 def slot_availability_counts(
