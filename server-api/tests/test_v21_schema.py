@@ -158,11 +158,15 @@ class V21SchemaTests(unittest.TestCase):
                     ("login_email",) in account_uniques or ("login_email",) in account_indexes
                 )
 
+                account_cols = {c["name"] for c in insp.get_columns("accounts")}
+                self.assertIn("nickname", account_cols)
+
                 member_uniques = {
                     tuple(u["column_names"]) for u in insp.get_unique_constraints("room_members")
                 }
+                # 20261121_0007: nickname uniqueness dropped; account_id remains unique per room.
                 self.assertIn(("room_id", "account_id"), member_uniques)
-                self.assertIn(("room_id", "nickname"), member_uniques)
+                self.assertNotIn(("room_id", "nickname"), member_uniques)
 
                 proposal_uniques = {
                     tuple(u["column_names"]) for u in insp.get_unique_constraints("proposals")
