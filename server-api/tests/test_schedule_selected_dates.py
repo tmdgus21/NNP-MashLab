@@ -22,7 +22,7 @@ from schedule.constants import SEOUL
 from schedule.coordination import compute_candidates
 from schedule.router import router as schedule_router
 from schedule.timeutil import day_start_seoul, selected_dates_for_room
-from tests.auth_helpers import auth_headers
+from tests.auth_helpers import auth_headers, set_nickname
 from user_auth import router as auth_router
 
 
@@ -61,6 +61,7 @@ class SelectedDatesTests(unittest.TestCase):
 
     def test_selected_dates_create_and_legacy_expand(self):
         h = auth_headers(self.client)
+        set_nickname(self.client, h, "방장")
         res = self._create(
             h,
             {
@@ -108,6 +109,8 @@ class SelectedDatesTests(unittest.TestCase):
     def test_reject_gap_day_submit_and_coordinate_skips_gap(self):
         h1 = auth_headers(self.client)
         h2 = auth_headers(self.client)
+        set_nickname(self.client, h1, "A")
+        set_nickname(self.client, h2, "B")
         created = self._create(
             h1,
             {

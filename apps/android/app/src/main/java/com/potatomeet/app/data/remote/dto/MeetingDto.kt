@@ -6,7 +6,7 @@ import kotlinx.serialization.json.JsonElement
 @Serializable
 data class CreateMeetingRequest(
     val title: String,
-    val nickname: String,
+    val nickname: String? = null,
     val selectedDates: List<String>? = null,
     val startDate: String? = null,
     val endDate: String? = null,
@@ -15,7 +15,7 @@ data class CreateMeetingRequest(
 @Serializable
 data class JoinMeetingRequest(
     val code: String,
-    val nickname: String,
+    val nickname: String? = null,
 )
 
 @Serializable

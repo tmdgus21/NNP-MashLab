@@ -75,7 +75,7 @@ class SchedulePostgresIntegrationTests(unittest.TestCase):
         app.include_router(schedule_router)
         client = TestClient(app)
 
-        from tests.auth_helpers import auth_headers
+        from tests.auth_helpers import auth_headers, set_nickname
 
         def reg(prefix):
             return auth_headers(
@@ -83,6 +83,8 @@ class SchedulePostgresIntegrationTests(unittest.TestCase):
             )
 
         h1, h2 = reg("pg1"), reg("pg2")
+        set_nickname(client, h1, "A")
+        set_nickname(client, h2, "B")
         today = seoul_today()
         created = client.post(
             "/v1/meetings",

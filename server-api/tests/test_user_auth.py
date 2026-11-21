@@ -78,6 +78,8 @@ class UserAuthTests(unittest.TestCase):
         me = self.client.get("/v1/auth/me", headers=headers)
         self.assertEqual(me.status_code, 200)
         self.assertEqual(me.json()["accountType"], "USER")
+        self.assertTrue(me.json().get("nickname"))
+        self.assertEqual(created.get("nickname"), me.json()["nickname"])
 
         self.assertEqual(
             self.client.post(

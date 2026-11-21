@@ -17,6 +17,7 @@ from sqlalchemy import select
 from database import session
 from mail_otp import send_otp_email
 from models import Account, AccountSession, UserAuthChallenge, now
+from nickname_generator import generate_nickname
 
 OTP_TTL = timedelta(minutes=5)
 RESEND_AFTER = timedelta(seconds=60)
@@ -58,6 +59,10 @@ class ChallengeBody(Input):
 class VerifyBody(Input):
     challenge: str = Field(min_length=32, max_length=64)
     code: str = Field(pattern=r"^\d{6}$")
+
+
+class NicknamePatch(Input):
+    nickname: str = Field(min_length=1, max_length=30)
 
 
 def db_session():
@@ -307,9 +312,11 @@ def register_verify(body: VerifyBody, db=Depends(db_session)):
     )
     if existing and existing.account_status == "ACTIVE" and existing.approved:
         fail(409, "이미 등록된 이메일입니다.")
+    nickname = generate_nickname()
     account = Account(
         login_email=row.email,
         password_hash=row.password_hash,
+        nickname=nickname,
         account_type="USER",
         account_status="ACTIVE",
         approved=True,
@@ -319,7 +326,12 @@ def register_verify(body: VerifyBody, db=Depends(db_session)):
     row.used_at = now()
     row.account_id = account.id
     token, _ = issue_session(db, account)
-    return {"accountId": account.id, "email": account.login_email, "token": token}
+    return {
+        "accountId": account.id,
+        "email": account.login_email,
+        "nickname": account.nickname,
+        "token": token,
+    }
 
 
 @router.post("/login")
@@ -381,13 +393,44 @@ def login_verify(body: VerifyBody, db=Depends(db_session)):
         fail(403, "사용할 수 없는 계정입니다.")
     row.used_at = now()
     token, _ = issue_session(db, account)
-    return {"accountId": account.id, "email": account.login_email, "token": token}
+    return {
+        "accountId": account.id,
+        "email": account.login_email,
+        "nickname": account.nickname,
+        "token": token,
+    }
 
 
 @router.get("/me")
 def me(authorization: str | None = Header(default=None), db=Depends(db_session)):
     account = account_from_authorization(db, authorization)
-    return {"accountId": account.id, "email": account.login_email, "accountType": account.account_type}
+    return {
+        "accountId": account.id,
+        "email": account.login_email,
+        "nickname": account.nickname,
+        "accountType": account.account_type,
+    }
+
+
+@router.patch("/me/nickname")
+def patch_nickname(
+    body: NicknamePatch,
+    authorization: str | None = Header(default=None),
+    db=Depends(db_session),
+):
+    account = account_from_authorization(db, authorization)
+    nick = body.nickname.strip()
+    if not nick:
+        fail(422, "닉네임을 입력해 주세요.")
+    if len(nick) > 30:
+        fail(422, "닉네임은 30자 이하여야 합니다.")
+    account.nickname = nick
+    return {
+        "accountId": account.id,
+        "email": account.login_email,
+        "nickname": account.nickname,
+        "accountType": account.account_type,
+    }
 
 
 @router.post("/logout")

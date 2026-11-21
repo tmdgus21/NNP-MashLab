@@ -76,8 +76,8 @@ def _potato_create_body(body: dict) -> bool:
 
 
 def _potato_join_body(body: dict) -> bool:
-    # Potato: {code, nickname}; legacy Conditional OK: {code, name}
-    return "nickname" in body and "name" not in body
+    # Potato: {code} or {code, nickname?}; legacy Conditional OK: {code, name}
+    return "code" in body and "name" not in body
 
 
 @router.post("/meetings", status_code=201)

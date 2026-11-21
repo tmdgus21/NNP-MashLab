@@ -37,7 +37,8 @@ class TimeRangeIn(ApiModel):
 
 class CreateMeetingIn(ApiModel):
     title: str = Field(min_length=1, max_length=100)
-    nickname: str = Field(min_length=1, max_length=30)
+    # Optional for backward compatibility; server ignores and uses accounts.nickname.
+    nickname: str | None = Field(default=None, max_length=30)
     start_date: date | None = None
     end_date: date | None = None
     selected_dates: list[date] | None = None
@@ -61,7 +62,8 @@ class CreateMeetingIn(ApiModel):
 
 class JoinMeetingIn(ApiModel):
     code: str = Field(pattern=r"^[A-Za-z2-9]{8}$")
-    nickname: str = Field(min_length=1, max_length=30)
+    # Optional for backward compatibility; server ignores and uses accounts.nickname.
+    nickname: str | None = Field(default=None, max_length=30)
 
 
 class SubmitResponseIn(ApiModel):

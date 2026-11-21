@@ -38,6 +38,7 @@ data class AuthTokenResponse(
     val accountId: String,
     val email: String,
     val token: String,
+    val nickname: String? = null,
 )
 
 @Serializable
@@ -45,4 +46,10 @@ data class MeResponse(
     val accountId: String,
     val email: String,
     val accountType: String,
+    val nickname: String? = null,
+)
+
+@Serializable
+data class NicknamePatchRequest(
+    val nickname: String,
 )

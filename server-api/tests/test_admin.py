@@ -57,6 +57,7 @@ class AdminTests(unittest.TestCase):
    db.execute(delete(RateBucket))
    self.email='test-'+secrets.token_hex(5)+'@example.test'
    a=Account(
+    nickname="관리자테스트",
     login_email=self.email,
     password_hash=sec.PASSWORDS.hash('test-password-long'),
     account_type='ADMIN',
@@ -176,6 +177,7 @@ class AdminTests(unittest.TestCase):
    other=Account(
     login_email='locked-'+secrets.token_hex(5)+'@example.test',
     password_hash=sec.PASSWORDS.hash('long-test-password'),
+    nickname='잠긴관리자',
     account_type='ADMIN',
     account_status='FROZEN',
     admin_role='OPERATOR',

@@ -113,7 +113,9 @@ fun RoomDetailScreen(
                             color = Color(0xFF333333),
                         )
                         Text(
-                            text = "모임 후보일 ${selectedLabels.size.coerceAtLeast(if (appointment.selectedDates.isEmpty()) 0 else selectedLabels.size)}개",
+                            text = "모임 후보일 ${selectedLabels.size.coerceAtLeast(
+                                if (appointment.selectedDates.isEmpty()) 0 else selectedLabels.size,
+                            )}개",
                             fontSize = 11.sp,
                             color = Color(0xFFFF8F00),
                             fontWeight = FontWeight.Bold,
@@ -226,7 +228,7 @@ fun RoomDetailScreen(
                         shape = RoundedCornerShape(24.dp),
                     ) {
                         Text(
-                            text = "초대 코드 복사 · 공유",
+                            text = "💛 카카오톡으로 친구 초대",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF3C1E1E),
@@ -237,10 +239,10 @@ fun RoomDetailScreen(
                     HorizontalDivider(color = Color(0xFFF0F0F0))
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    Text(text = "내 가능 시간", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+                    Text(text = "내 불가능 시간", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = "선택 날짜 기준으로 가능·불가 시간을 입력합니다.",
+                        text = "설정된 불가능 시간이 없습니다.",
                         fontSize = 13.sp,
                         color = Color.Gray,
                     )
@@ -251,7 +253,7 @@ fun RoomDetailScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8D6E63)),
                         shape = RoundedCornerShape(24.dp),
                     ) {
-                        Text(text = "시간 입력 · 수정", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(text = "불가 시간 수정", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
             }

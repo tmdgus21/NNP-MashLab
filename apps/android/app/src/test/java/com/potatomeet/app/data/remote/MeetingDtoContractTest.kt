@@ -16,18 +16,17 @@ class MeetingDtoContractTest {
         }
 
     @Test
-    fun createMeeting_usesNicknameAndDates() {
+    fun createMeeting_usesSelectedDatesWithoutRequiredNickname() {
         val encoded =
             json.encodeToString(
                 CreateMeetingRequest.serializer(),
                 CreateMeetingRequest(
                     title = "모임",
-                    nickname = "감자",
                     selectedDates = listOf("2026-11-20", "2026-11-26"),
                 ),
             )
-        assertTrue(encoded.contains("\"nickname\""))
         assertTrue(encoded.contains("\"selectedDates\""))
+        assertTrue(!encoded.contains("\"nickname\""))
         assertTrue(!encoded.contains("accounts"))
     }
 

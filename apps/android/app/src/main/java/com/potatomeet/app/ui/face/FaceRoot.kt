@@ -1,6 +1,7 @@
 package com.potatomeet.app.ui.face
 
 import android.app.Activity
+import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
@@ -14,7 +15,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -26,12 +26,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.potatomeet.app.core.TimeFmt
 import com.potatomeet.app.data.remote.dto.MeetingDto
-import com.potatomeet.app.ui.face.components.CustomBottomBar
-import com.potatomeet.app.ui.face.screens.AiRecommendationScreen
-import com.potatomeet.app.ui.face.screens.CreateAppointmentStep1Screen
-import com.potatomeet.app.ui.face.screens.CreateAppointmentStep2InviteScreen
-import com.potatomeet.app.ui.face.screens.CreateAppointmentStep3TimeScreen
-import com.potatomeet.app.ui.face.screens.CreateAppointmentStep4AdjustScreen
+import com.potatomeet.app.ui.face.screens.AiResultScreen
+import com.potatomeet.app.ui.face.screens.CreateRoomScreen
+import com.potatomeet.app.ui.face.screens.EditUnavailableScreen
 import com.potatomeet.app.ui.face.screens.FriendsScreen
 import com.potatomeet.app.ui.face.screens.HomeScreen
 import com.potatomeet.app.ui.face.screens.LoginScreen
@@ -39,15 +36,16 @@ import com.potatomeet.app.ui.face.screens.MyPageScreen
 import com.potatomeet.app.ui.face.screens.ResultScreen
 import com.potatomeet.app.ui.face.screens.RoomDetailScreen
 import com.potatomeet.app.ui.face.screens.SignUpScreen
+// Legacy step screens + CreateAppointmentStep3TimeScreen + submitAvailability are kept on disk
+// for later restore; FaceRoot no longer routes to them.
 import com.potatomeet.app.ui.feature.auth.AuthEvent
 import com.potatomeet.app.ui.feature.auth.AuthViewModel
 import com.potatomeet.app.ui.feature.meeting.MeetingEvent
 import com.potatomeet.app.ui.feature.meeting.MeetingViewModel
-import java.util.Calendar
 
 /**
- * Face navigation graph with FastAPI auth + schedule coordination wired in.
- * Out-of-scope face screens (Friends, decorative create fields) kept as-is.
+ * Face navigation: Home → CreateRoom → RoomDetail → EditUnavailable / AiResult.
+ * Auth OTP + schedule APIs wired; unavailable slots are local-only (not submitted).
  */
 @Composable
 fun FaceRoot(
@@ -63,22 +61,11 @@ fun FaceRoot(
     val loggedInNickname = remember { mutableStateOf("") }
     val loggedInId = remember { mutableStateOf("") }
 
-    val appointmentName = remember { mutableStateOf("") }
-    val category = remember { mutableStateOf("") }
-    val duration = remember { mutableStateOf("") }
-    val location = remember { mutableStateOf("") }
-    val roomNickname = remember { mutableStateOf("") }
+    val roomTitle = remember { mutableStateOf("") }
+    val roomDesc = remember { mutableStateOf("") }
     val selectedDates = remember { mutableStateListOf<String>() }
-
-    val createdTimeSlots = remember { mutableStateListOf<TimeSlot>() }
-    val selectedFriendsForNew = remember { mutableStateMapOf<String, Boolean>() }
-    val selectedAiRecommendationTime = remember { mutableStateOf("") }
+    val localUnavailable = remember { mutableStateListOf<UnavailableSlot>() }
     val detailAppointment = remember { mutableStateOf<Appointment?>(null) }
-
-    val currentCalendar = remember { Calendar.getInstance() }
-    var sharedCalendarYear by remember { mutableStateOf(currentCalendar.get(Calendar.YEAR)) }
-    var sharedCalendarMonth by remember { mutableStateOf(currentCalendar.get(Calendar.MONTH) + 1) }
-    var sharedSelectedDay by remember { mutableStateOf(currentCalendar.get(Calendar.DAY_OF_MONTH)) }
 
     val appointmentsList = meetingState.meetings.map { it.toAppointment() }
 
@@ -94,7 +81,20 @@ fun FaceRoot(
         meetingViewModel.events.collect { event ->
             when (event) {
                 is MeetingEvent.Toast -> Toast.makeText(context, event.message, Toast.LENGTH_SHORT).show()
-                is MeetingEvent.Navigate -> currentScreen.value = event.route
+                is MeetingEvent.Navigate -> {
+                    val route =
+                        when (event.route) {
+                            "create_step2", "create_step3", "create_step4" -> "room_detail"
+                            "create_ai_recommendation" -> "ai_result"
+                            else -> event.route
+                        }
+                    if (route == "room_detail") {
+                        meetingViewModel.uiState.value.activeMeeting
+                            ?.toAppointment()
+                            ?.let { detailAppointment.value = it }
+                    }
+                    currentScreen.value = route
+                }
             }
         }
     }
@@ -103,10 +103,10 @@ fun FaceRoot(
         if (authState.checkingSession) return@LaunchedEffect
         if (authState.isLoggedIn) {
             val email = authState.email.orEmpty()
+            loggedInId.value = email
             loggedInNickname.value =
                 authState.nickname?.takeIf { it.isNotBlank() }
                     ?: email.substringBefore('@').ifBlank { "사용자" }
-            loggedInId.value = email
             if (currentScreen.value == "login" || currentScreen.value == "signup") {
                 currentScreen.value = "home"
             }
@@ -123,14 +123,14 @@ fun FaceRoot(
     BackHandler(enabled = currentScreen.value != "login") {
         when (currentScreen.value) {
             "signup" -> currentScreen.value = "login"
-            "home", "friends", "mypage" -> activity?.finish()
-            "create_step1" -> currentScreen.value = "home"
-            "create_step2" -> currentScreen.value = "create_step1"
-            "create_step3" -> currentScreen.value = "create_step2"
-            "create_step4" -> currentScreen.value = "create_step3"
-            "create_ai_recommendation" -> currentScreen.value = "create_step4"
+            "home" -> activity?.finish()
+            "friends", "mypage" -> currentScreen.value = "home"
+            "create_room" -> currentScreen.value = "home"
             "room_detail" -> currentScreen.value = "home"
+            "edit_unavailable" -> currentScreen.value = "room_detail"
+            "ai_result" -> currentScreen.value = "room_detail"
             "result" -> currentScreen.value = "home"
+            else -> currentScreen.value = "home"
         }
     }
 
@@ -177,25 +177,16 @@ fun FaceRoot(
                     "home",
                     "friends",
                     "mypage",
-                    "create_step1",
-                    "create_step2",
-                    "create_step3",
-                    "create_step4",
-                    "create_ai_recommendation",
+                    "create_room",
                     "room_detail",
+                    "edit_unavailable",
+                    "ai_result",
                     "result",
                 )
             -> {
+                // Dump navigates Home ↔ Friends/My via header links (no bottom bar).
                 Scaffold(
                     containerColor = Color(0xFFFFFCF3),
-                    bottomBar = {
-                        if (currentScreen.value !in setOf("result", "room_detail")) {
-                            CustomBottomBar(
-                                currentRoute = currentScreen.value,
-                                onTabSelected = { route: String -> currentScreen.value = route },
-                            )
-                        }
-                    },
                 ) { innerPadding ->
                     Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
                         when (currentScreen.value) {
@@ -203,42 +194,70 @@ fun FaceRoot(
                                 HomeScreen(
                                     nickname = loggedInNickname.value,
                                     appointmentsList = appointmentsList,
-                                    calendarYear = sharedCalendarYear,
-                                    onYearChange = { sharedCalendarYear = it },
-                                    calendarMonth = sharedCalendarMonth,
-                                    onMonthChange = { sharedCalendarMonth = it },
-                                    selectedDay = sharedSelectedDay,
-                                    onDayChange = { sharedSelectedDay = it },
                                     onLogoutClick = { authViewModel.logout() },
                                     onCreateAppointmentClick = {
                                         meetingViewModel.clearActive()
-                                        createdTimeSlots.clear()
-                                        selectedFriendsForNew.clear()
-                                        currentScreen.value = "create_step1"
+                                        roomTitle.value = ""
+                                        roomDesc.value = ""
+                                        selectedDates.clear()
+                                        localUnavailable.clear()
+                                        currentScreen.value = "create_room"
                                     },
                                     onDeleteAppointment = { appt ->
                                         if (appt.meetingId.isNotBlank()) {
                                             meetingViewModel.deleteMeeting(appt.toMeetingStub())
                                         }
                                     },
-                                    onEditAppointmentToCreate = { appt ->
-                                        appointmentName.value = appt.title
-                                        category.value = appt.category
-                                        duration.value = appt.duration
-                                        location.value = appt.location
-                                        currentScreen.value = "create_step1"
-                                    },
                                     onOpenAppointment = { appt ->
                                         detailAppointment.value = appt
+                                        localUnavailable.clear()
                                         if (appt.meetingId.isNotBlank()) {
                                             meetingViewModel.openMeetingById(appt.meetingId)
                                         }
                                         currentScreen.value = "room_detail"
                                     },
-                                    onJoinClick = { code, nick ->
-                                        meetingViewModel.joinMeeting(code, nick)
+                                    onFriendsClick = { currentScreen.value = "friends" },
+                                    onMyPageClick = { currentScreen.value = "mypage" },
+                                    onJoinClick = { code ->
+                                        meetingViewModel.joinMeeting(code)
                                     },
                                     isMutating = meetingState.mutating || meetingState.loading,
+                                )
+                            }
+                            "create_room" -> {
+                                val today = java.time.LocalDate.now()
+                                val maxEnd =
+                                    meetingState.maxEndDate
+                                        ?.takeIf { it.isNotBlank() }
+                                        ?.let {
+                                            runCatching { java.time.LocalDate.parse(it.take(10)) }.getOrNull()
+                                        }
+                                        ?: today.plusMonths(1)
+                                CreateRoomScreen(
+                                    roomTitle = roomTitle.value,
+                                    onRoomTitleChange = { roomTitle.value = it },
+                                    roomDesc = roomDesc.value,
+                                    onRoomDescChange = { roomDesc.value = it },
+                                    selectedDates = selectedDates.toList(),
+                                    onToggleSelectedDate = { iso ->
+                                        if (selectedDates.contains(iso)) {
+                                            selectedDates.remove(iso)
+                                        } else {
+                                            selectedDates.add(iso)
+                                        }
+                                    },
+                                    onClearSelectedDates = { selectedDates.clear() },
+                                    minSelectableDate = today,
+                                    maxSelectableDate = maxEnd,
+                                    accountNickname = loggedInNickname.value.takeIf { it.isNotBlank() },
+                                    isLoading = meetingState.mutating,
+                                    onBackClick = { currentScreen.value = "home" },
+                                    onCreateClick = {
+                                        meetingViewModel.createMeeting(
+                                            title = roomTitle.value,
+                                            selectedDates = selectedDates.toList(),
+                                        )
+                                    },
                                 )
                             }
                             "room_detail" -> {
@@ -248,198 +267,92 @@ fun FaceRoot(
                                 if (appt == null) {
                                     currentScreen.value = "home"
                                 } else {
+                                    val merged =
+                                        appt.copy(
+                                            selectedDates =
+                                                meetingState.activeMeeting?.selectedDates
+                                                    ?.takeIf { it.isNotEmpty() }
+                                                    ?: appt.selectedDates,
+                                            invitedFriends =
+                                                meetingState.activeMeeting?.members
+                                                    ?.map { it.nickname }
+                                                    ?.takeIf { it.isNotEmpty() }
+                                                    ?: appt.invitedFriends,
+                                            code =
+                                                meetingState.activeMeeting?.code
+                                                    ?.takeIf { it.isNotBlank() }
+                                                    ?: appt.code,
+                                        )
+                                    detailAppointment.value = merged
                                     RoomDetailScreen(
-                                        appointment =
-                                            appt.copy(
-                                                selectedDates =
-                                                    meetingState.activeMeeting?.selectedDates
-                                                        ?.takeIf { it.isNotEmpty() }
-                                                        ?: appt.selectedDates,
-                                                invitedFriends =
-                                                    meetingState.activeMeeting?.members
-                                                        ?.map { it.nickname }
-                                                        ?.takeIf { it.isNotEmpty() }
-                                                        ?: appt.invitedFriends,
-                                                code =
-                                                    meetingState.activeMeeting?.code
-                                                        ?.takeIf { it.isNotBlank() }
-                                                        ?: appt.code,
-                                            ),
+                                        appointment = merged,
                                         onBackClick = { currentScreen.value = "home" },
                                         onEditAvailabilityClick = {
-                                            if (appt.meetingId.isNotBlank()) {
-                                                meetingViewModel.openMeetingById(appt.meetingId)
-                                            }
-                                            currentScreen.value = "create_step3"
+                                            currentScreen.value = "edit_unavailable"
                                         },
                                         onAiResultClick = {
-                                            if (appt.meetingId.isNotBlank()) {
-                                                meetingViewModel.openMeetingById(appt.meetingId)
-                                                meetingViewModel.refreshCandidates(appt.meetingId)
+                                            if (merged.meetingId.isNotBlank()) {
+                                                meetingViewModel.openMeetingById(merged.meetingId, navigate = false)
+                                                meetingViewModel.refreshCandidates(merged.meetingId)
                                             }
-                                            currentScreen.value = "create_ai_recommendation"
+                                            currentScreen.value = "ai_result"
                                         },
                                         onInviteClick = {
-                                            currentScreen.value = "create_step2"
+                                            val code = merged.code
+                                            if (code.isNotBlank()) {
+                                                val send =
+                                                    Intent(Intent.ACTION_SEND).apply {
+                                                        type = "text/plain"
+                                                        putExtra(
+                                                            Intent.EXTRA_TEXT,
+                                                            "Potato Meet 초대 코드: $code\nhttps://oranganman.site/join?code=$code",
+                                                        )
+                                                    }
+                                                context.startActivity(Intent.createChooser(send, "초대 공유"))
+                                            }
                                         },
                                     )
                                 }
                             }
-                            "friends" -> FriendsScreen(isAdmin = false)
-                            "mypage" -> {
-                                MyPageScreen(
-                                    nickname = loggedInNickname.value.ifBlank { "사용자" },
-                                    userId = loggedInId.value.ifBlank { "user@example.com" },
-                                    onLogoutClick = { authViewModel.logout() },
-                                    onNicknameChanged = { newNick -> loggedInNickname.value = newNick },
-                                )
-                            }
-                            "create_step1" -> {
-                                val today = java.time.LocalDate.now()
-                                val maxEnd =
-                                    meetingState.maxEndDate
-                                        ?.takeIf { it.isNotBlank() }
-                                        ?.let { runCatching { java.time.LocalDate.parse(it.take(10)) }.getOrNull() }
-                                        ?: today.plusMonths(1)
-                                CreateAppointmentStep1Screen(
-                                    appointmentName = appointmentName.value,
-                                    onAppointmentNameChange = { appointmentName.value = it },
-                                    category = category.value,
-                                    onCategoryChange = { category.value = it },
-                                    duration = duration.value,
-                                    onDurationChange = { duration.value = it },
-                                    location = location.value,
-                                    onLocationChange = { location.value = it },
-                                    nickname = roomNickname.value,
-                                    onNicknameChange = { roomNickname.value = it },
-                                    selectedDates = selectedDates.toList(),
-                                    onToggleSelectedDate = { iso ->
-                                        if (selectedDates.contains(iso)) selectedDates.remove(iso)
-                                        else selectedDates.add(iso)
-                                    },
-                                    onClearSelectedDates = { selectedDates.clear() },
-                                    minSelectableDate = today,
-                                    maxSelectableDate = maxEnd,
-                                    isLoading = meetingState.mutating,
-                                    onBackClick = { currentScreen.value = "home" },
-                                    onNextClick = {
-                                        meetingViewModel.createMeeting(
-                                            title = appointmentName.value,
-                                            nickname = roomNickname.value.ifBlank { loggedInNickname.value },
-                                            selectedDates = selectedDates.toList(),
-                                        )
-                                    },
-                                    onStepClick = { step -> currentScreen.value = step },
-                                )
-                            }
-                            "create_step2" -> {
-                                CreateAppointmentStep2InviteScreen(
-                                    isAdmin = false,
-                                    selectedFriendsMap = selectedFriendsForNew,
-                                    inviteCode = meetingState.inviteCode ?: meetingState.activeMeeting?.code,
-                                    onBackClick = { currentScreen.value = "create_step1" },
-                                    onNextClick = {
-                                        meetingState.activeMeeting?.id?.let {
-                                            meetingViewModel.refreshCollection(it)
-                                        }
-                                        currentScreen.value = "create_step3"
-                                    },
-                                    onStepClick = { step -> currentScreen.value = step },
-                                )
-                            }
-                            "create_step3" -> {
-                                val allowed =
+                            "edit_unavailable" -> {
+                                val dates =
                                     meetingState.activeMeeting?.selectedDates
                                         ?.takeIf { it.isNotEmpty() }
-                                        ?: selectedDates.toList()
-                                LaunchedEffect(allowed) {
-                                    val first =
-                                        allowed.mapNotNull {
-                                            runCatching { java.time.LocalDate.parse(it.take(10)) }.getOrNull()
-                                        }.minOrNull()
-                                    if (first != null) {
-                                        sharedCalendarYear = first.year
-                                        sharedCalendarMonth = first.monthValue
-                                        sharedSelectedDay = first.dayOfMonth
-                                    }
-                                }
-                                CreateAppointmentStep3TimeScreen(
-                                    timeSlotsList = createdTimeSlots,
-                                    appointmentsList = appointmentsList,
-                                    onAddTimeSlot = { slot ->
-                                        createdTimeSlots.add(slot)
-                                        val merged = mergeTimeSlots(createdTimeSlots)
-                                        createdTimeSlots.clear()
-                                        createdTimeSlots.addAll(merged)
-                                    },
-                                    onDeleteTimeSlot = { slot -> createdTimeSlots.remove(slot) },
-                                    calendarYear = sharedCalendarYear,
-                                    onYearChange = { sharedCalendarYear = it },
-                                    calendarMonth = sharedCalendarMonth,
-                                    onMonthChange = { sharedCalendarMonth = it },
-                                    selectedCalendarDay = sharedSelectedDay,
-                                    onDayChange = { sharedSelectedDay = it },
-                                    allowedIsoDates = allowed,
-                                    onBackClick = { currentScreen.value = "create_step2" },
-                                    onStepClick = { step -> currentScreen.value = step },
-                                    onNextClick = { inputSlot ->
-                                        if (inputSlot != null) createdTimeSlots.add(inputSlot)
-                                        val merged = mergeTimeSlots(createdTimeSlots)
-                                        createdTimeSlots.clear()
-                                        createdTimeSlots.addAll(merged)
-                                        val ranges =
-                                            createdTimeSlots.map { slot ->
-                                                TimeFmt.seoulInstant(
-                                                    sharedCalendarYear,
-                                                    slot.month,
-                                                    slot.day,
-                                                    slot.startHour,
-                                                    slot.startMin,
-                                                ) to
-                                                    TimeFmt.seoulInstant(
-                                                        sharedCalendarYear,
-                                                        slot.month,
-                                                        slot.day,
-                                                        slot.endHour,
-                                                        slot.endMin,
-                                                    )
-                                            }
-                                        if (meetingState.activeMeeting != null) {
-                                            meetingViewModel.submitAvailability(ranges)
+                                        ?: detailAppointment.value?.selectedDates.orEmpty()
+                                            .ifEmpty { selectedDates.toList() }
+                                EditUnavailableScreen(
+                                    selectedIsoDates = dates,
+                                    unavailableSlots = localUnavailable.toList(),
+                                    onToggleSlot = { slot ->
+                                        val idx =
+                                            localUnavailable.indexOfFirst { it.matches(slot) }
+                                        if (idx >= 0) {
+                                            localUnavailable.removeAt(idx)
                                         } else {
-                                            currentScreen.value = "create_step4"
+                                            localUnavailable.add(slot)
                                         }
+                                    },
+                                    onBackClick = { currentScreen.value = "room_detail" },
+                                    onSaveClick = {
+                                        Toast
+                                            .makeText(
+                                                context,
+                                                "현재 시간 입력은 저장되지 않습니다",
+                                                Toast.LENGTH_SHORT,
+                                            ).show()
+                                        currentScreen.value = "room_detail"
                                     },
                                 )
                             }
-                            "create_step4" -> {
-                                CreateAppointmentStep4AdjustScreen(
-                                    myNickname =
-                                        roomNickname.value.ifBlank {
-                                            loggedInNickname.value.ifBlank { "나" }
-                                        },
-                                    invitedFriends =
-                                        meetingState.activeMeeting?.members
-                                            ?.map { it.nickname }
-                                            ?.filter { it != roomNickname.value }
-                                            ?: selectedFriendsForNew.filter { it.value }.keys.toList(),
-                                    myTimeSlots = createdTimeSlots,
-                                    onBackClick = { currentScreen.value = "create_step3" },
-                                    onStepClick = { step -> currentScreen.value = step },
-                                    onAiAdjustClick = { chosenTime ->
-                                        selectedAiRecommendationTime.value = chosenTime
-                                        meetingState.activeMeeting?.id?.let {
-                                            meetingViewModel.refreshCandidates(it)
-                                        }
-                                        currentScreen.value = "create_ai_recommendation"
-                                    },
-                                )
-                            }
-                            "create_ai_recommendation" -> {
+                            "ai_result" -> {
                                 val apiOptions =
                                     meetingState.candidates.mapIndexed { index, c ->
                                         RecommendationOption(
-                                            rank = "${index + 1}위",
+                                            rank =
+                                                when (index) {
+                                                    0 -> "1위 (최적 추천)"
+                                                    else -> "${index + 1}위"
+                                                },
                                             rankColor =
                                                 when (index) {
                                                     0 -> Color(0xFFFFB300)
@@ -459,14 +372,11 @@ fun FaceRoot(
                                         )
                                     }
                                 val voting = meetingState.candidatesStatus.equals("VOTING", ignoreCase = true)
-                                AiRecommendationScreen(
+                                AiResultScreen(
                                     meetingTitle =
                                         meetingState.activeMeeting?.title
-                                            ?: appointmentName.value,
-                                    myTimeSlots = createdTimeSlots,
-                                    invitedFriends =
-                                        meetingState.activeMeeting?.members?.map { it.nickname }.orEmpty(),
-                                    apiRecommendations = apiOptions.takeIf { it.isNotEmpty() },
+                                            ?: detailAppointment.value?.title.orEmpty(),
+                                    candidates = apiOptions,
                                     aiSummary = meetingState.aiSummary,
                                     multiSelectIds = meetingState.selectedCandidateIds,
                                     onToggleCandidateId =
@@ -479,10 +389,17 @@ fun FaceRoot(
                                         when {
                                             voting -> "선택한 후보에 투표하기"
                                             apiOptions.size == 1 -> "결과 보기"
-                                            else -> "이 시간으로 확정하기"
+                                            apiOptions.isEmpty() -> "후보 없음"
+                                            else -> "이 시간으로 최종 확정하기"
                                         },
-                                    isLoading = meetingState.mutating,
-                                    onBackClick = { currentScreen.value = "create_step4" },
+                                    emptyMessage =
+                                        when (meetingState.activeMeeting?.status?.uppercase()) {
+                                            "COLLECTING" -> "아직 입력·조율이 끝나지 않았습니다."
+                                            "FAILED" -> "조율 가능한 후보가 없습니다."
+                                            else -> "아직 조율 후보가 없습니다."
+                                        },
+                                    isLoading = meetingState.mutating || meetingState.loading,
+                                    onBackClick = { currentScreen.value = "room_detail" },
                                     onConfirmFinal = {
                                         when {
                                             voting -> meetingViewModel.submitVotes()
@@ -495,11 +412,33 @@ fun FaceRoot(
                                                 currentScreen.value = "result"
                                             }
                                             else -> {
-                                                selectedAiRecommendationTime.value = it
-                                                currentScreen.value = "home"
+                                                Toast
+                                                    .makeText(
+                                                        context,
+                                                        "후보가 없거나 투표 중이 아닙니다.",
+                                                        Toast.LENGTH_SHORT,
+                                                    ).show()
                                             }
                                         }
                                     },
+                                )
+                            }
+                            "friends" ->
+                                FriendsScreen(
+                                    isAdmin = false,
+                                    onBackClick = { currentScreen.value = "home" },
+                                )
+                            "mypage" -> {
+                                MyPageScreen(
+                                    nickname =
+                                        authState.nickname?.takeIf { it.isNotBlank() }
+                                            ?: loggedInNickname.value.ifBlank { "사용자" },
+                                    userId = loggedInId.value.ifBlank { "user@example.com" },
+                                    onLogoutClick = { authViewModel.logout() },
+                                    onNicknameChanged = { newNick ->
+                                        authViewModel.updateNickname(newNick)
+                                    },
+                                    onBackClick = { currentScreen.value = "home" },
                                 )
                             }
                             "result" -> {

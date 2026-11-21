@@ -225,12 +225,15 @@ def create_meeting(db, account, body, *, now: datetime | None = None) -> dict:
     )
     db.add(room)
     db.flush()
+    display_name = (account.nickname or "").strip()
+    if not display_name:
+        fail(422, "계정 닉네임이 없습니다. 마이페이지에서 닉네임을 설정해 주세요.")
     db.add(
         RoomMember(
             id=member_id,
             room_id=room_id,
             account_id=account.id,
-            nickname=body.nickname,
+            nickname=display_name[:30],
             room_role="OWNER",
             membership_status="ACTIVE",
         )
@@ -270,20 +273,16 @@ def join_meeting(db, account, body, *, now: datetime | None = None) -> dict:
     limit = _max_members()
     if limit is not None and len(_active_members(db, room.id)) >= limit:
         fail(409, "모임 인원이 가득 찼습니다.")
-    # Nickname unique
-    taken = db.scalar(
-        select(RoomMember.id).where(
-            RoomMember.room_id == room.id, RoomMember.nickname == body.nickname
-        )
-    )
-    if taken:
-        fail(409, "이미 사용 중인 닉네임입니다.")
+    display_name = (account.nickname or "").strip()
+    if not display_name:
+        fail(422, "계정 닉네임이 없습니다. 마이페이지에서 닉네임을 설정해 주세요.")
+    # Same display nickname across different accounts is allowed; uniqueness is account_id.
     db.add(
         RoomMember(
             id=uid(),
             room_id=room.id,
             account_id=account.id,
-            nickname=body.nickname,
+            nickname=display_name[:30],
             room_role="MEMBER",
             membership_status="ACTIVE",
         )
