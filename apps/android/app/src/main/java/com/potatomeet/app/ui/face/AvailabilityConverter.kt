@@ -5,61 +5,56 @@ import com.potatomeet.app.data.remote.dto.TimeRangeDto
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
+import java.util.Locale
 
 /**
- * Convert between UI unavailable half-hour slots and API available ranges (+09:00).
- * Only slots fully inside [scopeStartsAt, scopeEndsAt) are submitted or toggled.
- * Unmarked in-scope slots are available; consecutive available slots merge into one range.
- * End at 24:00 becomes next-day 00:00.
+ * Positive available-slot selection ↔ API `available` ranges (+09:00).
+ * Only slots fully inside [scopeStartsAt, scopeEndsAt) may be selected/submitted.
+ * Consecutive selected half-hours merge; 24:00 becomes next-day 00:00.
  */
 object AvailabilityConverter {
     data class SubmitPayload(
         val ranges: List<Pair<String, String>>,
+        /** True only when caller explicitly wants all-unavailable (empty available). */
         val allUnavailable: Boolean,
     )
 
+    data class DisplayLine(
+        val dateLabel: String,
+        val rangeLabel: String,
+    )
+
+    /**
+     * Selected available slots → merged API ranges.
+     * Empty selection → empty ranges (caller must block save; do not treat as full-day).
+     */
     fun toAvailablePayload(
         selectedIsoDates: List<String>,
-        unavailable: List<UnavailableSlot>,
+        selectedAvailable: List<UnavailableSlot>,
         scopeStartsAt: String? = null,
         scopeEndsAt: String? = null,
     ): SubmitPayload {
         val dates = selectedIsoDates.map { it.take(10) }.distinct().sorted()
         if (dates.isEmpty()) {
-            return SubmitPayload(emptyList(), allUnavailable = true)
+            return SubmitPayload(emptyList(), allUnavailable = false)
         }
         val scopeStart = parseScope(scopeStartsAt)
         val scopeEnd = parseScope(scopeEndsAt)
-        val unavailableKeys =
-            unavailable
-                .filter { it.dateIso.take(10) in dates }
-                .filter { isSlotInScope(it, scopeStart, scopeEnd) }
-                .map { slotKey(it.dateIso, it.startHour, it.startMin) }
-                .toSet()
 
         val availableSlots = mutableListOf<Pair<LocalDate, Int>>()
-        for (iso in dates) {
-            val day = LocalDate.parse(iso)
-            for (index in 0 until 48) {
-                val startMin = index * 30
-                val slot =
-                    UnavailableSlot(
-                        dateIso = iso,
-                        startHour = startMin / 60,
-                        startMin = startMin % 60,
-                        endHour = (startMin + 30) / 60,
-                        endMin = (startMin + 30) % 60,
-                    )
-                if (!isSlotInScope(slot, scopeStart, scopeEnd)) continue
-                val key = slotKey(iso, slot.startHour, slot.startMin)
-                if (key !in unavailableKeys) {
-                    availableSlots.add(day to index)
-                }
-            }
+        for (slot in selectedAvailable) {
+            val iso = slot.dateIso.take(10)
+            if (iso !in dates) continue
+            if (!isSlotInScope(slot, scopeStart, scopeEnd)) continue
+            val index = slot.startHour * 2 + slot.startMin / 30
+            availableSlots.add(LocalDate.parse(iso) to index)
         }
+        availableSlots.sortWith(compareBy({ it.first }, { it.second }))
+
         if (availableSlots.isEmpty()) {
-            // No remaining in-scope available cells → explicit all-unavailable.
-            return SubmitPayload(emptyList(), allUnavailable = true)
+            return SubmitPayload(emptyList(), allUnavailable = false)
         }
 
         val merged = mutableListOf<Pair<String, String>>()
@@ -89,30 +84,54 @@ object AvailabilityConverter {
         return SubmitPayload(merged, allUnavailable = false)
     }
 
-    fun toUnavailableSlots(
+    /** Restore `myAvailable` directly as selected available slots (no complement). */
+    fun toAvailableSlots(
         selectedIsoDates: List<String>,
         myAvailable: List<TimeRangeDto>,
         mySubmitted: Boolean,
         scopeStartsAt: String? = null,
         scopeEndsAt: String? = null,
     ): List<UnavailableSlot> {
-        if (!mySubmitted) return emptyList()
-        val dates = selectedIsoDates.map { it.take(10) }.distinct()
+        if (!mySubmitted || myAvailable.isEmpty()) return emptyList()
+        val dates = selectedIsoDates.map { it.take(10) }.distinct().toSet()
         val scopeStart = parseScope(scopeStartsAt)
         val scopeEnd = parseScope(scopeEndsAt)
-        val inScopeSlots =
-            dates.flatMap { iso ->
-                halfHourSlotsForDate(iso).filter { isSlotInScope(it, scopeStart, scopeEnd) }
-            }
-        if (myAvailable.isEmpty()) {
-            return inScopeSlots
-        }
-        val availableKeys = mutableSetOf<String>()
+        val keys = mutableSetOf<String>()
         for (range in myAvailable) {
-            availableKeys.addAll(expandRangeToSlotKeys(range.start, range.end))
+            keys.addAll(expandRangeToSlotKeys(range.start, range.end))
         }
-        return inScopeSlots.filter { slot ->
-            slotKey(slot.dateIso, slot.startHour, slot.startMin) !in availableKeys
+        return dates
+            .flatMap { iso -> halfHourSlotsForDate(iso) }
+            .filter { isSlotInScope(it, scopeStart, scopeEnd) }
+            .filter { slotKey(it.dateIso, it.startHour, it.startMin) in keys }
+    }
+
+    fun formatAvailableDisplay(
+        myAvailable: List<TimeRangeDto>,
+        mySubmitted: Boolean,
+    ): List<DisplayLine> {
+        if (!mySubmitted || myAvailable.isEmpty()) return emptyList()
+        val dayFmt = DateTimeFormatter.ofPattern("M.d")
+        val timeFmt = DateTimeFormatter.ofPattern("HH:mm")
+        return myAvailable.mapNotNull { range ->
+            runCatching {
+                val start = OffsetDateTime.parse(range.start).atZoneSameInstant(TimeFmt.SEOUL)
+                val end = OffsetDateTime.parse(range.end).atZoneSameInstant(TimeFmt.SEOUL)
+                val dow = start.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.KOREAN)
+                val dateLabel = "${dayFmt.format(start)}($dow)"
+                val endLabel =
+                    if (end.toLocalTime().hour == 0 && end.toLocalTime().minute == 0 &&
+                        end.toLocalDate() != start.toLocalDate()
+                    ) {
+                        "24:00"
+                    } else {
+                        timeFmt.format(end)
+                    }
+                DisplayLine(
+                    dateLabel = dateLabel,
+                    rangeLabel = "${timeFmt.format(start)} ~ $endLabel",
+                )
+            }.getOrNull()
         }
     }
 

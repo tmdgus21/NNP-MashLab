@@ -237,7 +237,7 @@ class MeetingViewModel
                     )
                 }.onSuccess { col ->
                     _uiState.update { it.copy(mutating = false, collection = col) }
-                    _events.tryEmit(MeetingEvent.Toast("불가능 시간을 서버에 저장했습니다."))
+                    _events.tryEmit(MeetingEvent.Toast("가능 시간을 서버에 저장했습니다."))
                     refreshActive()
                     _events.tryEmit(MeetingEvent.Navigate("room_detail"))
                 }.onFailure { e ->

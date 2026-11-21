@@ -46,6 +46,7 @@ import java.util.Locale
 @Composable
 fun EditUnavailableScreen(
     selectedIsoDates: List<String>,
+    /** Selected slots = available times (positive selection). */
     unavailableSlots: List<UnavailableSlot>,
     scopeStartsAt: String? = null,
     scopeEndsAt: String? = null,
@@ -100,7 +101,7 @@ fun EditUnavailableScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "내 불가능 시간 수정",
+                    text = "내 가능 시간 수정",
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF333333),
@@ -121,12 +122,12 @@ fun EditUnavailableScreen(
                 }
             }
             Text(
-                text = "참석할 수 없는 시간을 터치하여 선택하세요.",
+                text = "참석할 수 있는 시간을 터치하여 선택하세요.",
                 fontSize = 13.sp,
                 color = Color(0xFF777777),
             )
             Text(
-                text = "선택한 칸은 불가능 시간입니다. 지난 시간은 선택할 수 없습니다.",
+                text = "선택한 칸은 가능 시간입니다. 지난 시간은 선택할 수 없습니다.",
                 fontSize = 12.sp,
                 color = Color(0xFF888888),
             )
@@ -239,7 +240,7 @@ fun EditUnavailableScreen(
                 shape = RoundedCornerShape(26.dp),
             ) {
                 Text(
-                    text = if (saving) "저장 중…" else "불가능 시간 저장",
+                    text = if (saving) "저장 중…" else "가능 시간 저장",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF3C1E1E),
@@ -260,7 +261,7 @@ private fun HalfHourCell(
     val bg =
         when {
             !enabled -> Color(0xFFEEEEEE)
-            isMarked -> Color(0xFFFFCCBC)
+            isMarked -> Color(0xFFC8E6C9)
             else -> Color(0xFFF5F5F5)
         }
     Column(
@@ -290,16 +291,16 @@ private fun HalfHourCell(
             text =
                 when {
                     !enabled -> "지난 시간"
-                    isMarked -> "불가능"
-                    else -> "가능"
+                    isMarked -> "가능"
+                    else -> "미선택"
                 },
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
             color =
                 when {
                     !enabled -> Color(0xFF9E9E9E)
-                    isMarked -> Color(0xFFD32F2F)
-                    else -> Color(0xFF388E3C)
+                    isMarked -> Color(0xFF2E7D32)
+                    else -> Color(0xFF757575)
                 },
         )
     }

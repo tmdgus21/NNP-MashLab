@@ -284,8 +284,21 @@ fun FaceRoot(
                                                     ?: appt.code,
                                         )
                                     detailAppointment.value = merged
+                                    LaunchedEffect(merged.meetingId, currentScreen.value) {
+                                        if (merged.meetingId.isNotBlank()) {
+                                            meetingViewModel.refreshCollection(merged.meetingId)
+                                        }
+                                    }
+                                    val col = meetingState.collection
+                                    val availableLines =
+                                        AvailabilityConverter.formatAvailableDisplay(
+                                            myAvailable = col?.myAvailable.orEmpty(),
+                                            mySubmitted = col?.mySubmitted == true,
+                                        )
                                     RoomDetailScreen(
                                         appointment = merged,
+                                        mySubmitted = col?.mySubmitted == true,
+                                        myAvailableLines = availableLines,
                                         onBackClick = { currentScreen.value = "home" },
                                         onEditAvailabilityClick = {
                                             currentScreen.value = "edit_unavailable"
@@ -344,7 +357,7 @@ fun FaceRoot(
                                     val col = meetingState.collection ?: return@LaunchedEffect
                                     if (meetingId != null && col.id.isNotBlank()) {
                                         val restored =
-                                            AvailabilityConverter.toUnavailableSlots(
+                                            AvailabilityConverter.toAvailableSlots(
                                                 selectedIsoDates = dates,
                                                 myAvailable = col.myAvailable,
                                                 mySubmitted = col.mySubmitted,
@@ -386,13 +399,22 @@ fun FaceRoot(
                                         val payload =
                                             AvailabilityConverter.toAvailablePayload(
                                                 selectedIsoDates = dates,
-                                                unavailable = localUnavailable.toList(),
+                                                selectedAvailable = localUnavailable.toList(),
                                                 scopeStartsAt = scopeStartsAt,
                                                 scopeEndsAt = scopeEndsAt,
                                             )
+                                        if (payload.ranges.isEmpty()) {
+                                            Toast
+                                                .makeText(
+                                                    context,
+                                                    "가능 시간을 1개 이상 선택해 주세요.",
+                                                    Toast.LENGTH_SHORT,
+                                                ).show()
+                                            return@EditUnavailableScreen
+                                        }
                                         meetingViewModel.submitAvailability(
                                             payload.ranges,
-                                            allUnavailable = payload.allUnavailable,
+                                            allUnavailable = false,
                                         )
                                     },
                                 )
