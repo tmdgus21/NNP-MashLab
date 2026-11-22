@@ -197,7 +197,8 @@ env_vars:
     DB_HOST: "172.19.0.1 (운영) / 127.0.0.1 (로컬)"
     DB_PORT: "5432"
     DATABASE_URL: "비우면 DB_* 사용. 쓰면 postgresql+psycopg://…"
-    APP_SESSION_SECRET: 세션 복구용, 안정적으로 유지
+    APP_SESSION_SECRET: 세션 복구·USER OTP HMAC(.env.database, 0600). USER_OTP_SECRET로 대체 가능. 값 커밋 금지. deploy.sh가 길이≥16 검사
+    ADMIN_SMTP_*: USER/관리자 OTP 메일(STARTTLS). compose server-api에 전달. 값 커밋 금지. deploy.sh가 HOST/USER/PASSWORD/FROM 존재 검사
     ADMIN_ENABLED: "0 (운영 현재 꺼짐, Q34). 2026-11-16 확인: 이 PC의 로컬 .env에는 1이 있음(값 미변경). 승인 없이 변경·활성화 금지"
     QWEN_UNIX_SOCKET: /run/conditional-ok/qwen.sock (docker-compose.ai.yml)
     ADMIN_*: 관리자 기능용(현재 미사용) — 예시 server-api/.env.admin.example

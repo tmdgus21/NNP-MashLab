@@ -36,7 +36,7 @@
 
 ### 1. P5 24시간 × 30분 불가능 시간 격자
 - **PRD**: 기본 전부 가능, 안 되는 칸만 표시 → 완료
-- **현재**: Create step3이 “가능 시간대 추가” face UX. 제출 시 해당 구간만 `available`로 전송(빈 목록이면 서버가 전체 가능 처리)
+- **현재**: EditUnavailable 30분 48칸 → 가능 구간 병합 후 `PUT .../response` (`allUnavailable` 지원). 빈 `available`+flag false는 전체 가능(레거시)
 - **할 일**: Etta 스타일 한 화면 격자, 30분 슬롯 토글(불가), 날짜 범위·마감·유예 표시. **face 레이아웃 톤 유지·전면 리디자인 금지**
 - **API**: `GET …/collection`, `PUT …/collections/{id}/response`
 

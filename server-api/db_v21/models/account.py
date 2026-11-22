@@ -23,6 +23,8 @@ class Account(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     login_email: Mapped[str] = mapped_column(String(254), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(512))
+    # Display name for Potato Meet (duplicates allowed across accounts).
+    nickname: Mapped[str] = mapped_column(String(30), default="")
     account_type: Mapped[str] = mapped_column(String(20), default="USER")
     account_status: Mapped[str] = mapped_column(String(20), default="ACTIVE")
     # Admin-security fields (used when account_type=ADMIN; preserved from ok_admin_accounts)
@@ -74,3 +76,42 @@ class PasswordResetToken(Base):
     used_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+
+class UserAuthChallenge(Base):
+    """Email OTP challenges for USER register/login (separate from admin_otps)."""
+
+    __tablename__ = "user_auth_challenges"
+    __table_args__ = (
+        CheckConstraint(
+            "purpose IN ('REGISTER', 'LOGIN')",
+            name="ck_user_auth_challenges_purpose",
+        ),
+        CheckConstraint(
+            "expires_at > sent_at",
+            name="ck_user_auth_challenges_expires",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0 AND max_attempts >= 1",
+            name="ck_user_auth_challenges_attempts",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    account_id: Mapped[str | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    email: Mapped[str] = mapped_column(String(254), index=True)
+    purpose: Mapped[str] = mapped_column(String(20))
+    # UniqueConstraint only (no duplicate unique index).
+    challenge: Mapped[str] = mapped_column(String(64), unique=True)
+    code_digest: Mapped[str] = mapped_column(String(64))
+    # REGISTER only: argon2 hash until OTP verifies and Account is created.
+    password_hash: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=5)

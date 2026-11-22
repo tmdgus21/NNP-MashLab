@@ -77,16 +77,17 @@ class SchedulePostgresVotingTests(unittest.TestCase):
         app.include_router(schedule_router)
         client = TestClient(app)
 
+        from tests.auth_helpers import auth_headers, set_nickname
+
         def reg(nick_prefix):
-            email = f"{nick_prefix}-{secrets.token_hex(3)}@example.test"
-            r = client.post(
-                "/v1/auth/register",
-                json={"email": email, "password": "long-enough-password"},
+            return auth_headers(
+                client, email=f"{nick_prefix}-{secrets.token_hex(3)}@example.test"
             )
-            self.assertEqual(201, r.status_code, r.text)
-            return {"Authorization": f"Bearer {r.json()['token']}"}
 
         h1, h2, h3 = reg("a"), reg("b"), reg("c")
+        set_nickname(client, h1, "A")
+        set_nickname(client, h2, "B")
+        set_nickname(client, h3, "C")
         today = seoul_today()
         created = client.post(
             "/v1/meetings",
@@ -152,6 +153,9 @@ class SchedulePostgresVotingTests(unittest.TestCase):
         )
 
         # Concurrent idempotent TIMEOUT close on a second VOTING room
+        set_nickname(client, h1, "A2")
+        set_nickname(client, h2, "B2")
+        set_nickname(client, h3, "C2")
         created2 = client.post(
             "/v1/meetings",
             headers=h1,

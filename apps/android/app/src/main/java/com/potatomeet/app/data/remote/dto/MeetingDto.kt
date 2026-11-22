@@ -6,15 +6,16 @@ import kotlinx.serialization.json.JsonElement
 @Serializable
 data class CreateMeetingRequest(
     val title: String,
-    val nickname: String,
-    val startDate: String,
-    val endDate: String,
+    val nickname: String? = null,
+    val selectedDates: List<String>? = null,
+    val startDate: String? = null,
+    val endDate: String? = null,
 )
 
 @Serializable
 data class JoinMeetingRequest(
     val code: String,
-    val nickname: String,
+    val nickname: String? = null,
 )
 
 @Serializable
@@ -34,6 +35,7 @@ data class MeetingDto(
     val revision: Int,
     val startsAt: String? = null,
     val endsAt: String? = null,
+    val selectedDates: List<String> = emptyList(),
     val serverTime: String? = null,
     val timezone: String? = null,
     val legacy: Boolean? = null,
@@ -56,6 +58,7 @@ data class TimeRangeDto(
 @Serializable
 data class SubmitResponseRequest(
     val available: List<TimeRangeDto>,
+    val allUnavailable: Boolean = false,
 )
 
 @Serializable
@@ -78,6 +81,7 @@ data class CollectionResponse(
     val extendedCount: Int = 0,
     val doneCount: Int = 0,
     val memberCount: Int = 0,
+    val mySubmitted: Boolean = false,
     val myAvailable: List<TimeRangeDto> = emptyList(),
     val slotCounts: List<SlotCountDto> = emptyList(),
     val nearMisses: List<JsonElement> = emptyList(),

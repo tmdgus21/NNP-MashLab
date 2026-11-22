@@ -71,7 +71,8 @@ class RoomMember(Base):
     __tablename__ = "room_members"
     __table_args__ = (
         UniqueConstraint("room_id", "account_id", name="uq_room_members_room_account"),
-        UniqueConstraint("room_id", "nickname", name="uq_room_members_room_nickname"),
+        # Nickname uniqueness removed (20261121_0007): same display name may appear
+        # for different accounts; members are identified by account_id.
         Index("ix_room_members_request_key_hash", "request_key_hash", unique=True),
         Index("ix_room_members_token_hash", "token_hash", unique=True),
         CheckConstraint(

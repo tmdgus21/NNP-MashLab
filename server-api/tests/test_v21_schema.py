@@ -47,6 +47,7 @@ EXPECTED_TABLES = {
     "push_devices",
     "notification_settings",
     "notification_log",
+    "user_auth_challenges",
 }
 
 
@@ -82,7 +83,7 @@ class V21SchemaTests(unittest.TestCase):
                 insp = inspect(engine)
                 tables = set(insp.get_table_names()) - {"alembic_version"}
                 self.assertEqual(EXPECTED_TABLES, tables)
-                self.assertEqual(34, len(tables))
+                self.assertEqual(len(EXPECTED_TABLES), len(tables))
                 self.assertNotIn("room_cycle_archives", tables)
                 self.assertNotIn("scheduling_events", tables)
 
@@ -157,11 +158,15 @@ class V21SchemaTests(unittest.TestCase):
                     ("login_email",) in account_uniques or ("login_email",) in account_indexes
                 )
 
+                account_cols = {c["name"] for c in insp.get_columns("accounts")}
+                self.assertIn("nickname", account_cols)
+
                 member_uniques = {
                     tuple(u["column_names"]) for u in insp.get_unique_constraints("room_members")
                 }
+                # 20261121_0007: nickname uniqueness dropped; account_id remains unique per room.
                 self.assertIn(("room_id", "account_id"), member_uniques)
-                self.assertIn(("room_id", "nickname"), member_uniques)
+                self.assertNotIn(("room_id", "nickname"), member_uniques)
 
                 proposal_uniques = {
                     tuple(u["column_names"]) for u in insp.get_unique_constraints("proposals")

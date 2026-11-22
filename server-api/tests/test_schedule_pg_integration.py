@@ -75,16 +75,16 @@ class SchedulePostgresIntegrationTests(unittest.TestCase):
         app.include_router(schedule_router)
         client = TestClient(app)
 
+        from tests.auth_helpers import auth_headers, set_nickname
+
         def reg(prefix):
-            email = f"{prefix}-{secrets.token_hex(3)}@example.test"
-            r = client.post(
-                "/v1/auth/register",
-                json={"email": email, "password": "long-enough-password"},
+            return auth_headers(
+                client, email=f"{prefix}-{secrets.token_hex(3)}@example.test"
             )
-            self.assertEqual(201, r.status_code, r.text)
-            return {"Authorization": f"Bearer {r.json()['token']}"}
 
         h1, h2 = reg("pg1"), reg("pg2")
+        set_nickname(client, h1, "A")
+        set_nickname(client, h2, "B")
         today = seoul_today()
         created = client.post(
             "/v1/meetings",

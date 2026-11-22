@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 def to_camel(name: str) -> str:
@@ -37,18 +37,41 @@ class TimeRangeIn(ApiModel):
 
 class CreateMeetingIn(ApiModel):
     title: str = Field(min_length=1, max_length=100)
-    nickname: str = Field(min_length=1, max_length=30)
-    start_date: date
-    end_date: date
+    # Optional for backward compatibility; server ignores and uses accounts.nickname.
+    nickname: str | None = Field(default=None, max_length=30)
+    start_date: date | None = None
+    end_date: date | None = None
+    selected_dates: list[date] | None = None
+
+    @model_validator(mode="after")
+    def _xor_date_modes(self) -> CreateMeetingIn:
+        has_range = self.start_date is not None or self.end_date is not None
+        has_list = self.selected_dates is not None
+        if has_range and has_list:
+            raise ValueError(
+                "selectedDates와 startDate/endDate는 함께 보낼 수 없습니다."
+            )
+        if has_list:
+            if not self.selected_dates:
+                raise ValueError("날짜를 1개 이상 선택해 주세요.")
+            return self
+        if self.start_date is None or self.end_date is None:
+            raise ValueError("startDate와 endDate, 또는 selectedDates가 필요합니다.")
+        return self
 
 
 class JoinMeetingIn(ApiModel):
     code: str = Field(pattern=r"^[A-Za-z2-9]{8}$")
-    nickname: str = Field(min_length=1, max_length=30)
+    # Optional for backward compatibility; server ignores and uses accounts.nickname.
+    nickname: str | None = Field(default=None, max_length=30)
 
 
 class SubmitResponseIn(ApiModel):
-    available: list[TimeRangeIn] = Field(default_factory=list, max_length=500)
+    # Empty available historically means "all remaining scope is available".
+    # allUnavailable=true + available=[] means truly no availability.
+    # Raise max to cover ~1 month of alternating 30-min available cells (~744).
+    available: list[TimeRangeIn] = Field(default_factory=list, max_length=1000)
+    all_unavailable: bool = False
 
 
 class VoteIn(ApiModel):
