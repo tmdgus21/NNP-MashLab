@@ -155,7 +155,29 @@ fun AiResultScreen(
                                         fontWeight = FontWeight.Bold,
                                         color = if (index == 0) Color(0xFFFF8F00) else Color.Gray,
                                     )
-                                    if (isSelected) {
+                                    if (multiOn) {
+                                        Surface(
+                                            color = if (isSelected) Color(0xFFFFE082) else Color.White,
+                                            shape = RoundedCornerShape(12.dp),
+                                            border =
+                                                BorderStroke(
+                                                    1.dp,
+                                                    if (isSelected) Color(0xFFFF8F00) else Color(0xFFD0D0D0),
+                                                ),
+                                        ) {
+                                            Text(
+                                                text = if (isSelected) "투표 취소" else "투표하기",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF3C1E1E),
+                                                modifier =
+                                                    Modifier.padding(
+                                                        horizontal = 10.dp,
+                                                        vertical = 4.dp,
+                                                    ),
+                                            )
+                                        }
+                                    } else if (isSelected) {
                                         Surface(
                                             color = Color(0xFFFFE082),
                                             shape = RoundedCornerShape(6.dp),

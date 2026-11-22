@@ -6,6 +6,7 @@ import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.potatomeet.app.ui.face.Appointment
 import com.potatomeet.app.ui.face.AvailabilityConverter
+import com.potatomeet.app.ui.face.components.CalendarCutoutCard
 import com.potatomeet.app.ui.face.components.TopLogoHeader
 import java.time.LocalDate
 import java.time.format.TextStyle
@@ -60,6 +62,13 @@ fun RoomDetailScreen(
                 "${d.monthValue}.${d.dayOfMonth}($dow)"
             }.getOrDefault(iso)
         }
+    val monthHeader =
+        appointment.selectedDates.firstOrNull()?.let { iso ->
+            runCatching {
+                val d = LocalDate.parse(iso.take(10))
+                "${d.year}년 ${d.monthValue}월"
+            }.getOrNull()
+        } ?: appointment.timeInfo
 
     Column(modifier = Modifier.fillMaxSize()) {
         Box(
@@ -79,8 +88,7 @@ fun RoomDetailScreen(
                     .padding(horizontal = 20.dp)
                     .verticalScroll(rememberScrollState()),
         ) {
-            Text(text = "모임 상세", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -89,69 +97,64 @@ fun RoomDetailScreen(
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
             ) {
                 Column(modifier = Modifier.padding(18.dp)) {
-                    Text(text = "모임 정보", fontSize = 12.sp, color = Color(0xFF888888))
-                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = appointment.title,
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF333333),
                     )
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = appointment.status.ifBlank { appointment.category },
+                        text = appointment.status.ifBlank { appointment.category }.ifBlank { "입력 중" },
                         fontSize = 13.sp,
                         color = Color(0xFF666666),
                     )
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
+                    Box(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFFFFFAF0), RoundedCornerShape(14.dp))
+                                .border(1.dp, Color(0xFFFFECB3), RoundedCornerShape(14.dp))
+                                .padding(12.dp),
                     ) {
-                        Text(
-                            text = appointment.timeInfo,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF333333),
-                        )
-                        Text(
-                            text = "모임 후보일 ${selectedLabels.size.coerceAtLeast(
-                                if (appointment.selectedDates.isEmpty()) 0 else selectedLabels.size,
-                            )}개",
-                            fontSize = 11.sp,
-                            color = Color(0xFFFF8F00),
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    if (selectedLabels.isNotEmpty()) {
-                        Row(
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            selectedLabels.forEach { label ->
-                                Surface(
-                                    color = Color(0xFFFFFAF0),
-                                    shape = RoundedCornerShape(10.dp),
-                                    border = BorderStroke(1.dp, Color(0xFFFFD54F)),
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = monthHeader,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF4A3B32),
+                                )
+                                Text(
+                                    text = "후보일 ${selectedLabels.size}개",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFFFF8F00),
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                            if (selectedLabels.isEmpty()) {
+                                Text(text = "선택된 후보 날짜가 없습니다.", fontSize = 12.sp, color = Color(0xFF999999))
+                            } else {
+                                Row(
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
-                                    Text(
-                                        text = label,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF3C1E1E),
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                    )
+                                    selectedLabels.forEach { label ->
+                                        CalendarCutoutCard(dateTag = label)
+                                    }
                                 }
                             }
                         }
-                    } else {
-                        Text(text = appointment.timeInfo, fontSize = 13.sp, color = Color(0xFF666666))
                     }
 
                     Spacer(modifier = Modifier.height(20.dp))
@@ -200,22 +203,18 @@ fun RoomDetailScreen(
 
                     Text(text = "친구 초대", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
                     Spacer(modifier = Modifier.height(4.dp))
-                    if (appointment.code.isNotBlank()) {
-                        Text(
-                            text = "초대 코드 ${appointment.code}",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFFF9800),
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                    } else {
-                        Text(
-                            text = "아직 초대 코드가 없어요.",
-                            fontSize = 12.sp,
-                            color = Color(0xFF888888),
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
+                    Text(
+                        text =
+                            if (appointment.code.isNotBlank()) {
+                                "초대 코드 ${appointment.code}"
+                            } else {
+                                "아직 초대된 친구가 없어요. 함께할 친구에게 모임을 보내주세요."
+                            },
+                        fontSize = 12.sp,
+                        color = if (appointment.code.isNotBlank()) Color(0xFFFF9800) else Color(0xFF888888),
+                        fontWeight = if (appointment.code.isNotBlank()) FontWeight.Bold else FontWeight.Normal,
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
                     Button(
                         onClick = {
                             if (appointment.code.isNotBlank()) {
@@ -242,7 +241,21 @@ fun RoomDetailScreen(
                     HorizontalDivider(color = Color(0xFFF0F0F0))
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    Text(text = "내 불가능 시간", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(text = "내 불가능 시간", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+                        if (mySubmitted) {
+                            Text(
+                                text = "총 ${myAvailableLines.size}개 구간",
+                                fontSize = 12.sp,
+                                color = Color(0xFFFF8F00),
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.height(10.dp))
                     when {
                         !mySubmitted -> {
@@ -261,12 +274,31 @@ fun RoomDetailScreen(
                         }
                         else -> {
                             myAvailableLines.forEach { line ->
-                                Text(
-                                    text = "${line.dateLabel}  ${line.rangeLabel}",
-                                    fontSize = 13.sp,
-                                    color = Color(0xFF333333),
-                                    modifier = Modifier.padding(vertical = 2.dp),
-                                )
+                                Card(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFDF9)),
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = BorderStroke(1.dp, Color(0xFFFFE082)),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            text = line.dateLabel,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF333333),
+                                        )
+                                        Text(
+                                            text = line.rangeLabel,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFE65100),
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -277,7 +309,12 @@ fun RoomDetailScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8D6E63)),
                         shape = RoundedCornerShape(24.dp),
                     ) {
-                        Text(text = "불가 시간 수정", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(
+                            text = "불가 시간 수정 (30분 단위 시간표)",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                        )
                     }
                 }
             }
