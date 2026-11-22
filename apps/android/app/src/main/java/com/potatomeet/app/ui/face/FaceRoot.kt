@@ -161,8 +161,8 @@ fun FaceRoot(
                 SignUpScreen(
                     isLoading = authState.registerLoading,
                     otpPending = authState.otpPurpose == "REGISTER" && authState.pendingChallenge != null,
-                    onRequestOtp = { nickname, email, password, passwordConfirm ->
-                        authViewModel.register(nickname, email, password, passwordConfirm)
+                    onRequestOtp = { email, password, passwordConfirm ->
+                        authViewModel.register(email, password, passwordConfirm)
                     },
                     onVerifyOtp = { code -> authViewModel.verifyOtp(code) },
                     onResendOtp = { authViewModel.resendOtp() },
