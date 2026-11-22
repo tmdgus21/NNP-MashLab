@@ -471,6 +471,7 @@ def submit_response(
                 scope_starts_at=col.scope_starts_at,
                 scope_ends_at=col.scope_ends_at,
                 allowed_dates=allowed,
+                now=now,
             )
     except ValueError as exc:
         fail(422, str(exc))
