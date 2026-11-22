@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.potatomeet.app",
+      "sha256_cert_fingerprints": [
+        "18:C2:3C:2C:26:B2:A4:65:70:09:04:1C:8B:03:D1:CF:01:61:0F:DA:69:B1:9A:BB:00:F0:17:39:B5:38:BD:54"
+      ]
+    }
+  }
+]

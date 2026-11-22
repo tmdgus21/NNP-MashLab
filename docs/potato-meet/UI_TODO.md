@@ -27,7 +27,7 @@
 | P9 알림 설정 | **미착수** | |
 | SSE | 완료(앱) | 화면 STARTED 생명주기 세분화는 후속 |
 | FCM | **미착수** | |
-| 딥링크 `/join` | Manifest만 | 자동 참여 플로우 미완 |
+| 딥링크 `/join` | 앱 처리 완료(확인 후 join) | 운영 assetlinks 릴리스 SHA·배포는 별도 |
 | Friends / MyPage | 범위 밖 · 유지 | 서버 연동 없음 |
 
 ---
@@ -53,9 +53,10 @@
 
 ## P1 — 다음 스프린트
 
-### 4. App Link / 딥링크 자동 참여
-- **현재**: `AndroidManifest`에 `https://oranganman.site/join` pathPrefix. 코드에서 `code` 파싱 → 로그인 → `POST /meetings/join` 미연결
-- **할 일**: MainActivity intent 처리, 미로그인 시 로그인 후 재개, 참여 불가(409) 안내
+### 4. App Link / 딥링크 초대 확인 후 참여
+- **앱**: `MainActivity` singleTop + `onNewIntent` → 초대 확인 화면 → 사용자 확인 후 `POST /meetings/join`. 비로그인 시 OTP 후 복귀. 기존 멤버→상세, 409→재입장 불가 안내
+- **웹**: `public_routes` Potato Meet `/join` (코드 표시, 앱 열기, APK는 파일 있을 때만)
+- **남음(운영)**: 릴리스 SHA를 assetlinks에 넣고 `ASSETLINKS_PATH` 배포. 그 전엔 운영 App Links 자동 실행을 보장하지 않음
 
 ### 5. FCM 푸시 (R9)
 - **현재**: 미구현. `google-services.json`은 사용자 배치
