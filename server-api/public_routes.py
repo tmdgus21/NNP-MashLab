@@ -18,6 +18,14 @@ def _apk_available() -> bool:
     return _APK_PATH.is_file()
 
 
+def _invite_title(room: Room) -> str:
+    """Potato Meet stores title on rooms.title; legacy may keep it in meeting_settings."""
+    settings = room.config if isinstance(room.config, dict) else {}
+    column = (room.title or "").strip()
+    nested = str(settings.get("title") or "").strip()
+    return column or nested or "Potato Meet 모임"
+
+
 @router.get("/join", response_class=HTMLResponse)
 def invitation(code: str):
     code = code.upper()
@@ -27,7 +35,7 @@ def invitation(code: str):
         room = db.scalar(select(Room).where(Room.code == code))
         if not room:
             raise HTTPException(404, "존재하지 않는 초대 코드입니다.")
-        title = html.escape(room.config["title"])
+        title = html.escape(_invite_title(room))
     join_url = html.escape(f"https://oranganman.site/join?code={code}")
     apk_block = ""
     if _apk_available():
