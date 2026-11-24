@@ -202,14 +202,15 @@ class ScheduleCollectionTests(unittest.TestCase):
             )
             by_nick = {m.nickname: m for m in rows}
             a, b, c = by_nick["A"], by_nick["B"], by_nick["C"]
-            # Future windows relative to wall clock so GET .../meetings won't TIMEOUT-close
+            # Next calendar morning so windows never cross midnight (avoids CI wall-clock flakes).
             wall = datetime.now(SEOUL)
-            start = wall.replace(second=0, microsecond=0) + timedelta(hours=4)
-            start = start.replace(minute=(start.minute // 30) * 30)
+            start = (wall + timedelta(days=1)).replace(
+                hour=9, minute=0, second=0, microsecond=0
+            )
             mid_s = start + timedelta(hours=1)
             mid_e = mid_s + timedelta(hours=1)
             end = start + timedelta(hours=3)
-            col.scope_starts_at = wall.replace(hour=0, minute=0, second=0, microsecond=0)
+            col.scope_starts_at = start.replace(hour=0, minute=0, second=0, microsecond=0)
             col.scope_ends_at = end + timedelta(hours=1)
             ranges = {
                 a.id: [(start, end)],
