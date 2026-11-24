@@ -59,9 +59,8 @@ jobs:
             # Host .env / .env.database must already set DB_NAME=potato_server_v2
             bash infra/deploy.sh
   # Legacy React Native signed APK (apps/mobile / conditional-ok).
-  # Potato Meet Kotlin APK lives under apps/android and is NOT built or published here.
-  # Auto-running this on every main push would ship the wrong app during server cutover,
-  # so keep it manual-only via workflow_dispatch.
+  # Potato Meet Kotlin APK: see potato-meet-release.yml (apps/android, POTATO_MEET_* secrets).
+  # Keep this job manual-only via workflow_dispatch (do not auto-ship RN on main push).
   release:
     if: github.event_name == 'workflow_dispatch'
     needs: test

@@ -218,7 +218,7 @@ env_vars:
     apps/mobile/.env.example: 기존 RN 앱 (변경 없음, 컷오버 후 제거)
     apps/android/potatomeet.properties.example: 새 앱 (신규)
   ci_secrets_existing:               # GitHub 저장소 Secrets
-    - ANDROID_KEYSTORE_BASE64
+    - ANDROID_KEYSTORE_BASE64       # Conditional OK (RN) only — do not reuse for Potato Meet
     - ANDROID_STORE_PASSWORD
     - ANDROID_KEY_ALIAS
     - ANDROID_KEY_PASSWORD
@@ -226,6 +226,12 @@ env_vars:
     - SSH_USER
     - SSH_KEY
     - APP_DIR
+  ci_secrets_potato_meet_apk:        # .github/workflows/potato-meet-release.yml
+    - POTATO_MEET_KEYSTORE_BASE64   # same keystore as local potato-meet-release.jks
+    - POTATO_MEET_STORE_PASSWORD
+    - POTATO_MEET_KEY_ALIAS
+    - POTATO_MEET_KEY_PASSWORD
+    - SSH_KNOWN_HOSTS               # OpenSSH known_hosts lines for SSH_HOST (required; no insecure ignore)
 
 # ─────────────────────────────────────────────────────────────
 # 7. 저장소 경로 지도

@@ -1,0 +1,267 @@
+# Potato Meet Kotlin signed APK → artifact → optional server releases install.
+# Does NOT run infra/deploy.sh, touch DB/Caddy/Qwen, or build React Native.
+name: Potato Meet APK release
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref that must already be on origin/main (default main tip)
+        required: false
+        default: main
+        type: string
+      deploy:
+        description: Upload APK to /home/linuxuser/conditional-ok-releases/app-release.apk
+        required: false
+        default: true
+        type: boolean
+  push:
+    tags:
+      - "potato-meet-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: potato-meet-apk-release
+  cancel-in-progress: false
+
+env:
+  # Must match the Potato Meet release keystore certificate (not Conditional OK ANDROID_*).
+  EXPECTED_CERT_SHA256: "AB:21:E5:78:C3:78:72:92:5A:F0:4C:E1:58:81:FF:0A:3C:F6:15:8A:D2:05:56:C4:0B:29:ED:31:10:AB:05:9C"
+  EXPECTED_PACKAGE: "com.potatomeet.app"
+  ANDROID_BUILD_TOOLS: "35.0.0"
+  ANDROID_PLATFORM: "android-35"
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    outputs:
+      apk_sha256: ${{ steps.hash.outputs.sha256 }}
+      apk_bytes: ${{ steps.hash.outputs.bytes }}
+    steps:
+      - name: Resolve checkout ref
+        id: ref
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            echo "ref=${{ inputs.ref || 'main' }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${GITHUB_REF}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.ref.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Require commit to be on origin/main
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "Refusing build: HEAD is not an ancestor of origin/main." >&2
+            echo "Only verified commits already on main may ship Potato Meet APKs." >&2
+            exit 1
+          fi
+          echo "Gate OK: $(git rev-parse --short HEAD) is on origin/main"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+
+      - name: Install Android SDK platform 35 + build-tools
+        run: |
+          set -euo pipefail
+          sdkmanager "platforms;${ANDROID_PLATFORM}" "build-tools;${ANDROID_BUILD_TOOLS}"
+          yes | sdkmanager --licenses >/dev/null || true
+
+      - name: Restore Potato Meet release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.POTATO_MEET_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          test -n "${KEYSTORE_BASE64:-}"
+          umask 077
+          KEYSTORE_PATH="${RUNNER_TEMP}/potato-meet-release.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          test -s "$KEYSTORE_PATH"
+          echo "POTATO_MEET_KEYSTORE_PATH=${KEYSTORE_PATH}" >> "$GITHUB_ENV"
+          # Never print keystore bytes or passwords.
+
+      - name: Assemble signed release APK
+        working-directory: apps/android
+        env:
+          POTATO_MEET_STORE_PASSWORD: ${{ secrets.POTATO_MEET_STORE_PASSWORD }}
+          POTATO_MEET_KEY_ALIAS: ${{ secrets.POTATO_MEET_KEY_ALIAS }}
+          POTATO_MEET_KEY_PASSWORD: ${{ secrets.POTATO_MEET_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "${POTATO_MEET_KEYSTORE_PATH:-}"
+          test -n "${POTATO_MEET_STORE_PASSWORD:-}"
+          test -n "${POTATO_MEET_KEY_ALIAS:-}"
+          test -n "${POTATO_MEET_KEY_PASSWORD:-}"
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --max-workers=2
+          test -f app/build/outputs/apk/release/app-release.apk
+
+      - name: Verify APK signature, package, certificate SHA-256
+        working-directory: apps/android
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/release/app-release.apk"
+          BT="${ANDROID_HOME}/build-tools/${ANDROID_BUILD_TOOLS}"
+          "$BT/apksigner" verify --verbose "$APK"
+
+          CERT_LINE="$("$BT/apksigner" verify --print-certs "$APK" | grep -F 'Signer #1 certificate SHA-256 digest:' || true)"
+          test -n "$CERT_LINE"
+          DIGEST_HEX="$(echo "$CERT_LINE" | awk '{print tolower($NF)}' | tr -d ':')"
+          EXPECTED_HEX="$(echo "$EXPECTED_CERT_SHA256" | tr 'A-F' 'a-f' | tr -d ':')"
+          if [[ "$DIGEST_HEX" != "$EXPECTED_HEX" ]]; then
+            echo "Certificate SHA-256 mismatch (values not printed beyond compare)." >&2
+            exit 1
+          fi
+
+          BADGING="$("$BT/aapt" dump badging "$APK")"
+          echo "$BADGING" | grep -E "package: name='${EXPECTED_PACKAGE}'" >/dev/null
+
+          # Copy to a stable path for artifact / deploy steps.
+          mkdir -p "${RUNNER_TEMP}/potato-meet-out"
+          cp -a "$APK" "${RUNNER_TEMP}/potato-meet-out/app-release.apk"
+
+      - name: Hash APK
+        id: hash
+        run: |
+          set -euo pipefail
+          APK="${RUNNER_TEMP}/potato-meet-out/app-release.apk"
+          SHA="$(sha256sum "$APK" | awk '{print $1}')"
+          BYTES="$(wc -c <"$APK" | tr -d ' ')"
+          echo "sha256=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "bytes=${BYTES}" >> "$GITHUB_OUTPUT"
+          echo "APK bytes=${BYTES}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: potato-meet-signed-release
+          path: ${{ runner.temp }}/potato-meet-out/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Scrub keystore from runner
+        if: always()
+        run: rm -f "${POTATO_MEET_KEYSTORE_PATH:-}" || true
+
+  deploy:
+    needs: build
+    if: |
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/potato-meet-v')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.deploy == true)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Download signed APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: potato-meet-signed-release
+          path: ${{ runner.temp }}/potato-meet-deploy
+
+      - name: Configure SSH known_hosts
+        env:
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "${SSH_KNOWN_HOSTS:-}"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Stage APK filename for SCP
+        run: |
+          set -euo pipefail
+          cp -a "${RUNNER_TEMP}/potato-meet-deploy/app-release.apk" "${GITHUB_WORKSPACE}/potato-meet-ci.apk"
+
+      - name: Upload APK to server /tmp
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          source: potato-meet-ci.apk
+          target: /tmp/
+          overwrite: true
+
+      - name: Atomically install APK on server
+        uses: appleboy/ssh-action@v1.2.2
+        env:
+          EXPECTED_SHA: ${{ needs.build.outputs.apk_sha256 }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          envs: EXPECTED_SHA
+          script: |
+            set -euo pipefail
+            INCOMING=/tmp/potato-meet-ci.apk
+            test -f "$INCOMING"
+            SCRIPT=/home/linuxuser/projects/NNP-MashLab/infra/install-potato-meet-apk.sh
+            if [[ -f "$SCRIPT" ]]; then
+              bash "$SCRIPT" "$INCOMING" "$EXPECTED_SHA"
+            else
+              # Inline fallback until the install script lands on the host via a normal API deploy.
+              RELEASES_DIR=/home/linuxuser/conditional-ok-releases
+              DEST="${RELEASES_DIR}/app-release.apk"
+              mkdir -p "$RELEASES_DIR"
+              exec 9>"${RELEASES_DIR}/.potato-meet-apk.lock"
+              flock -n 9 || { echo "APK install lock busy"; exit 1; }
+              SIZE="$(wc -c <"$INCOMING" | tr -d ' ')"
+              test "$SIZE" -ge 1000000
+              ACTUAL="$(sha256sum "$INCOMING" | awk '{print $1}')"
+              test "$ACTUAL" = "$EXPECTED_SHA"
+              STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+              if [[ -f "$DEST" ]]; then cp -a "$DEST" "${DEST}.bak.${STAMP}"; fi
+              STAGE="${DEST}.new.${STAMP}"
+              cp -a "$INCOMING" "$STAGE"
+              chmod 644 "$STAGE"
+              mv -f "$STAGE" "$DEST"
+              chmod 644 "$DEST"
+              test "$(sha256sum "$DEST" | awk '{print $1}')" = "$EXPECTED_SHA"
+              echo "Installed via inline fallback -> $DEST"
+            fi
+            rm -f "$INCOMING"
+
+      - name: Verify public download matches artifact
+        env:
+          EXPECTED_SHA: ${{ needs.build.outputs.apk_sha256 }}
+        run: |
+          set -euo pipefail
+          URL="https://oranganman.site/downloads/potato-meet.apk"
+          OUT="${RUNNER_TEMP}/potato-meet-downloaded.apk"
+          # Retries: Caddy/API may briefly cache or race after file replace.
+          ok=0
+          for i in 1 2 3 4 5; do
+            CODE="$(curl -sS -o "$OUT" -w '%{http_code}' -L "$URL" || true)"
+            if [[ "$CODE" == "200" ]]; then
+              GOT="$(sha256sum "$OUT" | awk '{print $1}')"
+              if [[ "$GOT" == "$EXPECTED_SHA" ]]; then
+                ok=1
+                break
+              fi
+            fi
+            sleep 3
+          done
+          if [[ "$ok" != "1" ]]; then
+            echo "Public APK verification failed (HTTP/sha mismatch)." >&2
+            exit 1
+          fi
+          echo "Public download verification OK"
