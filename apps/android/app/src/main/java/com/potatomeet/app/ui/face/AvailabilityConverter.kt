@@ -5,12 +5,16 @@ import com.potatomeet.app.data.remote.dto.TimeRangeDto
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
+import java.util.Locale
 
 /**
- * Convert between UI unavailable half-hour slots and API available ranges (+09:00).
- * Only slots fully inside [scopeStartsAt, scopeEndsAt) are submitted or toggled.
- * Unmarked in-scope slots are available; consecutive available slots merge into one range.
- * End at 24:00 becomes next-day 00:00.
+ * UI unavailable half-hour slots ↔ API `available` ranges (+09:00).
+ * Default = available; marked slots = unavailable. Payload is the complement
+ * of marked in-scope slots. Empty mark → full remaining scope available.
+ * Only slots fully inside [max(scopeStartsAt, nowCeil), scopeEndsAt) may be
+ * toggled/submitted — past selectedDates never block future ranges.
  */
 object AvailabilityConverter {
     data class SubmitPayload(
@@ -18,22 +22,28 @@ object AvailabilityConverter {
         val allUnavailable: Boolean,
     )
 
+    data class DisplayLine(
+        val dateLabel: String,
+        val rangeLabel: String,
+    )
+
     fun toAvailablePayload(
         selectedIsoDates: List<String>,
         unavailable: List<UnavailableSlot>,
         scopeStartsAt: String? = null,
         scopeEndsAt: String? = null,
+        now: ZonedDateTime = ZonedDateTime.now(TimeFmt.SEOUL),
     ): SubmitPayload {
         val dates = selectedIsoDates.map { it.take(10) }.distinct().sorted()
         if (dates.isEmpty()) {
             return SubmitPayload(emptyList(), allUnavailable = true)
         }
-        val scopeStart = parseScope(scopeStartsAt)
         val scopeEnd = parseScope(scopeEndsAt)
+        val windowStart = effectiveWindowStart(parseScope(scopeStartsAt), now)
         val unavailableKeys =
             unavailable
                 .filter { it.dateIso.take(10) in dates }
-                .filter { isSlotInScope(it, scopeStart, scopeEnd) }
+                .filter { isSlotInScope(it, windowStart, scopeEnd) }
                 .map { slotKey(it.dateIso, it.startHour, it.startMin) }
                 .toSet()
 
@@ -42,15 +52,17 @@ object AvailabilityConverter {
             val day = LocalDate.parse(iso)
             for (index in 0 until 48) {
                 val startMin = index * 30
+                val endMinTotal = startMin + 30
                 val slot =
                     UnavailableSlot(
                         dateIso = iso,
                         startHour = startMin / 60,
                         startMin = startMin % 60,
-                        endHour = (startMin + 30) / 60,
-                        endMin = (startMin + 30) % 60,
+                        endHour = endMinTotal / 60,
+                        endMin = endMinTotal % 60,
                     )
-                if (!isSlotInScope(slot, scopeStart, scopeEnd)) continue
+                // Past selectedDates fall outside windowStart and are skipped.
+                if (!isSlotInScope(slot, windowStart, scopeEnd)) continue
                 val key = slotKey(iso, slot.startHour, slot.startMin)
                 if (key !in unavailableKeys) {
                     availableSlots.add(day to index)
@@ -58,7 +70,6 @@ object AvailabilityConverter {
             }
         }
         if (availableSlots.isEmpty()) {
-            // No remaining in-scope available cells → explicit all-unavailable.
             return SubmitPayload(emptyList(), allUnavailable = true)
         }
 
@@ -89,20 +100,22 @@ object AvailabilityConverter {
         return SubmitPayload(merged, allUnavailable = false)
     }
 
+    /** Restore unavailable UI from `myAvailable` complement (scope-clipped). */
     fun toUnavailableSlots(
         selectedIsoDates: List<String>,
         myAvailable: List<TimeRangeDto>,
         mySubmitted: Boolean,
         scopeStartsAt: String? = null,
         scopeEndsAt: String? = null,
+        now: ZonedDateTime = ZonedDateTime.now(TimeFmt.SEOUL),
     ): List<UnavailableSlot> {
         if (!mySubmitted) return emptyList()
         val dates = selectedIsoDates.map { it.take(10) }.distinct()
-        val scopeStart = parseScope(scopeStartsAt)
+        val windowStart = effectiveWindowStart(parseScope(scopeStartsAt), now)
         val scopeEnd = parseScope(scopeEndsAt)
         val inScopeSlots =
             dates.flatMap { iso ->
-                halfHourSlotsForDate(iso).filter { isSlotInScope(it, scopeStart, scopeEnd) }
+                halfHourSlotsForDate(iso).filter { isSlotInScope(it, windowStart, scopeEnd) }
             }
         if (myAvailable.isEmpty()) {
             return inScopeSlots
@@ -116,11 +129,77 @@ object AvailabilityConverter {
         }
     }
 
+    /** Display merged unavailable ranges for RoomDetail. */
+    fun formatUnavailableDisplay(
+        selectedIsoDates: List<String>,
+        myAvailable: List<TimeRangeDto>,
+        mySubmitted: Boolean,
+        scopeStartsAt: String? = null,
+        scopeEndsAt: String? = null,
+        now: ZonedDateTime = ZonedDateTime.now(TimeFmt.SEOUL),
+    ): List<DisplayLine> {
+        val slots =
+            toUnavailableSlots(
+                selectedIsoDates = selectedIsoDates,
+                myAvailable = myAvailable,
+                mySubmitted = mySubmitted,
+                scopeStartsAt = scopeStartsAt,
+                scopeEndsAt = scopeEndsAt,
+                now = now,
+            )
+        if (slots.isEmpty()) return emptyList()
+
+        val byDay = slots.groupBy { it.dateIso.take(10) }.toSortedMap()
+        val dayFmt = DateTimeFormatter.ofPattern("M.d")
+        val lines = mutableListOf<DisplayLine>()
+        for ((iso, daySlots) in byDay) {
+            val day = LocalDate.parse(iso)
+            val dow = day.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.KOREAN)
+            val dateLabel = "${dayFmt.format(day)}($dow)"
+            val indices =
+                daySlots
+                    .map { it.startHour * 2 + it.startMin / 30 }
+                    .distinct()
+                    .sorted()
+            var runStart = -1
+            var runEnd = -1
+
+            fun flush() {
+                if (runStart < 0) return
+                lines.add(
+                    DisplayLine(
+                        dateLabel = dateLabel,
+                        rangeLabel = "${indexLabel(runStart)} ~ ${indexLabel(runEnd)}",
+                    ),
+                )
+                runStart = -1
+                runEnd = -1
+            }
+            for (index in indices) {
+                if (runStart >= 0 && index == runEnd) {
+                    runEnd = index + 1
+                } else {
+                    flush()
+                    runStart = index
+                    runEnd = index + 1
+                }
+            }
+            flush()
+        }
+        return lines
+    }
+
     fun isSlotInScope(
         slot: UnavailableSlot,
         scopeStartsAt: String?,
         scopeEndsAt: String?,
-    ): Boolean = isSlotInScope(slot, parseScope(scopeStartsAt), parseScope(scopeEndsAt))
+        now: ZonedDateTime = ZonedDateTime.now(TimeFmt.SEOUL),
+    ): Boolean =
+        isSlotInScope(
+            slot,
+            effectiveWindowStart(parseScope(scopeStartsAt), now),
+            parseScope(scopeEndsAt),
+        )
 
     fun isSlotInScope(
         slot: UnavailableSlot,
@@ -133,6 +212,38 @@ object AvailabilityConverter {
         if (scopeStart != null && start.isBefore(scopeStart)) return false
         if (scopeEnd != null && end.isAfter(scopeEnd)) return false
         return true
+    }
+
+    /** max(scopeStart, ceil-to-30min now) so past selectedDates cannot enter the payload. */
+    fun effectiveWindowStart(
+        scopeStart: ZonedDateTime?,
+        now: ZonedDateTime = ZonedDateTime.now(TimeFmt.SEOUL),
+    ): ZonedDateTime? {
+        val nowCeil = ceilToSlot(now)
+        return when {
+            scopeStart == null -> nowCeil
+            scopeStart.isAfter(nowCeil) -> scopeStart
+            else -> nowCeil
+        }
+    }
+
+    private fun ceilToSlot(value: ZonedDateTime): ZonedDateTime {
+        val truncated = value.withSecond(0).withNano(0)
+        if (truncated.minute % 30 == 0 && !value.isAfter(truncated)) {
+            return truncated
+        }
+        val rem = truncated.minute % 30
+        val add = if (rem == 0) 30 else 30 - rem
+        return truncated.plusMinutes(add.toLong())
+    }
+
+    private fun indexLabel(index: Int): String {
+        val total = index * 30
+        return if (total >= 24 * 60) {
+            "24:00"
+        } else {
+            "%02d:%02d".format(total / 60, total % 60)
+        }
     }
 
     private fun parseScope(iso: String?): ZonedDateTime? =

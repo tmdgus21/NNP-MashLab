@@ -217,43 +217,58 @@ fun CreateAppointmentStep2InviteScreen(
                     .padding(horizontal = 20.dp, vertical = 12.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val shareText =
+                    if (!inviteCode.isNullOrBlank()) {
+                        "Potato Meet 초대 코드: $inviteCode\nhttps://oranganman.site/join?code=$inviteCode"
+                    } else {
+                        null
+                    }
                 OutlinedButton(
                     onClick = {
+                        if (shareText == null) {
+                            Toast.makeText(context, "초대 코드가 아직 없습니다.", Toast.LENGTH_SHORT).show()
+                            return@OutlinedButton
+                        }
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        val clip = ClipData.newPlainText("PotatoMeet Invite", "https://potatomeet.app/invite/room123")
-                        clipboard.setPrimaryClip(clip)
+                        clipboard.setPrimaryClip(ClipData.newPlainText("PotatoMeet Invite", shareText))
                         Toast.makeText(context, "초대 링크가 복사되었습니다!", Toast.LENGTH_SHORT).show()
                     },
+                    enabled = shareText != null,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     shape = RoundedCornerShape(12.dp),
                 ) {
-                    Text(text = "🔗 링크로 초대하기 (복사)", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Text(text = "링크로 초대하기 (복사)", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 }
 
                 Button(
                     onClick = {
+                        if (shareText == null) {
+                            Toast.makeText(context, "초대 코드가 아직 없습니다.", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
                         val intent =
                             Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
                                 setPackage("com.kakao.talk")
-                                putExtra(Intent.EXTRA_TEXT, "[Potato Meet] 모임에 초대합니다! 링크: https://potatomeet.app/invite/room123")
+                                putExtra(Intent.EXTRA_TEXT, shareText)
                             }
                         try {
                             context.startActivity(intent)
-                        } catch (e: Exception) {
+                        } catch (_: Exception) {
                             val shareIntent =
                                 Intent(Intent.ACTION_SEND).apply {
                                     type = "text/plain"
-                                    putExtra(Intent.EXTRA_TEXT, "[Potato Meet] 모임에 초대합니다! 링크: https://potatomeet.app/invite/room123")
+                                    putExtra(Intent.EXTRA_TEXT, shareText)
                                 }
                             context.startActivity(Intent.createChooser(shareIntent, "공유하기"))
                         }
                     },
+                    enabled = shareText != null,
                     modifier = Modifier.fillMaxWidth().height(44.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFE082)),
                 ) {
-                    Text(text = "💛 카카오톡으로 공유하기", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3C1E1E))
+                    Text(text = "카카오톡으로 공유하기", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3C1E1E))
                 }
 
                 Button(

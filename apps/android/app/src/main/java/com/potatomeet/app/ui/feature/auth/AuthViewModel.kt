@@ -107,14 +107,13 @@ class AuthViewModel
         }
 
         fun register(
-            nickname: String,
             email: String,
             password: String,
             passwordConfirm: String,
         ) {
             viewModelScope.launch {
                 _uiState.update { it.copy(registerLoading = true, errorMessage = null) }
-                startRegisterUseCase(nickname, email, password, passwordConfirm)
+                startRegisterUseCase(email, password, passwordConfirm)
                     .onSuccess { challenge ->
                         _uiState.update {
                             it.copy(
@@ -122,7 +121,6 @@ class AuthViewModel
                                 otpPurpose = "REGISTER",
                                 pendingChallenge = challenge.challenge,
                                 pendingEmail = email.trim(),
-                                pendingNickname = nickname.trim(),
                                 resendAfterSec = challenge.resendAfter,
                             )
                         }
@@ -152,7 +150,7 @@ class AuthViewModel
                     if (purpose == "LOGIN") {
                         verifyLoginUseCase(challenge, code, state.pendingEmail.orEmpty())
                     } else {
-                        verifyRegisterUseCase(challenge, code, state.pendingNickname.orEmpty())
+                        verifyRegisterUseCase(challenge, code)
                     }
                 result
                     .onSuccess { session ->
@@ -223,7 +221,6 @@ class AuthViewModel
                     otpPurpose = null,
                     pendingChallenge = null,
                     pendingEmail = null,
-                    pendingNickname = null,
                 )
             }
         }

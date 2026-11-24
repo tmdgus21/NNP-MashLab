@@ -10,31 +10,91 @@ from database import Room, session
 
 router = APIRouter()
 
+_APK_PATH = Path(os.getenv("APK_PATH", "/releases/app-release.apk"))
+_ASSETLINKS_PATH = Path(os.getenv("ASSETLINKS_PATH", "/releases/assetlinks.json"))
 
-@router.get('/join', response_class=HTMLResponse)
+
+def _apk_available() -> bool:
+    return _APK_PATH.is_file()
+
+
+def _invite_title(room: Room) -> str:
+    """Potato Meet stores title on rooms.title; legacy may keep it in meeting_settings."""
+    settings = room.config if isinstance(room.config, dict) else {}
+    column = (room.title or "").strip()
+    nested = str(settings.get("title") or "").strip()
+    return column or nested or "Potato Meet 모임"
+
+
+@router.get("/join", response_class=HTMLResponse)
 def invitation(code: str):
     code = code.upper()
-    if not re.fullmatch(r'[A-Z2-9]{8}', code):
-        raise HTTPException(422, '8자리 초대 코드를 확인해 주세요.')
+    if not re.fullmatch(r"[A-Z2-9]{8}", code):
+        raise HTTPException(422, "8자리 초대 코드를 확인해 주세요.")
     with session() as db:
         room = db.scalar(select(Room).where(Room.code == code))
         if not room:
-            raise HTTPException(404, '존재하지 않는 초대 코드입니다.')
-        title = html.escape(room.config['title'])
-    return HTMLResponse(f'''<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>조건부 OK 초대</title><style>body{{font:18px system-ui;background:#f3f7f5;color:#173d34;max-width:480px;margin:60px auto;padding:24px}}a{{display:block;padding:18px;margin:20px 0;background:#176e59;color:white;text-align:center;border-radius:14px;text-decoration:none}}code{{font-size:32px;letter-spacing:4px}}</style><h1>{title}</h1><p>조건부 OK 모임에 초대받았어요.</p><code>{code}</code><a href="conditionalok://join?code={code}">앱에서 참여하기</a><a href="/downloads/conditional-ok.apk">Android 앱 다운로드</a><p>설치 후 이 링크를 다시 열거나 앱에 위 코드를 입력해 주세요. 닉네임으로 참여하며 방장 권한은 초대 코드로 부여되지 않습니다.</p></html>''', headers={'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",'X-Content-Type-Options':'nosniff'})
+            raise HTTPException(404, "존재하지 않는 초대 코드입니다.")
+        title = html.escape(_invite_title(room))
+    join_url = html.escape(f"https://oranganman.site/join?code={code}")
+    apk_block = ""
+    if _apk_available():
+        apk_block = (
+            '<a href="/downloads/potato-meet.apk">Android 앱 다운로드</a>'
+            "<p>설치 후 이 링크를 다시 열거나, 앱의 「초대 코드로 참여」에 위 코드를 입력해 주세요.</p>"
+        )
+    else:
+        apk_block = (
+            "<p>앱이 없다면 위 초대 코드를 복사한 뒤, Potato Meet 앱의 「초대 코드로 참여」에서 입력해 주세요.</p>"
+        )
+    return HTMLResponse(
+        f"""<!doctype html><html lang="ko"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Potato Meet 초대</title>
+<style>
+body{{font:18px system-ui;background:#fffaf0;color:#3c1e1e;max-width:480px;margin:60px auto;padding:24px}}
+a{{display:block;padding:18px;margin:20px 0;background:#ffb300;color:#3c1e1e;text-align:center;border-radius:14px;text-decoration:none;font-weight:700}}
+code{{display:block;font-size:32px;letter-spacing:4px;margin:16px 0;color:#e65100;font-weight:700}}
+.hint{{font-size:14px;color:#6d4c41;line-height:1.5}}
+</style>
+<h1>{title}</h1>
+<p>Potato Meet 모임에 초대받았어요.</p>
+<p class="hint">초대 코드</p>
+<code>{code}</code>
+<p class="hint">앱이 설치되어 있다면 아래 버튼으로 앱을 열어 초대를 확인하세요. 참여는 앱에서 직접 확인해 주세요.</p>
+<a href="{join_url}">앱에서 초대 열기</a>
+{apk_block}
+</html>""",
+        headers={
+            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
-@router.get('/downloads/conditional-ok.apk')
-def download():
-    path = Path(os.getenv('APK_PATH','/releases/app-release.apk'))
-    if not path.is_file():
-        raise HTTPException(404, '앱 배포 파일이 아직 준비되지 않았습니다.')
-    return FileResponse(path, media_type='application/vnd.android.package-archive', filename='conditional-ok.apk')
+def _apk_response():
+    if not _apk_available():
+        raise HTTPException(404, "앱 배포 파일이 아직 준비되지 않았습니다.")
+    return FileResponse(
+        _APK_PATH,
+        media_type="application/vnd.android.package-archive",
+        filename="potato-meet.apk",
+    )
 
 
-@router.get('/.well-known/assetlinks.json')
+@router.get("/downloads/potato-meet.apk")
+def download_potato_meet():
+    return _apk_response()
+
+
+@router.get("/downloads/conditional-ok.apk")
+def download_legacy_alias():
+    """Legacy path kept for ops cutover compatibility; same APK_PATH file."""
+    return _apk_response()
+
+
+@router.get("/.well-known/assetlinks.json")
 def app_links():
-    path=Path(os.getenv('ASSETLINKS_PATH','/releases/assetlinks.json'))
-    if not path.is_file():
-        raise HTTPException(404, '앱 링크 인증이 아직 준비되지 않았습니다.')
-    return json.loads(path.read_text())
+    if not _ASSETLINKS_PATH.is_file():
+        raise HTTPException(404, "앱 링크 인증이 아직 준비되지 않았습니다.")
+    return json.loads(_ASSETLINKS_PATH.read_text())

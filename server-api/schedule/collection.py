@@ -34,9 +34,20 @@ def validate_available_ranges(
     scope_starts_at: datetime,
     scope_ends_at: datetime,
     allowed_dates: set[date] | None = None,
+    now: datetime | None = None,
 ) -> list[tuple[datetime, datetime]]:
+    """Validate and keep in-window ranges.
+
+    Past/out-of-scope *prefixes* are clipped (or skipped if empty after clip)
+    so a meeting that still lists past selectedDates does not reject valid
+    future ranges in the same payload. Ranges past scope_end or on
+    non-selected calendar days still raise.
+    """
     scope_start = to_seoul(scope_starts_at)
     scope_end = to_seoul(scope_ends_at)
+    cutoff = scope_start
+    if now is not None:
+        cutoff = max(cutoff, ceil_to_slot(to_seoul(now)))
     cleaned: list[tuple[datetime, datetime]] = []
     for start, end in ranges:
         s, e = to_seoul(start), to_seoul(end)
@@ -44,8 +55,15 @@ def validate_available_ranges(
             raise ValueError("종료는 시작 이후여야 합니다.")
         if not is_slot_aligned(s) or not is_slot_aligned(e):
             raise ValueError("30분 단위 시간을 입력해 주세요.")
-        if s < scope_start or e > scope_end:
+        # Entirely before remaining window → ignore (past selected day noise).
+        if e <= cutoff:
+            continue
+        if s < cutoff:
+            s = cutoff if is_slot_aligned(cutoff) else ceil_to_slot(cutoff)
+        if e > scope_end:
             raise ValueError("모임 날짜 범위 안의 시간만 제출해 주세요.")
+        if e <= s:
+            continue
         if allowed_dates is not None:
             days = _range_calendar_days(s, e)
             if not days or any(day not in allowed_dates for day in days):

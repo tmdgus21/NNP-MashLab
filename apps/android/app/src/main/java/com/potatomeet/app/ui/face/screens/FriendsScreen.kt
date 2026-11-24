@@ -64,7 +64,7 @@ fun FriendsScreen(
                     modifier = Modifier.fillMaxWidth().height(200.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(text = "등록된 친구가 없습니다.", fontSize = 14.sp, color = Color(0xFFAAAAAA))
+                    Text(text = "등록된 친구가 없습니다.", fontSize = 14.sp, color = Color(0xFF999999))
                 }
             } else {
                 friendsList.forEach { friend ->

@@ -1,12 +1,18 @@
 package com.potatomeet.app.ui.face
 
+import com.potatomeet.app.core.TimeFmt
 import com.potatomeet.app.data.remote.dto.TimeRangeDto
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.ZonedDateTime
 
 class AvailabilityConverterTest {
+    /** Fixed "now" inside each test scope so real calendar date cannot break fixtures. */
+    private val nowAtScope =
+        ZonedDateTime.of(2026, 11, 21, 14, 30, 0, 0, TimeFmt.SEOUL)
+
     @Test
     fun unmarkedSlots_becomeMergedAvailableRanges() {
         val unavailable =
@@ -20,6 +26,7 @@ class AvailabilityConverterTest {
                 unavailable = unavailable,
                 scopeStartsAt = "2026-11-21T00:00:00+09:00",
                 scopeEndsAt = "2026-11-22T00:00:00+09:00",
+                now = ZonedDateTime.of(2026, 11, 21, 0, 0, 0, 0, TimeFmt.SEOUL),
             )
         assertFalse(payload.allUnavailable)
         assertTrue(payload.ranges.isNotEmpty())
@@ -34,20 +41,43 @@ class AvailabilityConverterTest {
     }
 
     @Test
-    fun todayPastSlots_areExcludedFromPayload() {
-        // Server scope starts mid-day (current-time ceil); early morning must not be sent.
+    fun emptyUnavailable_meansFullScopeAvailable() {
         val payload =
             AvailabilityConverter.toAvailablePayload(
                 selectedIsoDates = listOf("2026-11-21"),
                 unavailable = emptyList(),
                 scopeStartsAt = "2026-11-21T14:30:00+09:00",
                 scopeEndsAt = "2026-11-22T00:00:00+09:00",
+                now = nowAtScope,
             )
         assertFalse(payload.allUnavailable)
         assertEquals(1, payload.ranges.size)
         assertTrue(payload.ranges.single().first.contains("T14:30"))
         assertTrue(payload.ranges.single().second.startsWith("2026-11-22"))
         assertFalse(payload.ranges.any { it.first.contains("T00:00") })
+    }
+
+    @Test
+    fun pastSelectedDate_doesNotBlockFutureUnavailableSave() {
+        // Meeting still lists a past day; user marks unavailable only on a future day.
+        val unavailable =
+            listOf(
+                UnavailableSlot("2026-11-25", 10, 0, 10, 30),
+                UnavailableSlot("2026-11-25", 10, 30, 11, 0),
+            )
+        val payload =
+            AvailabilityConverter.toAvailablePayload(
+                selectedIsoDates = listOf("2026-11-20", "2026-11-25"),
+                unavailable = unavailable,
+                scopeStartsAt = "2026-11-20T00:00:00+09:00",
+                scopeEndsAt = "2026-11-26T00:00:00+09:00",
+                now = ZonedDateTime.of(2026, 11, 23, 15, 0, 0, 0, TimeFmt.SEOUL),
+            )
+        assertFalse(payload.allUnavailable)
+        assertFalse(payload.ranges.any { it.first.startsWith("2026-11-20") })
+        assertTrue(payload.ranges.any { it.first.startsWith("2026-11-25") && it.first.contains("T00:00") })
+        assertTrue(payload.ranges.any { it.second.contains("T10:00") })
+        assertTrue(payload.ranges.any { it.first.contains("T11:00") })
     }
 
     @Test
@@ -58,6 +88,7 @@ class AvailabilityConverterTest {
                 unavailable = emptyList(),
                 scopeStartsAt = "2026-11-21T14:30:00+09:00",
                 scopeEndsAt = "2026-11-26T00:00:00+09:00",
+                now = nowAtScope,
             )
         assertFalse(payload.allUnavailable)
         assertTrue(payload.ranges.any { it.first.startsWith("2026-11-25") && it.first.contains("T00:00") })
@@ -75,6 +106,7 @@ class AvailabilityConverterTest {
                     ),
                 scopeStartsAt = "2026-11-21T18:00:00+09:00",
                 scopeEndsAt = "2026-11-24T00:00:00+09:00",
+                now = ZonedDateTime.of(2026, 11, 21, 18, 0, 0, 0, TimeFmt.SEOUL),
             )
         assertFalse(payload.allUnavailable)
         assertTrue(payload.ranges.any { it.first.contains("2026-11-21T18:00") })
@@ -93,6 +125,7 @@ class AvailabilityConverterTest {
                 unavailable = unavailable,
                 scopeStartsAt = "2026-11-22T00:00:00+09:00",
                 scopeEndsAt = "2026-11-23T00:00:00+09:00",
+                now = ZonedDateTime.of(2026, 11, 22, 0, 0, 0, 0, TimeFmt.SEOUL),
             )
         assertEquals(1, payload.ranges.size)
         assertTrue(payload.ranges.single().first.contains("T23:30"))
@@ -109,6 +142,7 @@ class AvailabilityConverterTest {
                 unavailable = all,
                 scopeStartsAt = "2026-11-21T12:00:00+09:00",
                 scopeEndsAt = "2026-11-22T00:00:00+09:00",
+                now = ZonedDateTime.of(2026, 11, 21, 12, 0, 0, 0, TimeFmt.SEOUL),
             )
         assertTrue(payload.allUnavailable)
         assertTrue(payload.ranges.isEmpty())
@@ -123,8 +157,9 @@ class AvailabilityConverterTest {
                 mySubmitted = true,
                 scopeStartsAt = "2026-11-21T20:00:00+09:00",
                 scopeEndsAt = "2026-11-22T00:00:00+09:00",
+                now = ZonedDateTime.of(2026, 11, 21, 20, 0, 0, 0, TimeFmt.SEOUL),
             )
-        assertEquals(8, slots.size) // 20:00..24:00 → 8 half hours
+        assertEquals(8, slots.size)
         assertTrue(slots.all { it.startHour >= 20 })
     }
 
@@ -137,6 +172,7 @@ class AvailabilityConverterTest {
                 mySubmitted = false,
                 scopeStartsAt = "2026-11-21T14:00:00+09:00",
                 scopeEndsAt = "2026-11-22T00:00:00+09:00",
+                now = nowAtScope,
             )
         assertTrue(slots.isEmpty())
     }
@@ -160,10 +196,37 @@ class AvailabilityConverterTest {
                 mySubmitted = true,
                 scopeStartsAt = "2026-11-21T14:00:00+09:00",
                 scopeEndsAt = "2026-11-22T00:00:00+09:00",
+                now = ZonedDateTime.of(2026, 11, 21, 14, 0, 0, 0, TimeFmt.SEOUL),
             )
         assertEquals(2, slots.size)
         assertTrue(slots.any { it.startHour == 15 && it.startMin == 0 })
         assertTrue(slots.any { it.startHour == 15 && it.startMin == 30 })
+    }
+
+    @Test
+    fun display_mergesUnavailableRanges() {
+        val lines =
+            AvailabilityConverter.formatUnavailableDisplay(
+                selectedIsoDates = listOf("2026-11-21"),
+                myAvailable =
+                    listOf(
+                        TimeRangeDto(
+                            start = "2026-11-21T00:00:00+09:00",
+                            end = "2026-11-21T14:00:00+09:00",
+                        ),
+                        TimeRangeDto(
+                            start = "2026-11-21T16:00:00+09:00",
+                            end = "2026-11-22T00:00:00+09:00",
+                        ),
+                    ),
+                mySubmitted = true,
+                scopeStartsAt = "2026-11-21T00:00:00+09:00",
+                scopeEndsAt = "2026-11-22T00:00:00+09:00",
+                now = ZonedDateTime.of(2026, 11, 21, 0, 0, 0, 0, TimeFmt.SEOUL),
+            )
+        assertEquals(1, lines.size)
+        assertTrue(lines.single().rangeLabel.contains("14:00"))
+        assertTrue(lines.single().rangeLabel.contains("16:00"))
     }
 
     @Test
@@ -175,6 +238,7 @@ class AvailabilityConverterTest {
                 past,
                 "2026-11-21T14:30:00+09:00",
                 "2026-11-22T00:00:00+09:00",
+                now = nowAtScope,
             ),
         )
         assertTrue(
@@ -182,6 +246,7 @@ class AvailabilityConverterTest {
                 future,
                 "2026-11-21T14:30:00+09:00",
                 "2026-11-22T00:00:00+09:00",
+                now = nowAtScope,
             ),
         )
     }

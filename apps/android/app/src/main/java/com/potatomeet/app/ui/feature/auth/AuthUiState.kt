@@ -11,7 +11,6 @@ data class AuthUiState(
     val otpPurpose: String? = null,
     val pendingChallenge: String? = null,
     val pendingEmail: String? = null,
-    val pendingNickname: String? = null,
     val resendAfterSec: Int = 60,
     val errorMessage: String? = null,
 )

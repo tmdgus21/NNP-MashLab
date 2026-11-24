@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import unittest
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from unittest.mock import patch
 
@@ -53,11 +54,34 @@ class SelectedDatesTests(unittest.TestCase):
         if previous is not None:
             previous.dispose()
 
+    @contextmanager
+    def _frozen_clock(self):
+        with (
+            patch("schedule.service.utc_now", return_value=self.fixed),
+            patch("schedule.service.seoul_now", return_value=self.fixed),
+            patch("schedule.timeutil.seoul_today", return_value=self.fixed.date()),
+        ):
+            yield
+
     def _create(self, headers, body):
-        with patch("schedule.service.utc_now", return_value=self.fixed):
-            with patch("schedule.service.seoul_now", return_value=self.fixed):
-                with patch("schedule.timeutil.seoul_today", return_value=self.fixed.date()):
-                    return self.client.post("/v1/meetings", headers=headers, json=body)
+        with self._frozen_clock():
+            return self.client.post("/v1/meetings", headers=headers, json=body)
+
+    def _put_response(self, mid, cid, headers, body):
+        with self._frozen_clock():
+            return self.client.put(
+                f"/v1/meetings/{mid}/collections/{cid}/response",
+                headers=headers,
+                json=body,
+            )
+
+    def _join(self, headers, code, nick):
+        with self._frozen_clock():
+            return self.client.post(
+                "/v1/meetings/join",
+                headers=headers,
+                json={"code": code, "nickname": nick},
+            )
 
     def test_selected_dates_create_and_legacy_expand(self):
         h = auth_headers(self.client)
@@ -123,20 +147,14 @@ class SelectedDatesTests(unittest.TestCase):
         mid = created.json()["id"]
         code = created.json()["code"]
         cid = created.json()["collectionId"]
-        self.assertEqual(
-            201,
-            self.client.post(
-                "/v1/meetings/join",
-                headers=h2,
-                json={"code": code, "nickname": "B"},
-            ).status_code,
-        )
+        self.assertEqual(201, self._join(h2, code, "B").status_code)
 
-        # Gap day 2026-11-21 must be rejected
-        gap = self.client.put(
-            f"/v1/meetings/{mid}/collections/{cid}/response",
-            headers=h1,
-            json={
+        # Gap day 2026-11-21 must be rejected (clock frozen so collection stays OPEN)
+        gap = self._put_response(
+            mid,
+            cid,
+            h1,
+            {
                 "available": [
                     {
                         "start": "2026-11-21T10:00:00+09:00",
@@ -148,10 +166,11 @@ class SelectedDatesTests(unittest.TestCase):
         self.assertEqual(422, gap.status_code, gap.text)
 
         # Selected day OK
-        ok = self.client.put(
-            f"/v1/meetings/{mid}/collections/{cid}/response",
-            headers=h1,
-            json={
+        ok = self._put_response(
+            mid,
+            cid,
+            h1,
+            {
                 "available": [
                     {
                         "start": "2026-11-26T10:00:00+09:00",

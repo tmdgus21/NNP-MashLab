@@ -76,7 +76,6 @@ class AuthUseCasesTest {
         runBlocking {
             val result =
                 StartRegisterUseCase(FakeAuthRepository()).invoke(
-                    nickname = "감자",
                     email = "a@b.com",
                     password = "short",
                     passwordConfirm = "short",
@@ -90,7 +89,6 @@ class AuthUseCasesTest {
         runBlocking {
             val result =
                 StartRegisterUseCase(FakeAuthRepository()).invoke(
-                    nickname = "감자",
                     email = "a@b.com",
                     password = "password123456",
                     passwordConfirm = "password654321",
@@ -107,7 +105,6 @@ class AuthUseCasesTest {
             val repo = FakeAuthRepository(registerError = HttpException(Response.error<Unit>(409, body)))
             val result =
                 StartRegisterUseCase(repo).invoke(
-                    nickname = "감자",
                     email = "a@b.com",
                     password = "password123456",
                     passwordConfirm = "password123456",
@@ -123,7 +120,6 @@ class AuthUseCasesTest {
                 VerifyRegisterUseCase(FakeAuthRepository()).invoke(
                     challenge = "chal",
                     code = "123456",
-                    nickname = "감자",
                 )
             assertTrue(result.isSuccess)
             assertEquals("행복한감자100", result.getOrNull()?.nickname)
