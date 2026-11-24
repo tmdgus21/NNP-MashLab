@@ -183,8 +183,7 @@ production:
   rename_pending:                    # Q34: 운영 영향 있음, 별도 승인·배포 계획
     - conditional-ok-* systemd 유닛
     - /run/conditional-ok 소켓 경로
-    - /downloads/potato-meet.apk
-    - /downloads/conditional-ok.apk  # legacy alias → same APK_PATH (ops cutover)
+    - /downloads/potato-meet.apk  # → APK_PATH (/releases/app-release.apk); Conditional OK 다운로드 URL 제거
     - /home/linuxuser/conditional-ok-*
 
 # ─────────────────────────────────────────────────────────────

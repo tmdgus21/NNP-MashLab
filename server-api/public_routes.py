@@ -72,7 +72,8 @@ code{{display:block;font-size:32px;letter-spacing:4px;margin:16px 0;color:#e6510
     )
 
 
-def _apk_response():
+@router.get("/downloads/potato-meet.apk")
+def download_potato_meet():
     if not _apk_available():
         raise HTTPException(404, "앱 배포 파일이 아직 준비되지 않았습니다.")
     return FileResponse(
@@ -80,17 +81,6 @@ def _apk_response():
         media_type="application/vnd.android.package-archive",
         filename="potato-meet.apk",
     )
-
-
-@router.get("/downloads/potato-meet.apk")
-def download_potato_meet():
-    return _apk_response()
-
-
-@router.get("/downloads/conditional-ok.apk")
-def download_legacy_alias():
-    """Legacy path kept for ops cutover compatibility; same APK_PATH file."""
-    return _apk_response()
 
 
 @router.get("/.well-known/assetlinks.json")
