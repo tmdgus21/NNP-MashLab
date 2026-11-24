@@ -15,7 +15,7 @@
 | Q9 | DB | 전체 | 결정: v21 체인 위에 신규 리비전 추가 |
 | Q10 | 화면 갱신 | R7 | 결정: **실시간 갱신** (SSE 이벤트 스트림) |
 | Q11 | applicationId | R3 | 결정: `com.potatomeet.app` |
-| Q12 | 초대 웹 페이지(`/join`)와 APK 다운로드 경로를 Potato Meet용으로 바꿀 시점 | R3 | **결정(2026-11-23):** `/join` HTML은 Potato Meet 문구로 코드만 갱신(별도 웹앱 없음). APK 경로 **`/downloads/potato-meet.apk`**(레거시 `/downloads/conditional-ok.apk`는 동일 파일 alias). `assetlinks`는 저장소 예시(`infra/assetlinks.potatomeet.example.json`)에 **debug SHA-256만**; 릴리스 지문·운영 `ASSETLINKS_PATH` 반영은 **별도 배포**. App Links 운영 자동 실행은 릴리스 서명 등록 전 **가정하지 않음** |
+| Q12 | 초대 웹 페이지(`/join`)와 APK 다운로드 경로를 Potato Meet용으로 바꿀 시점 | R3 | **결정(2026-11-23, 단일 APK 유지):** `/join` HTML은 Potato Meet 문구. 다운로드는 **`/downloads/potato-meet.apk` → `/releases/app-release.apk`(`APK_PATH`)만**. `/downloads/conditional-ok.apk` 라우트 없음. `assetlinks`는 운영에서 두 앱 SHA 병행 가능(별도 파일). App Links 자동 실행은 릴리스 SHA 등록 전 가정하지 않음 |
 | Q13 | 컷오버 시 기존 `/v1/meetings` 데이터(조건부 OK 방) | 전체 | **결정(2026-11-17):** 기존 모임은 **조회 가능**. 삭제는 **해당 모임 방장만**. 일정 수정·조건 입력·신규 참가·투표·재조율 **불가**. 데이터가 없으면 이전 작업 없음. **임의 삭제·새 스키마 자동 변환 금지**. 삭제 시 `deleted_at` + 30일 후 물리삭제 정책(Q39) 유지. **≠ Q39 지난 모임**(확정 종료 시각 경과). 식별: `schedule_collections` 없음 등. 방장= `room_members.room_role=OWNER` + `account_id`로 현재 계정 인증 가능한 경우만 삭제 UI/API 노출 — 계정 미연결 OWNER는 구현 전 **보고** |
 | Q14 | 신규 참가 허용 시점 | R3·R4 | **결정(2026-11-17 갱신, Q20과 동일):** 입력 OPEN·3분 유예 중만 신규 참가 허용. 유예 중 참가로 전원 완료가 깨지면 유예 취소. **입력 마감·후보 계산 시작 이후·투표·확정·진행 중·지난 모임은 신규 참가 금지(409)**. 초대만 보낸 사람은 참가자 아님. (구버전 “투표 시작 후 결과 열람 허용 입장” 폐기) |
 | Q15 | 겹치는 시간 없음 | R5 | 결정 변경: **날짜 확장 없음**(Q35). 같은 범위로 재조정 |
