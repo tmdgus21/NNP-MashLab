@@ -175,17 +175,6 @@ jobs:
           name: potato-meet-signed-release
           path: ${{ runner.temp }}/potato-meet-deploy
 
-      - name: Configure SSH known_hosts
-        env:
-          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
-        run: |
-          set -euo pipefail
-          test -n "${SSH_KNOWN_HOSTS:-}"
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
-
       - name: Stage APK filename for SCP
         run: |
           set -euo pipefail
@@ -197,6 +186,7 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
+          fingerprint: ${{ secrets.SSH_FINGERPRINT }}
           source: potato-meet-ci.apk
           target: /tmp/
           overwrite: true
@@ -209,6 +199,7 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
+          fingerprint: ${{ secrets.SSH_FINGERPRINT }}
           envs: EXPECTED_SHA
           script: |
             set -euo pipefail
