@@ -3,6 +3,8 @@ import json
 import os
 import re
 from pathlib import Path
+from urllib.parse import quote
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy import select
@@ -12,6 +14,9 @@ router = APIRouter()
 
 _APK_PATH = Path(os.getenv("APK_PATH", "/releases/app-release.apk"))
 _ASSETLINKS_PATH = Path(os.getenv("ASSETLINKS_PATH", "/releases/assetlinks.json"))
+_INVITE_HOST = "oranganman.site"
+_APK_DOWNLOAD_URL = f"https://{_INVITE_HOST}/downloads/potato-meet.apk"
+_POTATO_MEET_PACKAGE = "com.potatomeet.app"
 
 
 def _apk_available() -> bool:
@@ -26,6 +31,16 @@ def _invite_title(room: Room) -> str:
     return column or nested or "Potato Meet 모임"
 
 
+def _open_app_intent_href(code: str) -> str:
+    """Android intent:// that opens /join?code=… in Potato Meet, else APK download."""
+    fallback = quote(_APK_DOWNLOAD_URL, safe="")
+    return (
+        f"intent://{_INVITE_HOST}/join?code={code}#Intent;"
+        f"scheme=https;package={_POTATO_MEET_PACKAGE};"
+        f"S.browser_fallback_url={fallback};end"
+    )
+
+
 @router.get("/join", response_class=HTMLResponse)
 def invitation(code: str):
     code = code.upper()
@@ -36,7 +51,7 @@ def invitation(code: str):
         if not room:
             raise HTTPException(404, "존재하지 않는 초대 코드입니다.")
         title = html.escape(_invite_title(room))
-    join_url = html.escape(f"https://oranganman.site/join?code={code}")
+    open_href = html.escape(_open_app_intent_href(code))
     apk_block = ""
     if _apk_available():
         apk_block = (
@@ -62,7 +77,7 @@ code{{display:block;font-size:32px;letter-spacing:4px;margin:16px 0;color:#e6510
 <p class="hint">초대 코드</p>
 <code>{code}</code>
 <p class="hint">앱이 설치되어 있다면 아래 버튼으로 앱을 열어 초대를 확인하세요. 참여는 앱에서 직접 확인해 주세요.</p>
-<a href="{join_url}">앱에서 초대 열기</a>
+<a href="{open_href}">앱에서 초대 열기</a>
 {apk_block}
 </html>""",
         headers={
