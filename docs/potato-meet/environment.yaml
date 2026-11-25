@@ -225,13 +225,13 @@ env_vars:
     - SSH_HOST
     - SSH_USER
     - SSH_KEY
+    - SSH_FINGERPRINT               # host key fingerprint for appleboy ssh/scp (required; no insecure ignore)
     - APP_DIR
   ci_secrets_potato_meet_apk:        # .github/workflows/potato-meet-release.yml
     - POTATO_MEET_KEYSTORE_BASE64   # same keystore as local potato-meet-release.jks
     - POTATO_MEET_STORE_PASSWORD
     - POTATO_MEET_KEY_ALIAS
     - POTATO_MEET_KEY_PASSWORD
-    - SSH_KNOWN_HOSTS               # OpenSSH known_hosts lines for SSH_HOST (required; no insecure ignore)
 
 # ─────────────────────────────────────────────────────────────
 # 7. 저장소 경로 지도

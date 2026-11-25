@@ -15,15 +15,15 @@ jobs:
   test:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: apps/mobile/package-lock.json
       - run: npm ci && npm run typecheck && npm test -- --runInBand
         working-directory: apps/mobile
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
       - run: pip install -r requirements.txt && python -m unittest discover -s tests -v
@@ -50,6 +50,7 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
+          fingerprint: ${{ secrets.SSH_FINGERPRINT }}
           envs: APP_DIR,SHA
           script: |
             set -eu
@@ -99,7 +100,7 @@ jobs:
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$CONDITIONAL_OK_KEYSTORE_PATH"
           bash android/gradlew -p android assembleRelease -PreactNativeArchitectures=arm64-v8a,x86_64 --max-workers=2
           "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose android/app/build/outputs/apk/release/app-release.apk
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: conditional-ok-signed-release
           path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
