@@ -583,10 +583,16 @@ fun FaceRoot(
                                     nickname =
                                         authState.nickname?.takeIf { it.isNotBlank() }
                                             ?: loggedInNickname.value.ifBlank { "사용자" },
-                                    userId = loggedInId.value.ifBlank { "user@example.com" },
+                                    userId =
+                                        authState.email?.takeIf { it.isNotBlank() }
+                                            ?: loggedInId.value.ifBlank { "user@example.com" },
+                                    deletingAccount = authState.deletingAccount,
                                     onLogoutClick = { authViewModel.logout() },
                                     onNicknameChanged = { newNick ->
                                         authViewModel.updateNickname(newNick)
+                                    },
+                                    onDeleteAccountClick = { password ->
+                                        authViewModel.deleteAccount(password)
                                     },
                                     onBackClick = { currentScreen.value = "home" },
                                 )

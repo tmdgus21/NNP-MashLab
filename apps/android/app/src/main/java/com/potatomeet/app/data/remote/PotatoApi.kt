@@ -7,6 +7,8 @@ import com.potatomeet.app.data.remote.dto.AuthVerifyRequest
 import com.potatomeet.app.data.remote.dto.CandidatesResponse
 import com.potatomeet.app.data.remote.dto.CollectionResponse
 import com.potatomeet.app.data.remote.dto.CreateMeetingRequest
+import com.potatomeet.app.data.remote.dto.DeleteAccountRequest
+import com.potatomeet.app.data.remote.dto.DeleteAccountResponse
 import com.potatomeet.app.data.remote.dto.JoinMeetingRequest
 import com.potatomeet.app.data.remote.dto.LoginRequest
 import com.potatomeet.app.data.remote.dto.MeResponse
@@ -70,6 +72,11 @@ interface PotatoApi {
 
     @POST("auth/logout")
     suspend fun logout()
+
+    @HTTP(method = "DELETE", path = "auth/me", hasBody = true)
+    suspend fun deleteAccount(
+        @Body body: DeleteAccountRequest,
+    ): DeleteAccountResponse
 
     @GET("time")
     suspend fun serverTime(): ServerTimeResponse

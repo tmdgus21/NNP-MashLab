@@ -6,6 +6,7 @@ import com.potatomeet.app.data.remote.dto.AuthChallengeRequest
 import com.potatomeet.app.data.remote.dto.AuthChallengeResponse
 import com.potatomeet.app.data.remote.dto.AuthTokenResponse
 import com.potatomeet.app.data.remote.dto.AuthVerifyRequest
+import com.potatomeet.app.data.remote.dto.DeleteAccountRequest
 import com.potatomeet.app.data.remote.dto.LoginRequest
 import com.potatomeet.app.data.remote.dto.MeResponse
 import com.potatomeet.app.data.remote.dto.NicknamePatchRequest
@@ -43,6 +44,8 @@ interface AuthRepository {
     suspend fun updateNickname(nickname: String): MeResponse
 
     suspend fun logout()
+
+    suspend fun deleteAccount(password: String)
 
     suspend fun hasSession(): Boolean
 
@@ -117,6 +120,11 @@ class AuthRepositoryImpl
 
         override suspend fun logout() {
             runCatching { api.logout() }
+            tokenStore.clear()
+        }
+
+        override suspend fun deleteAccount(password: String) {
+            api.deleteAccount(DeleteAccountRequest(password = password))
             tokenStore.clear()
         }
 

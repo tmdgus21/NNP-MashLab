@@ -17,6 +17,14 @@ import java.io.IOException
 
 class AuthUseCasesTest {
     @Test
+    fun deleteAccount_rejectsBlankPassword() =
+        runBlocking {
+            val result = DeleteAccountUseCase(FakeAuthRepository()).invoke("  ")
+            assertTrue(result.isFailure)
+            assertEquals("비밀번호를 입력해 주세요.", result.exceptionOrNull()?.message)
+        }
+
+    @Test
     fun startLogin_rejectsBlankEmail() =
         runBlocking {
             val result = StartLoginUseCase(FakeAuthRepository()).invoke("  ", "password123456")
@@ -241,6 +249,11 @@ private class FakeAuthRepository(
 
     override suspend fun logout() {
         logoutCalled = true
+        hasSessionFlag = false
+    }
+
+    override suspend fun deleteAccount(password: String) {
+        if (password.isBlank()) throw IllegalStateException("blank")
         hasSessionFlag = false
     }
 
