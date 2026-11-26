@@ -140,11 +140,25 @@ class V21SchemaTests(unittest.TestCase):
                 prop_cols = {c["name"] for c in insp.get_columns("proposals")}
                 self.assertTrue({"input_snapshot", "plan", "round", "source_revision"} <= prop_cols)
 
-                member_cols = {c["name"] for c in insp.get_columns("room_members")}
+                member_cols = {c["name"]: c for c in insp.get_columns("room_members")}
                 self.assertTrue(
                     {"token_hash", "request_key_hash", "request_hash", "account_id"}
-                    <= member_cols
+                    <= set(member_cols)
                 )
+                self.assertTrue(member_cols["account_id"]["nullable"])
+                member_fks = insp.get_foreign_keys("room_members")
+                account_fks = [
+                    fk
+                    for fk in member_fks
+                    if fk.get("referred_table") == "accounts"
+                    and fk.get("constrained_columns") == ["account_id"]
+                ]
+                self.assertEqual(1, len(account_fks))
+                ondelete = (account_fks[0].get("options") or {}).get("ondelete")
+                # PostgreSQL must be SET NULL; SQLite batch recreate may omit options in inspector.
+                if engine.dialect.name != "sqlite":
+                    self.assertEqual("SET NULL", ondelete)
+
 
                 account_indexes = {
                     tuple(ix["column_names"])

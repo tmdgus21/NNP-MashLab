@@ -53,3 +53,13 @@ data class MeResponse(
 data class NicknamePatchRequest(
     val nickname: String,
 )
+
+@Serializable
+data class DeleteAccountRequest(
+    val password: String,
+)
+
+@Serializable
+data class DeleteAccountResponse(
+    val deleted: Boolean = false,
+)

@@ -16,13 +16,32 @@ from sqlalchemy import select
 
 from database import session
 from mail_otp import send_otp_email
-from models import Account, AccountSession, UserAuthChallenge, now
+from models import (
+    AIDraft,
+    Account,
+    AccountSession,
+    PasswordResetToken,
+    Room,
+    RoomEvent,
+    RoomMember,
+    Submission,
+    UserAuthChallenge,
+    now,
+)
+from db_v21.models.schedule import (
+    ScheduleResponse,
+    ScheduleResponseRange,
+    ScheduleRun,
+    ScheduleVote,
+    ScheduleVoteBallot,
+)
 from nickname_generator import generate_nickname
 
 OTP_TTL = timedelta(minutes=5)
 RESEND_AFTER = timedelta(seconds=60)
 MAX_ATTEMPTS = 5
 MAX_SENDS_PER_HOUR = 10
+ANONYMIZED_MEMBER_NICKNAME = "탈퇴한 사용자"
 
 
 def _utc(value):
@@ -63,6 +82,11 @@ class VerifyBody(Input):
 
 class NicknamePatch(Input):
     nickname: str = Field(min_length=1, max_length=30)
+
+
+class DeleteAccount(Input):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
+    password: str = Field(min_length=1, max_length=1024)
 
 
 def db_session():
@@ -446,3 +470,163 @@ def logout(authorization: str | None = Header(default=None), db=Depends(db_sessi
         fail(403, "사용할 수 없는 계정입니다.")
     row.revoked_at = now()
     return {"ok": True}
+
+
+def _scrub_text(value: str | None, tokens: list[str]) -> str | None:
+    if not value:
+        return value
+    out = value
+    for token in tokens:
+        if token and token in out:
+            out = out.replace(token, ANONYMIZED_MEMBER_NICKNAME)
+    return out
+
+
+def _delete_account_side_effects(db, account: Account) -> None:
+    """Anonymize memberships, purge leaver PII, transfer ownership; then caller deletes account."""
+    account_id = account.id
+    email = account.login_email
+    account_nick = (account.nickname or "").strip()
+    scrub_tokens = [t for t in {email, account_nick} if t]
+
+    members = list(
+        db.scalars(
+            select(RoomMember).where(RoomMember.account_id == account_id).with_for_update()
+        ).all()
+    )
+    member_ids = [m.id for m in members]
+    room_ids = {m.room_id for m in members}
+    owned_room_ids = {m.room_id for m in members if m.room_role == "OWNER"}
+    for m in members:
+        nick = (m.nickname or "").strip()
+        if nick:
+            scrub_tokens.append(nick)
+
+    if member_ids:
+        for row in db.scalars(
+            select(ScheduleResponseRange).where(
+                ScheduleResponseRange.room_member_id.in_(member_ids)
+            )
+        ).all():
+            db.delete(row)
+        for row in db.scalars(
+            select(ScheduleResponse).where(ScheduleResponse.room_member_id.in_(member_ids))
+        ).all():
+            db.delete(row)
+        for row in db.scalars(
+            select(ScheduleVote).where(ScheduleVote.room_member_id.in_(member_ids))
+        ).all():
+            db.delete(row)
+        for row in db.scalars(
+            select(ScheduleVoteBallot).where(
+                ScheduleVoteBallot.room_member_id.in_(member_ids)
+            )
+        ).all():
+            db.delete(row)
+        # Legacy Conditional OK rows (unused by Potato Meet UI) — still purge PII.
+        for row in db.scalars(
+            select(AIDraft).where(AIDraft.room_member_id.in_(member_ids))
+        ).all():
+            db.delete(row)
+        for row in db.scalars(
+            select(Submission).where(Submission.room_member_id.in_(member_ids))
+        ).all():
+            db.delete(row)
+
+    left_at = now()
+    for member in members:
+        member.nickname = ANONYMIZED_MEMBER_NICKNAME
+        member.membership_status = "LEFT"
+        member.left_at = left_at
+        member.account_id = None
+        member.token_hash = None
+        member.request_key_hash = None
+        member.request_hash = None
+        if member.room_role == "OWNER":
+            member.room_role = "MEMBER"
+
+    for room in db.scalars(
+        select(Room).where(Room.created_by_account_id == account_id).with_for_update()
+    ).all():
+        room.created_by_account_id = None
+        room_ids.add(room.id)
+
+    for room_id in owned_room_ids:
+        room = db.get(Room, room_id)
+        if room is None or room.progress_status == "deleted":
+            continue
+        successor = db.scalar(
+            select(RoomMember)
+            .where(
+                RoomMember.room_id == room_id,
+                RoomMember.membership_status == "ACTIVE",
+            )
+            .order_by(RoomMember.joined_at.asc())
+            .with_for_update()
+        )
+        if successor is not None:
+            successor.room_role = "OWNER"
+            room.host_member_id = successor.id
+        else:
+            room.progress_status = "deleted"
+            room.deleted_at = left_at
+            room.revision = int(room.revision or 1) + 1
+
+    if room_ids and scrub_tokens:
+        for run in db.scalars(
+            select(ScheduleRun).where(ScheduleRun.room_id.in_(room_ids))
+        ).all():
+            scrubbed = _scrub_text(run.ai_summary, scrub_tokens)
+            if scrubbed != run.ai_summary:
+                run.ai_summary = scrubbed
+        for event in db.scalars(
+            select(RoomEvent).where(RoomEvent.room_id.in_(room_ids))
+        ).all():
+            scrubbed = _scrub_text(event.message, scrub_tokens)
+            if scrubbed != event.message:
+                event.message = scrubbed or ANONYMIZED_MEMBER_NICKNAME
+
+    for row in db.scalars(
+        select(AccountSession).where(AccountSession.account_id == account_id)
+    ).all():
+        db.delete(row)
+
+    for row in db.scalars(
+        select(PasswordResetToken).where(PasswordResetToken.account_id == account_id)
+    ).all():
+        db.delete(row)
+
+    for row in db.scalars(
+        select(UserAuthChallenge).where(
+            (UserAuthChallenge.account_id == account_id)
+            | (UserAuthChallenge.email == email)
+        )
+    ).all():
+        db.delete(row)
+
+
+@router.delete("/me")
+def delete_me(
+    body: DeleteAccount,
+    authorization: str | None = Header(default=None),
+    db=Depends(db_session),
+):
+    """Hard-delete the authenticated USER account after password re-check.
+
+    Leavers are anonymized; schedule availability/votes and legacy AI drafts for
+    that membership are removed. OWNER rooms transfer to another ACTIVE member or
+    soft-delete when empty. Other participants and confirmed results stay.
+    """
+    account = account_from_authorization(db, authorization)
+    if account.account_type != "USER":
+        fail(403, "사용할 수 없는 계정입니다.")
+    try:
+        valid = PASSWORDS.verify(account.password_hash, body.password)
+    except (VerificationError, InvalidHashError):
+        valid = False
+    if not valid:
+        fail(403, "비밀번호가 올바르지 않습니다.")
+
+    _delete_account_side_effects(db, account)
+    db.delete(account)
+    return {"deleted": True}

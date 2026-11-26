@@ -457,6 +457,26 @@ fun FaceRoot(
                                             localUnavailable.add(slot)
                                         }
                                     },
+                                    onBulkSetSlots = { slots, markUnavailable ->
+                                        if (meetingState.mutating) return@EditUnavailableScreen
+                                        val selectable =
+                                            slots.filter {
+                                                AvailabilityConverter.isSlotInScope(
+                                                    it,
+                                                    scopeStartsAt,
+                                                    scopeEndsAt,
+                                                )
+                                            }
+                                        if (selectable.isEmpty()) return@EditUnavailableScreen
+                                        val next =
+                                            UnavailableBulkToggle.apply(
+                                                current = localUnavailable.toList(),
+                                                selectable = selectable,
+                                                markUnavailable = markUnavailable,
+                                            )
+                                        localUnavailable.clear()
+                                        localUnavailable.addAll(next)
+                                    },
                                     onBackClick = { currentScreen.value = "room_detail" },
                                     onSaveClick = {
                                         if (meetingState.mutating) return@EditUnavailableScreen
@@ -563,10 +583,16 @@ fun FaceRoot(
                                     nickname =
                                         authState.nickname?.takeIf { it.isNotBlank() }
                                             ?: loggedInNickname.value.ifBlank { "사용자" },
-                                    userId = loggedInId.value.ifBlank { "user@example.com" },
+                                    userId =
+                                        authState.email?.takeIf { it.isNotBlank() }
+                                            ?: loggedInId.value.ifBlank { "user@example.com" },
+                                    deletingAccount = authState.deletingAccount,
                                     onLogoutClick = { authViewModel.logout() },
                                     onNicknameChanged = { newNick ->
                                         authViewModel.updateNickname(newNick)
+                                    },
+                                    onDeleteAccountClick = { password ->
+                                        authViewModel.deleteAccount(password)
                                     },
                                     onBackClick = { currentScreen.value = "home" },
                                 )
