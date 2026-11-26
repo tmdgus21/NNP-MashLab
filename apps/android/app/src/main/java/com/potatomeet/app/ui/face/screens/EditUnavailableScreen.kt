@@ -23,6 +23,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -41,6 +42,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.potatomeet.app.ui.face.AvailabilityConverter
+import com.potatomeet.app.ui.face.UnavailableBulkToggle
 import com.potatomeet.app.ui.face.UnavailableSlot
 import com.potatomeet.app.ui.face.components.TopLogoHeader
 import com.potatomeet.app.ui.face.halfHourSlotsForDate
@@ -57,6 +59,7 @@ fun EditUnavailableScreen(
     scopeEndsAt: String? = null,
     saving: Boolean = false,
     onToggleSlot: (UnavailableSlot) -> Unit,
+    onBulkSetSlots: (slots: List<UnavailableSlot>, markUnavailable: Boolean) -> Unit = { _, _ -> },
     onBackClick: () -> Unit,
     onSaveClick: () -> Unit,
 ) {
@@ -84,6 +87,22 @@ fun EditUnavailableScreen(
         remember(selectedTabIso) {
             if (selectedTabIso.isBlank()) emptyList() else halfHourSlotsForDate(selectedTabIso)
         }
+    val pageCandidates =
+        remember(selectedTabIso, startHourOfPage, endHourOfPage) {
+            UnavailableBulkToggle.pageSlots(selectedTabIso, startHourOfPage, endHourOfPage)
+        }
+    val pageSelectable =
+        remember(pageCandidates, scopeStartsAt, scopeEndsAt) {
+            UnavailableBulkToggle.selectable(pageCandidates, scopeStartsAt, scopeEndsAt)
+        }
+    val daySelectable =
+        remember(daySlots, scopeStartsAt, scopeEndsAt) {
+            UnavailableBulkToggle.selectable(daySlots, scopeStartsAt, scopeEndsAt)
+        }
+    val pageMarkUnavailable =
+        UnavailableBulkToggle.shouldMarkUnavailable(pageSelectable, unavailableSlots)
+    val dayMarkUnavailable =
+        UnavailableBulkToggle.shouldMarkUnavailable(daySelectable, unavailableSlots)
 
     Column(modifier = Modifier.fillMaxSize()) {
         Box(
@@ -218,6 +237,32 @@ fun EditUnavailableScreen(
                             }
                         }
                     }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedBulkToggleButton(
+                        modifier = Modifier.weight(1f),
+                        enabled = !saving && pageSelectable.isNotEmpty(),
+                        title = "현재 8시간",
+                        action = UnavailableBulkToggle.actionLabel(pageMarkUnavailable),
+                        onClick = {
+                            onBulkSetSlots(pageSelectable, pageMarkUnavailable)
+                        },
+                    )
+                    OutlinedBulkToggleButton(
+                        modifier = Modifier.weight(1f),
+                        enabled = !saving && daySelectable.isNotEmpty(),
+                        title = "하루 전체",
+                        action = UnavailableBulkToggle.actionLabel(dayMarkUnavailable),
+                        onClick = {
+                            onBulkSetSlots(daySelectable, dayMarkUnavailable)
+                        },
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -421,6 +466,33 @@ fun EditUnavailableScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun OutlinedBulkToggleButton(
+    modifier: Modifier = Modifier,
+    enabled: Boolean,
+    title: String,
+    action: String,
+    onClick: () -> Unit,
+) {
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.height(52.dp),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, Color(0xFFFFB74D)),
+        colors =
+            ButtonDefaults.outlinedButtonColors(
+                contentColor = Color(0xFF3C1E1E),
+                disabledContentColor = Color(0xFFBDBDBD),
+            ),
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(text = title, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text(text = action, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFE65100))
         }
     }
 }
