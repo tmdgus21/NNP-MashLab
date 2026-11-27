@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Potato Meet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+/* VOICE occasion: a playful product site, homage to a scroll-driven builder site
+   IDEA a cross-section of a potato field: one seed planted, friends join underground, the best day sprouts
+   PICTURE a scroll-scrubbed canvas film of the field, opened through a giant POTATO letter mask
+   COLOUR yolk yellow fields, soil brown, sprout green as the one accent
+   TYPE Archivo Black display + Noto Sans KR
+   LAYOUT pinned full-bleed film with copy in the sky corner; bands below; phone stacks */
+:root{color-scheme:light;--yolk:#f7cf5c;--skin:#b9803f;--soil:#2a180c;--soil2:#4a2c17;--sprout:#3f9a3c;--leaf:#1f4d24;--paper:#fffaf0;--ink:#24160b}
+*{box-sizing:border-box;min-width:0}
+html{scroll-behavior:smooth;scroll-padding-top:72px}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.6 "Noto Sans KR",system-ui,sans-serif;overflow-x:clip}
+a{color:inherit}
+h1,h2,h3{margin:0;font-family:"Archivo Black","Noto Sans KR",sans-serif;font-weight:400;line-height:.98;letter-spacing:-.01em;text-wrap:balance}
+nav{position:fixed;top:12px;left:max(3vw,12px);right:max(3vw,12px);z-index:50;display:flex;align-items:center;gap:20px;padding:8px 8px 8px 16px;background:rgba(255,250,240,.92);backdrop-filter:blur(8px);border-radius:14px;box-shadow:0 1px 0 rgba(0,0,0,.08)}
+nav .logo{display:flex;align-items:center;gap:8px;font-family:"Archivo Black",sans-serif;text-decoration:none;font-size:17px}
+nav .links{display:flex;gap:18px;margin-left:auto;font-size:15px}
+nav .links a{text-decoration:none;opacity:.8}
+nav .links a:hover{opacity:1;text-decoration:underline}
+.cta{display:inline-flex;align-items:center;min-height:44px;padding:0 18px;border-radius:10px;background:var(--sprout);color:#fff;font-weight:700;text-decoration:none;white-space:nowrap}
+.cta:hover{background:#2f7f2d}
+.cta:focus-visible,a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+.stage{position:relative;height:820vh}
+.sticky{position:sticky;top:0;height:100svh;overflow:hidden;background:#8ccbec}
+.sticky canvas,.sticky svg{position:absolute;inset:0;width:100%;height:100%}
+.sticky svg{pointer-events:none}
+.intro{position:absolute;left:0;right:0;bottom:7%;text-align:center;padding:0 16px;font-weight:700;font-size:clamp(17px,2vw,22px)}
+.intro small{display:block;font-weight:400;font-size:15px;margin-top:6px;opacity:.75}
+.copy{position:absolute;left:max(5vw,16px);top:92px;width:min(600px,86vw)}
+.copy article{position:absolute;top:0;left:0;opacity:0;transition:none}
+.copy h2{font-size:clamp(36px,6.2vw,76px)}
+.copy p{margin:12px 0 0;font-size:17px;max-width:32ch;font-weight:700}
+.meter{position:absolute;right:max(3vw,14px);top:50%;transform:translateY(-50%);display:grid;gap:10px}
+.meter i{display:block;width:6px;height:28px;border-radius:3px;background:rgba(255,255,255,.45)}
+.meter i.on{background:var(--yolk);box-shadow:0 0 0 2px var(--soil)}
+.sample{position:absolute;right:max(3vw,14px);bottom:12px;font-size:13px;color:#fff;opacity:.7}
+.band{padding:clamp(48px,7vw,110px) max(5vw,16px)}
+.lot{background:var(--soil);color:var(--yolk);overflow:hidden;padding-inline:0}
+.row{white-space:nowrap;font-family:"Archivo Black",sans-serif;font-size:clamp(52px,10vw,150px);line-height:1.02;will-change:transform}
+.row.out{color:transparent;-webkit-text-stroke:2px var(--yolk)}
+.row.green{color:#8fd05a}
+.lot p{max-width:640px;margin:36px max(5vw,16px) 0;color:var(--paper);font-size:17px}
+.slice{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:clamp(24px,4vw,64px);align-items:center;max-width:1240px;margin:auto}
+.slice h2{font-size:clamp(40px,6vw,80px);margin-bottom:14px}
+.fig{position:relative;min-height:440px}
+.fig svg{position:absolute;inset:0;width:100%;height:100%}
+.ctl{display:flex;align-items:center;gap:14px;margin-top:8px;font-weight:700}
+input[type=range]{flex:1;appearance:none;height:44px;background:transparent;cursor:pointer}
+input[type=range]::-webkit-slider-runnable-track{height:8px;border-radius:4px;background:linear-gradient(90deg,var(--sprout) var(--v,0%),#e7dcc4 var(--v,0%))}
+input[type=range]::-webkit-slider-thumb{appearance:none;width:26px;height:26px;margin-top:-9px;border-radius:50%;background:var(--skin);border:3px solid var(--paper);box-shadow:0 0 0 2px var(--skin)}
+input[type=range]::-moz-range-track{height:8px;border-radius:4px;background:#e7dcc4}
+input[type=range]::-moz-range-progress{height:8px;border-radius:4px;background:var(--sprout)}
+input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:var(--skin);border:3px solid var(--paper)}
+.layers{list-style:none;margin:20px 0 0;padding:0;display:grid;gap:6px}
+.layers li{padding:12px 14px;border-radius:12px;border:2px solid transparent;cursor:pointer}
+.layers li.on{border-color:var(--sprout);background:#f2f8e8}
+.layers b{display:block;font-size:17px}
+.layers span{font-size:15px;opacity:.8}
+.stack{font-size:14px;margin-top:16px;opacity:.7}
+.poke{background:var(--leaf);color:var(--paper)}
+.poke .in{max-width:1240px;margin:auto}
+.poke canvas{display:block;width:100%;height:clamp(180px,30vw,380px);cursor:crosshair;touch-action:manipulation}
+.poke .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(15em,1fr));gap:24px;margin-top:28px}
+.poke h3{font-size:22px;color:var(--yolk);margin-bottom:6px}
+.poke p{margin:0;opacity:.9}
+.hint{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-weight:700;margin-bottom:8px}
+.count{color:var(--yolk);white-space:nowrap}
+footer{background:var(--yolk);color:var(--soil);padding:clamp(40px,6vw,80px) max(5vw,16px) 28px}
+.big{display:flex;flex-wrap:wrap;column-gap:.25em;font-family:"Archivo Black",sans-serif;font-size:clamp(60px,15.5vw,236px);line-height:.9;user-select:none;margin:20px 0 32px}
+.big span{display:inline-block;will-change:transform;cursor:pointer}
+.word{display:flex}
+.foot{display:grid;grid-template-columns:minmax(0,1.4fr) repeat(2,minmax(0,1fr));gap:24px;font-size:15px}
+.foot h3{font-family:"Noto Sans KR",sans-serif;font-weight:900;font-size:16px;margin-bottom:6px}
+.foot a{display:block;padding:4px 0}
+.fine{margin-top:32px;font-size:13px;opacity:.75}
+@media(max-width:900px){.slice{grid-template-columns:minmax(0,1fr)}.fig{min-height:380px}}
+@media(max-width:600px){nav .links{display:none}nav .cta{margin-left:auto}.copy{top:80px}.copy p{font-size:16px}.meter{display:none}.foot{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.foot>div:first-child{grid-column:1/-1}}
+</style>
+</head>
+<body>
+<nav>
+  <a class="logo" href="#top"><svg width="26" height="22" viewBox="0 0 26 22" aria-hidden="true"><path d="M3 12c-1-6 5-10 11-9s10 5 9 10-6 8-12 7S4 17 3 12z" fill="#b9803f"/><circle cx="10" cy="10" r="1.3" fill="#2a180c"/><circle cx="16" cy="9" r="1.3" fill="#2a180c"/><path d="M14 3c0-2 2-3 4-2" stroke="#3f9a3c" stroke-width="2" fill="none"/></svg>Potato Meet</a>
+  <div class="links"><a href="#film">어떻게</a><a href="#slice">기능</a><a href="#poke">단단함</a><a href="#footer">팀</a></div>
+  <a class="cta" href="https://github.com/tmdgus21/NNP-MashLab">GitHub</a>
+</nav>
+
+<section class="stage" id="top">
+  <div class="sticky" id="film">
+    <canvas id="cv" aria-label="감자밭 단면: 방장 감자가 심어지고 친구들이 합류해 일정을 채우고, AI가 겹치는 날을 찾아 투표로 확정되는 장면"></canvas>
+    <div class="copy" id="copy">
+      <article><h2>Plant a date</h2><p>방장이 날짜 범위를 정해 모임을 심어요.</p></article>
+      <article><h2>One link, five friends</h2><p>공유 링크를 받은 팀원이 하나씩 땅속으로 합류해요.</p></article>
+      <article><h2>Schedules take root</h2><p>각자 되는 날을 칠하면 뿌리처럼 칸이 채워져요.</p></article>
+      <article><h2>The AI digs</h2><p>팀 서버에 올린 Qwen이 가장 많이 겹치는 날을 캐내요.</p></article>
+      <article><h2>Two sprouts, one vote</h2><p>최다 인원 후보가 둘 이상이면 중복 투표, 하나면 바로 확정돼요.</p></article>
+      <article><h2>Now it's a meetup</h2><p>토요일, 다섯 명. 날짜가 정해졌어요.</p></article>
+    </div>
+    <div class="meter" id="meter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <div class="sample">이름·일정·투표 수는 예시예요</div>
+    <svg id="mask" aria-hidden="true"><defs><mask id="m"><rect id="mr" fill="#fff"/><g id="mg"><text id="t1" text-anchor="middle" font-family="Archivo Black" fill="#000">POTATO</text><text id="t2" text-anchor="middle" font-family="Archivo Black" fill="#000">MEET</text></g></mask></defs><rect id="cover" fill="#f7cf5c" mask="url(#m)"/></svg>
+    <div class="intro" id="intro">모임 날짜, 감자들이 알아서 맞춰요<small>스크롤해서 하나 심어 보기 ↓</small></div>
+  </div>
+</section>
+
+<section class="band lot" id="lot">
+  <div class="row" data-dir="-1">WE PLANT THE DATE / WE PLANT THE DATE / WE PLANT THE DATE / </div>
+  <div class="row out" data-dir="1">WE DIG THE TIMES / WE DIG THE TIMES / WE DIG THE TIMES / </div>
+  <div class="row green" data-dir="-1">WE SERVE THE MEETUP / WE SERVE THE MEETUP / </div>
+  <p>단톡방에서 "언제 돼?"를 스무 번 묻지 않아도 돼요. 방장은 날짜 범위만 정하고, 친구들은 되는 날만 칠하고, 나머지는 Potato Meet이 캐내요.</p>
+</section>
+
+<section class="band" id="slice">
+  <div class="slice">
+    <div>
+      <div class="fig"><svg id="sv" viewBox="0 0 420 470" role="img" aria-label="다섯 겹으로 썬 감자, 각 겹이 앱의 기능"></svg></div>
+      <div class="ctl"><label for="spread">벌리기</label><input id="spread" type="range" min="0" max="100" value="55"></div>
+    </div>
+    <div>
+      <h2>Slice one open</h2>
+      <p>감자 한 알을 다섯 겹으로 썰면 앱 구조가 그대로 보여요. 겹을 눌러 보세요.</p>
+      <ul class="layers" id="layers"></ul>
+      <div class="stack">Kotlin Android · Postgres + Alembic · 팀 SSH 서버의 Qwen</div>
+    </div>
+  </div>
+</section>
+
+<section class="band poke" id="poke">
+  <div class="in">
+    <div class="hint"><span>눌러서 찔러 보세요. 잘 안 으깨져요.</span><span class="count" id="count">찌른 횟수 0</span></div>
+    <canvas id="pc" aria-label="POKE IT 글자, 누르면 움푹 파여요"></canvas>
+    <div class="grid">
+      <div><h3>두 번 확인하는 로그인</h3><p>이메일 로그인에 SMTP로 보내는 OTP를 더해 2단계로 인증해요.</p></div>
+      <div><h3>버티는 인원부터 재요</h3><p>한 모임에 몇 명까지 받을지는 JMeter 부하 테스트로 정해요.</p></div>
+      <div><h3>우리 땅에서 키운 AI</h3><p>외부 LLM API 키 없이, 팀 서버에 직접 설치한 Qwen이 일정을 조율해요.</p></div>
+    </div>
+  </div>
+</section>
+
+<footer id="footer">
+  <h2 style="font-size:clamp(28px,3.6vw,44px)">모임 날짜를 고르는 감자들</h2>
+  <div class="big" id="big"><div class="word">POTATO</div><div class="word">MEET</div></div>
+  <div class="foot">
+    <div><h3>Potato Meet</h3>모임을 만들고, 일정을 모으고, AI가 추천한 날을 투표로 확정하는 Android 앱. NNP-MashLab 팀이 만들고 있어요.</div>
+    <div><h3>둘러보기</h3><a href="#film">어떻게 맞춰지나</a><a href="#slice">기능 다섯 겹</a><a href="#poke">보안과 부하 테스트</a></div>
+    <div><h3>코드</h3><a href="https://github.com/tmdgus21/NNP-MashLab">GitHub 저장소</a><span>github.com/tmdgus21/NNP-MashLab</span></div>
+  </div>
+  <div class="fine">글자를 건드려 보세요. 화면 속 이름, 일정, 투표 수는 예시예요.</div>
+</footer>
+
+<script>
+{
+const $=s=>document.querySelector(s);
+const clamp=(x,a=0,b=1)=>Math.min(b,Math.max(a,x));
+const ease=x=>x<.5?2*x*x:1-((-2*x+2)**2)/2;
+const lerp=(a,b,t)=>a+(b-a)*t;
+const hex=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
+const mix=(a,b,t)=>{const A=hex(a),B=hex(b);return `rgb(${A.map((v,i)=>Math.round(lerp(v,B[i],t))).join(',')})`};
+let seed=7;const rnd=()=>(seed=seed*16807%2147483647)/2147483647;
+
+const names=['방장','민지','도윤','서연','하준','유나'];
+const days=['월','화','수','목','금','토','일'];
+const avail=[[0,1,0,0,1,1,0],[1,0,0,1,1,1,0],[0,0,1,0,0,0,1],[0,1,0,0,1,1,0],[1,0,0,0,1,1,1],[0,0,1,0,1,1,0]];
+const sums=days.map((_,d)=>avail.reduce((s,r)=>s+r[d],0));
+const top=Math.max(...sums);const best=sums.map((s,d)=>s===top?d:-1).filter(d=>d>=0);
+const stones=Array.from({length:46},()=>({x:rnd(),y:rnd(),r:2+rnd()*7,t:rnd()}));
+const tufts=Array.from({length:90},()=>({x:rnd(),h:5+rnd()*9}));
+const shapes=names.map(()=>Array.from({length:9},()=>.86+rnd()*.24));
+const conf=Array.from({length:60},()=>({x:rnd(),y:rnd(),c:['#f7cf5c','#3f9a3c','#fffaf0','#e86f3c'][Math.floor(rnd()*4)],s:rnd()}));
+
+const cv=$('#cv'),ctx=cv.getContext('2d');
+let W=0,H=0,dpr=1,t=0;
+
+function blob(cx,cy,rx,ry,f){
+  const n=f.length,pts=[];
+  for(let k=0;k<n;k++){const a=k/n*Math.PI*2;pts.push([cx+Math.cos(a)*rx*f[k],cy+Math.sin(a)*ry*f[k]])}
+  ctx.beginPath();
+  const m=(a,b)=>[(a[0]+b[0])/2,(a[1]+b[1])/2];
+  let s=m(pts[n-1],pts[0]);ctx.moveTo(s[0],s[1]);
+  for(let k=0;k<n;k++){const p=pts[k],q=m(p,pts[(k+1)%n]);ctx.quadraticCurveTo(p[0],p[1],q[0],q[1])}
+  ctx.closePath();
+}
+function potato(x,y,r,i,a,joy){
+  if(a<=0)return;
+  ctx.save();ctx.globalAlpha=Math.min(1,a);ctx.translate(x,y);const sc=.4+.6*ease(clamp(a));ctx.scale(sc,sc);
+  ctx.fillStyle='rgba(0,0,0,.28)';ctx.beginPath();ctx.ellipse(3,r*.72,r*1.05,r*.22,0,0,7);ctx.fill();
+  blob(0,0,r*1.18,r*.88,shapes[i]);
+  const g=ctx.createRadialGradient(-r*.4,-r*.4,r*.1,0,0,r*1.3);g.addColorStop(0,'#ecc27a');g.addColorStop(1,'#9a6430');ctx.fillStyle=g;ctx.fill();
+  ctx.fillStyle='rgba(90,50,20,.45)';
+  for(let k=0;k<4;k++){ctx.beginPath();ctx.arc(Math.cos(k*1.7+i)*r*.7,Math.sin(k*2.3+i)*r*.5,r*.06,0,7);ctx.fill()}
+  ctx.fillStyle='#2a180c';ctx.beginPath();ctx.arc(-r*.3,-r*.12,r*.1,0,7);ctx.arc(r*.3,-r*.12,r*.1,0,7);ctx.fill();
+  ctx.strokeStyle='#2a180c';ctx.lineWidth=Math.max(1.5,r*.08);ctx.lineCap='round';ctx.beginPath();ctx.arc(0,r*.08,r*(.16+.1*joy),.15*Math.PI,.85*Math.PI);ctx.stroke();
+  if(i===0){ctx.strokeStyle='#3f9a3c';ctx.lineWidth=r*.12;ctx.beginPath();ctx.moveTo(r*.1,-r*.82);ctx.quadraticCurveTo(r*.2,-r*1.3,r*.6,-r*1.35);ctx.stroke()}
+  ctx.restore();
+}
+function sprout(x,base,h,a,lean){
+  if(h<=1)return;
+  ctx.save();ctx.globalAlpha=a;ctx.strokeStyle='#3f9a3c';ctx.lineWidth=5;ctx.lineCap='round';
+  ctx.beginPath();ctx.moveTo(x,base);ctx.quadraticCurveTo(x+lean,base-h*.5,x,base-h);ctx.stroke();
+  const ls=Math.min(1,h/60)*18;ctx.fillStyle='#4fae46';
+  for(const sd of [-1,1]){ctx.beginPath();ctx.ellipse(x+sd*ls*.9,base-h*.55,ls,ls*.42,sd*-.5,0,7);ctx.fill()}
+  ctx.restore();
+}
+function render(){
+  if(!W)return;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const p=clamp((t-.16)/.84);
+  const hy=H*.42,dusk=clamp((p-.55)/.45);
+  let g=ctx.createLinearGradient(0,0,0,hy);g.addColorStop(0,mix('#8ccbec','#f2a160',dusk*.8));g.addColorStop(1,mix('#d9f0f7','#fde3a7',dusk));
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,hy+2);
+  const sr=Math.min(W,H)*.06;ctx.fillStyle='#fff4c9';ctx.beginPath();ctx.arc(W*.8,hy-H*.24+dusk*H*.12,sr,0,7);ctx.fill();
+  [['#a7c991',.09,26],['#79ad5f',.05,14]].forEach(([c,amp,o],j)=>{ctx.fillStyle=c;ctx.beginPath();ctx.moveTo(0,hy);for(let x=0;x<=W;x+=20)ctx.lineTo(x,hy-o-Math.sin(x/W*6+j*2)*H*amp*.4-H*amp*.3);ctx.lineTo(W,hy);ctx.fill()});
+  g=ctx.createLinearGradient(0,hy,0,H);g.addColorStop(0,'#7a4b28');g.addColorStop(1,'#24140a');ctx.fillStyle=g;ctx.fillRect(0,hy,W,H-hy);
+  ctx.strokeStyle='rgba(0,0,0,.14)';ctx.lineWidth=2;
+  for(let k=1;k<5;k++){const y=hy+(H-hy)*k/5;ctx.beginPath();for(let x=0;x<=W;x+=24)ctx.lineTo(x,y+Math.sin(x/90+k)*6);ctx.stroke()}
+  for(const s of stones){ctx.fillStyle=s.t>.5?'rgba(255,230,190,.12)':'rgba(0,0,0,.2)';ctx.beginPath();ctx.ellipse(s.x*W,hy+24+s.y*(H-hy-24),s.r*1.4,s.r,0,0,7);ctx.fill()}
+  ctx.fillStyle='#5e9b43';ctx.fillRect(0,hy-2,W,14);
+  ctx.strokeStyle='#4d8a35';ctx.lineWidth=2;
+  for(const u of tufts){const x=u.x*W;ctx.beginPath();ctx.moveTo(x-3,hy);ctx.lineTo(x,hy-u.h);ctx.lineTo(x+3,hy);ctx.stroke()}
+
+  const gx0=clamp(W*.14,64,150),gx1=W-Math.max(28,W*.05),cw=(gx1-gx0)/7;
+  const gy0=hy+46,rh=Math.min(64,(H-gy0-20)/6),pr=Math.min(rh*.36,gx0*.3);
+  const px=gx0*.5,py=i=>gy0+rh*(i+.5);
+  ctx.font=`700 13px "Noto Sans KR",sans-serif`;ctx.textAlign='center';
+
+  const gridA=clamp((p-.3)/.05);
+  for(let i=0;i<6;i++)for(let d=0;d<7;d++){
+    const x=gx0+d*cw+3,y=gy0+i*rh+4,w=cw-6,h=rh-8;
+    if(gridA>0){ctx.strokeStyle=`rgba(255,240,210,${.14*gridA})`;ctx.lineWidth=1;ctx.strokeRect(x,y,w,h)}
+    if(avail[i][d]){const a=clamp((p-(.34+(i*7+d)/42*.17))/.025);
+      if(a>0){ctx.fillStyle=`rgba(143,208,90,${.85*a})`;const k=(1-a)*w*.3;ctx.beginPath();ctx.roundRect(x+k/2,y+k/2,w-k,h-k,6);ctx.fill()}}
+  }
+  const sc=clamp((p-.55)/.15);
+  for(let d=0;d<7;d++){
+    const cx=gx0+(d+.5)*cw,done=sc*7>d+.5;
+    ctx.fillStyle=`rgba(255,250,240,${gridA})`;ctx.fillText(done&&p<.97?`${days[d]} ${sums[d]}`:days[d],cx,hy+34);
+  }
+  if(sc>0&&sc<1){const x=gx0+sc*(gx1-gx0);g=ctx.createLinearGradient(x-40,0,x,0);g.addColorStop(0,'rgba(247,207,92,0)');g.addColorStop(1,'rgba(247,207,92,.5)');ctx.fillStyle=g;ctx.fillRect(x-40,gy0-6,40,rh*6+8);ctx.fillStyle='#f7cf5c';ctx.fillRect(x-2,gy0-6,4,rh*6+8)}
+  const hl=clamp((p-.69)/.03);
+  if(hl>0)for(const d of best){const lose=d!==5?clamp((p-.88)/.06):0;ctx.strokeStyle=`rgba(247,207,92,${hl*(1-lose*.75)})`;ctx.lineWidth=3;ctx.beginPath();ctx.roundRect(gx0+d*cw,gy0-6,cw,rh*6+10,8);ctx.stroke()}
+
+  const lp=clamp((p-.13)/.2);
+  if(lp>0){ctx.strokeStyle='rgba(240,215,160,.55)';ctx.lineWidth=2;
+    for(let i=1;i<6;i++){const f=clamp(lp*5-(i-1));if(f<=0)continue;ctx.beginPath();
+      for(let k=0;k<=20*f;k++){const u=k/20,x=px+Math.sin(u*Math.PI)*pr*1.9*(i%2?1:-.6),y=lerp(py(0),py(i),u);k?ctx.lineTo(x,y):ctx.moveTo(x,y)}ctx.stroke()}}
+
+  const drop=ease(clamp(p/.11));
+  potato(px,lerp(hy-H*.3,py(0),drop),pr,0,clamp(p/.02+(t>.1?1:0)),p>.9?1:.3);
+  for(let i=1;i<6;i++){const a=clamp((p-(.14+(i-1)*.035))/.04);potato(px,py(i),pr,i,a,p>.9&&avail[i][5]?1:.3)}
+  ctx.fillStyle='rgba(255,250,240,.9)';ctx.textAlign='center';
+  if(p>.12)for(let i=0;i<6;i++){const a=i?clamp((p-(.14+(i-1)*.035))/.04):1;if(a>.6&&rh>44)ctx.fillText(names[i],px,py(i)+pr+13)}
+
+  const gp=clamp((p-.72)/.1),vp=clamp((p-.78)/.1),fp=clamp((p-.88)/.08);
+  if(gp>0)best.forEach((d,j)=>{
+    const win=d===5,x=gx0+(d+.5)*cw;
+    const h=ease(gp)*H*.13+(win?ease(vp)*H*.1:0);
+    const fade=win?1:1-fp*.6;
+    sprout(x,hy,h,fade,win?8:-8);
+    const votes=Math.round(ease(vp)*(win?5:3));
+    if(vp>0){ctx.save();ctx.globalAlpha=fade;ctx.fillStyle='#fffaf0';ctx.beginPath();ctx.arc(x+26,hy-h+4,16,0,7);ctx.fill();ctx.fillStyle='#24160b';ctx.font=`900 15px "Noto Sans KR",sans-serif`;ctx.fillText(votes,x+26,hy-h+9);ctx.restore()}
+    if(win&&fp>0){const r=12*ease(fp);ctx.fillStyle='#f6f1ff';for(let k=0;k<5;k++){const a=k/5*Math.PI*2;ctx.beginPath();ctx.ellipse(x+Math.cos(a)*r,hy-h+Math.sin(a)*r,r*.75,r*.5,a,0,7);ctx.fill()}ctx.fillStyle='#f7cf5c';ctx.beginPath();ctx.arc(x,hy-h,r*.45,0,7);ctx.fill()}
+  });
+  if(fp>0)for(const c of conf){ctx.fillStyle=c.c;ctx.globalAlpha=fp;ctx.fillRect(c.x*W,(c.y*.8+fp*.15*c.s)*hy,6,10);ctx.globalAlpha=1}
+
+  const arts=[...document.querySelectorAll('#copy article')],cut=[0,.13,.33,.54,.71,.88,1.01];
+  arts.forEach((el,i)=>{const a=cut[i],b=cut[i+1];let o=Math.min(clamp((p-a)/.03+(i===0?1:0)),clamp((b-p)/.03+(i===5?1:0)));if(t<.12)o=0;else if(i===0)o=Math.min(o,clamp((t-.12)/.04));el.style.opacity=o;el.style.transform=`translateY(${(1-o)*16}px)`});
+  const on=cut.findIndex((c,i)=>p>=c&&p<cut[i+1]);
+  document.querySelectorAll('#meter i').forEach((m,i)=>m.classList.toggle('on',i<=on&&t>.12));
+
+  const it=clamp(t/.16),s=1+28*(ease(it)**2);
+  $('#mg').setAttribute('transform',`translate(${W/2} ${H*.45}) scale(${s}) translate(${-W/2} ${-H*.45})`);
+  const co=1-clamp((t-.08)/.07);$('#cover').style.opacity=co;$('#intro').style.opacity=1-clamp(t/.05);
+}
+function size(){
+  dpr=Math.min(2,devicePixelRatio||1);W=cv.clientWidth;H=cv.clientHeight;cv.width=W*dpr;cv.height=H*dpr;
+  const sv=$('#mask');sv.setAttribute('viewBox',`0 0 ${W} ${H}`);
+  for(const id of ['mr','cover']){$('#'+id).setAttribute('width',W);$('#'+id).setAttribute('height',H)}
+  const fs=Math.min(W*.21,H*.3),t1=$('#t1'),t2=$('#t2');
+  t1.setAttribute('x',W/2);t1.setAttribute('y',H*.45);t1.setAttribute('font-size',fs);t1.setAttribute('textLength',Math.min(W*.9,fs*4.6));t1.setAttribute('lengthAdjust','spacingAndGlyphs');
+  t2.setAttribute('x',W/2);t2.setAttribute('y',H*.45+fs*.62);t2.setAttribute('font-size',fs*.42);
+  render();
+}
+
+const rows=[...document.querySelectorAll('.row')],lot=$('#lot');
+function marquee(){const o=(scrollY-lot.offsetTop+innerHeight)*.35;rows.forEach(r=>{const d=+r.dataset.dir;r.style.transform=`translateX(${d<0?-o:o-r.scrollWidth*.4}px)`})}
+const stage=$('#top');
+let queued=false;
+function onScroll(){if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;const r=stage.getBoundingClientRect();t=clamp(-r.top/(r.height-innerHeight));render();marquee()})}
+addEventListener('scroll',onScroll,{passive:true});
+const ro=new ResizeObserver(()=>{size();drawPoke()});ro.observe(cv);
+
+const layers=[
+  ['껍질 · 로그인 보안','이메일 로그인에 SMTP로 보내는 OTP를 더한 2단계 인증.'],
+  ['모임','날짜 범위를 정해 만들고 링크로 공유. 삭제는 방장만 할 수 있어요.'],
+  ['스케줄','팀원 각자가 되는 날을 입력해요.'],
+  ['AI 조율','팀 서버의 Qwen이 가장 많이 겹치는 날을 찾아 추천해요.'],
+  ['투표 · 확정','후보가 둘 이상이면 중복 투표, 하나면 자동 확정. 인원 상한은 JMeter 부하 테스트로.']];
+let act=0;
+const ul=$('#layers');
+ul.innerHTML=layers.map((l,i)=>`<li tabindex="0" data-i="${i}"><b>${l[0]}</b><span>${l[1]}</span></li>`).join('');
+const sv=$('#sv'),spread=$('#spread');
+const sliceF=layers.map(()=>Array.from({length:10},()=>.93+rnd()*.12));
+function pathOf(cx,cy,rx,ry,f){const n=f.length,P=[];for(let k=0;k<n;k++){const a=k/n*Math.PI*2;P.push([cx+Math.cos(a)*rx*f[k],cy+Math.sin(a)*ry*f[k]])}
+  const m=(a,b)=>[(a[0]+b[0])/2,(a[1]+b[1])/2];let s=m(P[n-1],P[0]),d=`M${s[0].toFixed(1)} ${s[1].toFixed(1)}`;
+  for(let k=0;k<n;k++){const q=m(P[k],P[(k+1)%n]);d+=`Q${P[k][0].toFixed(1)} ${P[k][1].toFixed(1)} ${q[0].toFixed(1)} ${q[1].toFixed(1)}`}return d+'Z'}
+function drawSlice(){
+  const v=spread.value/100;spread.style.setProperty('--v',spread.value+'%');
+  const wf=[.72,.95,1,.93,.74],gap=24+v*50,y0=235-2*gap;let out='';
+  out+=`<ellipse cx="214" cy="${y0+4*gap+60}" rx="160" ry="26" fill="rgba(42,24,12,.12)"/>`;
+  for(let i=4;i>=0;i--){
+    const y=y0+i*gap,rx=170*wf[i],ry=52*wf[i],on=i===act,lift=on?-8:0;
+    out+=`<g data-i="${i}" style="cursor:pointer" transform="translate(${on?12:0} ${lift})">`;
+    out+=`<path d="${pathOf(210,y+16,rx,ry,sliceF[i])}" fill="#9a6430"/>`;
+    out+=`<path d="${pathOf(210,y,rx,ry,sliceF[i])}" fill="${i===0?'#c99150':'#f6dc8e'}" stroke="${on?'#3f9a3c':'#b9803f'}" stroke-width="${on?4:2}"/>`;
+    if(i===0)out+=`<circle cx="175" cy="${y-8}" r="4" fill="#7a4b28"/><circle cx="240" cy="${y+10}" r="3.5" fill="#7a4b28"/><circle cx="268" cy="${y-14}" r="3" fill="#7a4b28"/>`;
+    else for(let k=0;k<6;k++)out+=`<circle cx="${210+Math.cos(k*2.1+i)*rx*.55}" cy="${y+Math.sin(k*1.3+i)*ry*.5}" r="2.4" fill="#e9c56b"/>`;
+    out+=`<circle cx="${210-rx-22}" cy="${y+8}" r="15" fill="${on?'#3f9a3c':'#fffaf0'}" stroke="#2a180c" stroke-width="2"/><text x="${210-rx-22}" y="${y+13}" text-anchor="middle" font-family="Archivo Black" font-size="14" fill="${on?'#fff':'#2a180c'}">${i+1}</text></g>`;
+  }
+  sv.innerHTML=out;
+  ul.querySelectorAll('li').forEach((li,i)=>li.classList.toggle('on',i===act));
+}
+const pick=i=>{act=+i;drawSlice()};
+spread.addEventListener('input',drawSlice);
+ul.addEventListener('click',e=>{const li=e.target.closest('li');if(li)pick(li.dataset.i)});
+ul.addEventListener('keydown',e=>{const li=e.target.closest('li');if(li&&(e.key==='Enter'||e.key===' ')){e.preventDefault();pick(li.dataset.i)}});
+ul.addEventListener('mouseover',e=>{const li=e.target.closest('li');if(li&&+li.dataset.i!==act)pick(li.dataset.i)});
+sv.addEventListener('click',e=>{const g=e.target.closest('g');if(g)pick(g.dataset.i)});
+drawSlice();
+
+const pc=$('#pc'),pctx=pc.getContext('2d');const dents=[];let pokes=0;
+const pspots=Array.from({length:70},()=>({x:rnd(),y:rnd(),r:1+rnd()*3}));
+function drawPoke(){
+  const w=pc.clientWidth,h=pc.clientHeight,r=Math.min(2,devicePixelRatio||1);if(!w)return;
+  pc.width=w*r;pc.height=h*r;pctx.setTransform(r,0,0,r,0,0);pctx.clearRect(0,0,w,h);
+  pctx.font='100px "Archivo Black"';const mw=pctx.measureText('POKE IT').width;const fs=Math.min(100*w*.98/mw,h*1.15);
+  pctx.font=`${fs}px "Archivo Black"`;pctx.textAlign='center';pctx.textBaseline='middle';
+  const g=pctx.createLinearGradient(0,0,0,h);g.addColorStop(0,'#d9a35c');g.addColorStop(1,'#9a6430');
+  pctx.fillStyle=g;pctx.fillText('POKE IT',w/2,h*.54);
+  pctx.globalCompositeOperation='source-atop';
+  pctx.fillStyle='rgba(90,50,20,.4)';for(const s of pspots){pctx.beginPath();pctx.arc(s.x*w,s.y*h,s.r,0,7);pctx.fill()}
+  for(const d of dents){
+    let q=pctx.createRadialGradient(d.x-d.r*.25,d.y-d.r*.25,0,d.x,d.y,d.r);q.addColorStop(0,'rgba(50,25,8,.75)');q.addColorStop(.7,'rgba(70,38,14,.45)');q.addColorStop(1,'rgba(70,38,14,0)');
+    pctx.fillStyle=q;pctx.beginPath();pctx.arc(d.x,d.y,d.r,0,7);pctx.fill();
+    pctx.strokeStyle='rgba(255,230,170,.5)';pctx.lineWidth=2;pctx.beginPath();pctx.arc(d.x,d.y,d.r*.9,.1*Math.PI,.7*Math.PI);pctx.stroke();
+  }
+  pctx.globalCompositeOperation='source-over';
+}
+pc.addEventListener('pointerdown',e=>{
+  const b=pc.getBoundingClientRect(),x=e.clientX-b.left,y=e.clientY-b.top,r=Math.min(2,devicePixelRatio||1);
+  const hit=pctx.getImageData(Math.floor(x*r),Math.floor(y*r),1,1).data[3]>0;
+  if(!hit)return;dents.push({x,y,r:14+Math.random()*16});pokes++;$('#count').textContent=`찌른 횟수 ${pokes}`;drawPoke();
+});
+
+const big=$('#big');
+big.querySelectorAll('.word').forEach(w=>{w.innerHTML=[...w.textContent].map(c=>`<span>${c}</span>`).join('')});
+const L=[...big.querySelectorAll('span')].map(el=>({el,y:0,v:0,r:0,w:0}));
+let running=false,lastX=0,lastY=0;
+function step(){
+  let e=0;
+  for(const l of L){l.v+=-.07*l.y;l.v*=.86;l.y+=l.v;l.w+=-.07*l.r;l.w*=.84;l.r+=l.w;e+=Math.abs(l.y)+Math.abs(l.v)+Math.abs(l.r);l.el.style.transform=`translateY(${l.y.toFixed(1)}px) rotate(${l.r.toFixed(1)}deg)`}
+  if(e>.05)requestAnimationFrame(step);else running=false;
+}
+const kick=()=>{if(!running){running=true;requestAnimationFrame(step)}};
+big.addEventListener('pointermove',e=>{
+  const sp=Math.min(40,Math.hypot(e.clientX-lastX,e.clientY-lastY));lastX=e.clientX;lastY=e.clientY;
+  for(const l of L){const b=l.el.getBoundingClientRect(),dx=e.clientX-(b.left+b.width/2),dy=e.clientY-(b.top+b.height/2),d=Math.hypot(dx,dy),R=b.width*1.1;
+    if(d<R){const k=1-d/R;l.v-=k*sp*.12;l.w+=(dx>0?-1:1)*k*sp*.08}}
+  kick();
+});
+big.addEventListener('click',e=>{const el=e.target.closest('span');const l=L.find(q=>q.el===el);if(l){l.v-=22;l.w+=(Math.random()-.5)*24;kick()}});
+
+document.fonts.ready.then(()=>{size();drawPoke()});
+size();onScroll();
+}
+</script>
+</body>
+</html>

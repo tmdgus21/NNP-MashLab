@@ -2,9 +2,10 @@ from datetime import date, time
 import asyncio
 from contextlib import asynccontextmanager
 import logging
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 from prometheus_fastapi_instrumentator import Instrumentator
 from sqlalchemy.exc import IntegrityError, OperationalError
@@ -133,8 +134,14 @@ async def database_error(request, exc):
     return JSONResponse(status_code=503, content={"detail": "저장소 연결에 실패했습니다. 잠시 후 재시도하세요."})
 
 
-@app.get("/")
+LANDING_PAGE = Path(__file__).resolve().parent / "landing" / "index.html"
+
+
+@app.api_route("/", methods=["GET", "HEAD"])
 def read_root():
+    # 웹 소개 페이지. 파일이 없으면 기존 JSON 응답으로 동작한다.
+    if LANDING_PAGE.is_file():
+        return FileResponse(LANDING_PAGE, media_type="text/html; charset=utf-8")
     return {
         "status": "success",
         "message": "FastAPI가 실행 중입니다."
