@@ -135,6 +135,56 @@ class ScheduleSseSweepTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(200, cands.status_code, cands.text)
         body = cands.json()
         self.assertEqual("두 명이 모두 가능한 2시간 구간입니다.", body["aiSummary"])
+        self.assertIsNone(body["aiComparison"])
+        self.assertGreaterEqual(len(body["candidates"]), 1)
+
+    def test_candidates_exposes_ai_comparison_v2(self):
+        h1 = self._register()
+        h2 = self._register()
+        meeting = self._create(h1)
+        mid, code, cid = meeting["id"], meeting["code"], meeting["collectionId"]
+        self._join(h2, code, "B")
+        now = datetime.now(SEOUL)
+        start = ceil_to_slot(now + timedelta(hours=4))
+        end = start + timedelta(hours=2)
+        with session() as db, db.begin():
+            room = db.get(Room, mid)
+            col = db.get(ScheduleCollection, cid)
+            col.scope_starts_at = ceil_to_slot(now.replace(hour=0, minute=0, second=0, microsecond=0))
+            col.scope_ends_at = end + timedelta(hours=2)
+            members = {
+                m.nickname: m
+                for m in db.scalars(select(RoomMember).where(RoomMember.room_id == mid))
+            }
+            ranges = [(start, end)]
+            svc.submit_response(db, room, members["A"], cid, ranges, now=now)
+            svc.submit_response(db, room, members["B"], cid, ranges, now=now)
+            col = db.get(ScheduleCollection, cid)
+            col.grace_until = now
+            svc.close_collection_if_due(db, mid, now=now + timedelta(minutes=1))
+            run = db.scalar(
+                select(ScheduleRun)
+                .where(ScheduleRun.room_id == mid)
+                .order_by(ScheduleRun.created_at.desc())
+            )
+            run.ai_summary = json.dumps(
+                {
+                    "v": 2,
+                    "summary": "요약 문장입니다.",
+                    "comparison": [
+                        {"rank": 1, "pros": ["전원 참석", "가장 빠른 일정"], "cons": ["저녁 시간대"]}
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        cands = self.client.get(f"/v1/meetings/{mid}/candidates", headers=h1)
+        self.assertEqual(200, cands.status_code, cands.text)
+        body = cands.json()
+        self.assertEqual("요약 문장입니다.", body["aiSummary"])
+        self.assertEqual(
+            [{"sortOrder": 1, "pros": ["전원 참석", "가장 빠른 일정"], "cons": ["저녁 시간대"]}],
+            body["aiComparison"],
+        )
         self.assertGreaterEqual(len(body["candidates"]), 1)
 
     def test_sweep_grace_idempotent(self):
