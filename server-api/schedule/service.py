@@ -943,6 +943,7 @@ def candidates_view(
             "status": _meeting_status(room),
             "revision": room.revision,
             "aiSummary": None,
+            "aiComparison": None,
             "votingEndsAt": None,
             "excludedSoonCount": 0,
             "myBallotSubmitted": False,
@@ -990,12 +991,16 @@ def candidates_view(
                 ],
             }
         )
+    from schedule.ai_summary import parse_stored_summary
+
+    ai_summary, ai_comparison = parse_stored_summary(run.ai_summary)
     return {
         "runId": run.id,
         "candidates": out,
         "status": _meeting_status(room),
         "revision": room.revision,
-        "aiSummary": run.ai_summary,
+        "aiSummary": ai_summary,
+        "aiComparison": ai_comparison,
         "votingEndsAt": format_iso(run.voting_ends_at) if run.voting_ends_at else None,
         "excludedSoonCount": run.excluded_soon_count,
         "myBallotSubmitted": my_ballot,

@@ -76,7 +76,7 @@ schedule_runs                     -- AI 조율 1회 실행
   max_count        Integer NOT NULL        -- M
   participant_count Integer NOT NULL       -- N = 이번 입력 기간 완료자 수 (조율 대상)
   voter_count      Integer NULL            -- 투표 대상자 수 = 입력 완료자 수 (Q33)
-  ai_summary       Text NULL               -- Qwen 요약, 실패 시 NULL (백그라운드로 채움)
+  ai_summary       Text NULL               -- Qwen 요약 JSON {v:2, summary, comparison[]} (옛 행은 평문), 실패 시 NULL (백그라운드로 채움)
   voting_started_at DateTime(tz) NULL      -- 후보 2개+일 때 투표 시작 시각
   voting_ends_at   DateTime(tz) NULL       -- min(시작+6시간, 가장 이른 후보 시작−30분) (Q30)
   excluded_soon_count Integer NOT NULL DEFAULT 0  -- 투표 시간 부족으로 제외한 후보 수

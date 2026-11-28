@@ -83,6 +83,7 @@ class PotatoMeetDtoContractTests(unittest.TestCase):
             "status",
             "revision",
             "aiSummary",
+            "aiComparison",
             "votingEndsAt",
             "excludedSoonCount",
             "myBallotSubmitted",
