@@ -1,3 +1,11 @@
 # Copy to potatomeet.properties (gitignored) for local overrides.
 # Must be HTTPS in production.
 API_BASE_URL=https://oranganman.site/v1
+
+# Release signing (local only — never commit potatomeet.properties or the .jks).
+# Default local keystore location (outside the repo). Use forward slashes:
+#   C:/Users/<you>/.android/potato-meet-signing/potato-meet-release.jks
+POTATO_MEET_KEYSTORE_PATH=
+POTATO_MEET_STORE_PASSWORD=
+POTATO_MEET_KEY_ALIAS=potato-meet
+POTATO_MEET_KEY_PASSWORD=

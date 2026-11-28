@@ -165,7 +165,15 @@ class WorkflowTests(unittest.TestCase):
         two=self.client.post('/v1/meetings/join',json=join,headers=headers)
         self.assertEqual(one.status_code,201)
         self.assertEqual(one.json(),two.json())
-        self.assertEqual(self.client.get('/join',params={'code':join['code']}).status_code,200)
+        invite=self.client.get('/join',params={'code':join['code']})
+        self.assertEqual(invite.status_code,200)
+        self.assertIn('Potato Meet', invite.text)
+        self.assertNotIn('조건부 OK', invite.text)
+        self.assertNotIn('conditionalok://', invite.text)
+        if 'Android 앱 다운로드' in invite.text:
+            self.assertIn('/downloads/potato-meet.apk', invite.text)
+        else:
+            self.assertIn('초대 코드', invite.text)
         self.assertEqual(self.client.get('/join',params={'code':'invalid'}).status_code,422)
 
     def test_member_events_flush_actor_before_room_event_fk(self):

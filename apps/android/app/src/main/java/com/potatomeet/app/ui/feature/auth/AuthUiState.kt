@@ -8,10 +8,10 @@ data class AuthUiState(
     val nickname: String? = null,
     val loginLoading: Boolean = false,
     val registerLoading: Boolean = false,
+    val deletingAccount: Boolean = false,
     val otpPurpose: String? = null,
     val pendingChallenge: String? = null,
     val pendingEmail: String? = null,
-    val pendingNickname: String? = null,
     val resendAfterSec: Int = 60,
     val errorMessage: String? = null,
 )

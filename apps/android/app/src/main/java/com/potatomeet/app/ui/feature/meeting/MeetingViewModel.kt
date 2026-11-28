@@ -115,22 +115,41 @@ class MeetingViewModel
             }
         }
 
-        fun joinMeeting(code: String) {
+        fun joinMeeting(
+            code: String,
+            @Suppress("UNUSED_PARAMETER") fromInviteConfirm: Boolean = false,
+        ) {
             viewModelScope.launch {
                 val c = code.trim().uppercase()
                 if (c.length != 8) {
-                    _events.tryEmit(MeetingEvent.Toast("초대 코드 8자리를 입력해 주세요."))
+                    val msg = "초대 코드 8자리를 입력해 주세요."
+                    _uiState.update { it.copy(errorMessage = msg) }
+                    _events.tryEmit(MeetingEvent.Toast(msg))
                     return@launch
                 }
+                val alreadyMember =
+                    _uiState.value.meetings.any { it.code.equals(c, ignoreCase = true) }
                 _uiState.update { it.copy(mutating = true, errorMessage = null) }
                 runCatching {
                     meetingRepository.join(c)
                 }.onSuccess { meeting ->
                     openMeeting(meeting, navigate = true)
+                    val toast =
+                        if (alreadyMember) {
+                            "이미 참여 중인 모임입니다."
+                        } else {
+                            "모임에 참여했습니다."
+                        }
+                    _events.tryEmit(MeetingEvent.Toast(toast))
                 }.onFailure { e ->
+                    // 409 closed / forbidden re-entry: errorMessage stays for invite confirm UI.
                     fail(e)
                 }
             }
+        }
+
+        fun clearError() {
+            _uiState.update { it.copy(errorMessage = null) }
         }
 
         fun openMeetingById(
@@ -237,7 +256,7 @@ class MeetingViewModel
                     )
                 }.onSuccess { col ->
                     _uiState.update { it.copy(mutating = false, collection = col) }
-                    _events.tryEmit(MeetingEvent.Toast("가능 시간을 서버에 저장했습니다."))
+                    _events.tryEmit(MeetingEvent.Toast("불가능 시간을 서버에 저장했습니다."))
                     refreshActive()
                     _events.tryEmit(MeetingEvent.Navigate("room_detail"))
                 }.onFailure { e ->

@@ -18,7 +18,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -33,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.potatomeet.app.ui.face.components.MultiDateCalendarPicker
 import com.potatomeet.app.ui.face.components.TopLogoHeader
+import com.potatomeet.app.ui.face.components.faceTextFieldColors
 import java.time.LocalDate
 import java.time.YearMonth
 
@@ -74,28 +74,7 @@ fun CreateRoomScreen(
                     .padding(horizontal = 20.dp)
                     .verticalScroll(rememberScrollState()),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "모임 만들기",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF333333),
-                )
-                Surface(color = Color(0xFF2196F3), shape = RoundedCornerShape(6.dp)) {
-                    Text(
-                        text = "복수 날짜 선택",
-                        fontSize = 11.sp,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -114,11 +93,12 @@ fun CreateRoomScreen(
                     OutlinedTextField(
                         value = roomTitle,
                         onValueChange = onRoomTitleChange,
-                        placeholder = { Text("모임 이름을 입력해주세요") },
+                        placeholder = { Text("모임 이름을 입력해주세요", color = Color(0xFF9E9E9E)) },
                         singleLine = true,
                         enabled = !isLoading,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
+                        colors = faceTextFieldColors(),
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -128,21 +108,16 @@ fun CreateRoomScreen(
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF555555),
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "서버에 저장되지 않습니다. 이 화면에만 표시됩니다.",
-                        fontSize = 11.sp,
-                        color = Color(0xFF888888),
-                    )
                     Spacer(modifier = Modifier.height(6.dp))
                     OutlinedTextField(
                         value = roomDesc,
                         onValueChange = onRoomDescChange,
-                        placeholder = { Text("모임에 대한 간단한 설명") },
+                        placeholder = { Text("모임에 대한 간단한 설명", color = Color(0xFF9E9E9E)) },
                         singleLine = true,
                         enabled = !isLoading,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
+                        colors = faceTextFieldColors(),
                     )
 
                     if (!accountNickname.isNullOrBlank()) {

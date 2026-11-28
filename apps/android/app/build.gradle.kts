@@ -21,6 +21,22 @@ val apiBaseUrl =
             ?: "https://oranganman.site/v1"
     ).trimEnd('/')
 
+fun propOrEnv(key: String): String? =
+    localProps.getProperty(key)?.takeIf { it.isNotBlank() }
+        ?: System.getenv(key)?.takeIf { it.isNotBlank() }
+
+val releaseStoreFilePath = propOrEnv("POTATO_MEET_KEYSTORE_PATH")
+val releaseStorePassword = propOrEnv("POTATO_MEET_STORE_PASSWORD")
+val releaseKeyAlias = propOrEnv("POTATO_MEET_KEY_ALIAS")
+val releaseKeyPassword = propOrEnv("POTATO_MEET_KEY_PASSWORD")
+val releaseSigningConfigured =
+    listOf(
+        releaseStoreFilePath,
+        releaseStorePassword,
+        releaseKeyAlias,
+        releaseKeyPassword,
+    ).all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.potatomeet.app"
     compileSdk = 35
@@ -29,10 +45,22 @@ android {
         applicationId = "com.potatomeet.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        create("release") {
+            if (releaseSigningConfigured) {
+                // Properties treat '\' as escapes; prefer forward slashes in potatomeet.properties.
+                storeFile = file(releaseStoreFilePath!!.replace('\\', '/'))
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
     }
 
     buildTypes {
@@ -42,6 +70,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
@@ -96,4 +125,24 @@ ktlint {
     android.set(true)
     // Face UI dump split keeps original formatting; tighten after screen Routes land.
     ignoreFailures.set(true)
+}
+
+gradle.taskGraph.whenReady {
+    val needsReleaseSigning =
+        allTasks.any { task ->
+            task.name.contains("Release", ignoreCase = true) &&
+                (
+                    task.name.startsWith("assemble") ||
+                        task.name.startsWith("bundle") ||
+                        task.name.startsWith("package") ||
+                        task.name.startsWith("sign")
+                )
+        }
+    if (needsReleaseSigning && !releaseSigningConfigured) {
+        throw GradleException(
+            "Missing release signing. Set POTATO_MEET_KEYSTORE_PATH, " +
+                "POTATO_MEET_STORE_PASSWORD, POTATO_MEET_KEY_ALIAS, " +
+                "POTATO_MEET_KEY_PASSWORD in potatomeet.properties or the environment.",
+        )
+    }
 }

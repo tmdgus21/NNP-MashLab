@@ -183,7 +183,7 @@ production:
   rename_pending:                    # Q34: 운영 영향 있음, 별도 승인·배포 계획
     - conditional-ok-* systemd 유닛
     - /run/conditional-ok 소켓 경로
-    - /downloads/conditional-ok.apk
+    - /downloads/potato-meet.apk  # → APK_PATH (/releases/app-release.apk); Conditional OK 다운로드 URL 제거
     - /home/linuxuser/conditional-ok-*
 
 # ─────────────────────────────────────────────────────────────
@@ -218,14 +218,20 @@ env_vars:
     apps/mobile/.env.example: 기존 RN 앱 (변경 없음, 컷오버 후 제거)
     apps/android/potatomeet.properties.example: 새 앱 (신규)
   ci_secrets_existing:               # GitHub 저장소 Secrets
-    - ANDROID_KEYSTORE_BASE64
+    - ANDROID_KEYSTORE_BASE64       # Conditional OK (RN) only — do not reuse for Potato Meet
     - ANDROID_STORE_PASSWORD
     - ANDROID_KEY_ALIAS
     - ANDROID_KEY_PASSWORD
     - SSH_HOST
     - SSH_USER
     - SSH_KEY
+    - SSH_FINGERPRINT               # host key fingerprint for appleboy ssh/scp (required; no insecure ignore)
     - APP_DIR
+  ci_secrets_potato_meet_apk:        # .github/workflows/potato-meet-release.yml
+    - POTATO_MEET_KEYSTORE_BASE64   # same keystore as local potato-meet-release.jks
+    - POTATO_MEET_STORE_PASSWORD
+    - POTATO_MEET_KEY_ALIAS
+    - POTATO_MEET_KEY_PASSWORD
 
 # ─────────────────────────────────────────────────────────────
 # 7. 저장소 경로 지도

@@ -17,6 +17,14 @@ import java.io.IOException
 
 class AuthUseCasesTest {
     @Test
+    fun deleteAccount_rejectsBlankPassword() =
+        runBlocking {
+            val result = DeleteAccountUseCase(FakeAuthRepository()).invoke("  ")
+            assertTrue(result.isFailure)
+            assertEquals("비밀번호를 입력해 주세요.", result.exceptionOrNull()?.message)
+        }
+
+    @Test
     fun startLogin_rejectsBlankEmail() =
         runBlocking {
             val result = StartLoginUseCase(FakeAuthRepository()).invoke("  ", "password123456")
@@ -76,7 +84,6 @@ class AuthUseCasesTest {
         runBlocking {
             val result =
                 StartRegisterUseCase(FakeAuthRepository()).invoke(
-                    nickname = "감자",
                     email = "a@b.com",
                     password = "short",
                     passwordConfirm = "short",
@@ -90,7 +97,6 @@ class AuthUseCasesTest {
         runBlocking {
             val result =
                 StartRegisterUseCase(FakeAuthRepository()).invoke(
-                    nickname = "감자",
                     email = "a@b.com",
                     password = "password123456",
                     passwordConfirm = "password654321",
@@ -107,7 +113,6 @@ class AuthUseCasesTest {
             val repo = FakeAuthRepository(registerError = HttpException(Response.error<Unit>(409, body)))
             val result =
                 StartRegisterUseCase(repo).invoke(
-                    nickname = "감자",
                     email = "a@b.com",
                     password = "password123456",
                     passwordConfirm = "password123456",
@@ -123,7 +128,6 @@ class AuthUseCasesTest {
                 VerifyRegisterUseCase(FakeAuthRepository()).invoke(
                     challenge = "chal",
                     code = "123456",
-                    nickname = "감자",
                 )
             assertTrue(result.isSuccess)
             assertEquals("행복한감자100", result.getOrNull()?.nickname)
@@ -245,6 +249,11 @@ private class FakeAuthRepository(
 
     override suspend fun logout() {
         logoutCalled = true
+        hasSessionFlag = false
+    }
+
+    override suspend fun deleteAccount(password: String) {
+        if (password.isBlank()) throw IllegalStateException("blank")
         hasSessionFlag = false
     }
 

@@ -1,0 +1,2024 @@
+﻿package com.example.potatomeet
+
+import android.os.Bundle
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.potatomeet.ui.theme.PotatoMeetTheme
+
+data class UserAccount(
+    var nickname: String,
+    val id: String,
+    val pw: String,
+    val twoFactorCode: String
+)
+
+data class UnavailableTimeSlot(
+    val id: Long = System.currentTimeMillis() + (0..10000).random(),
+    var dateStr: String,
+    var startHour: Int,
+    var startMin: Int,
+    var endHour: Int,
+    var endMin: Int
+) {
+    fun toFormattedString(): String {
+        val sH = String.format("%02d", startHour)
+        val sM = String.format("%02d", startMin)
+        val eH = String.format("%02d", endHour)
+        val eM = String.format("%02d", endMin)
+        return "$dateStr   ${sH}:${sM} ~ ${eH}:${eM}"
+    }
+}
+
+data class AiCandidateSlot(
+    val id: Int,
+    val rankLabel: String,
+    val timeStr: String,
+    val availableCount: Int,
+    val totalCount: Int,
+    val voterNames: List<String> = emptyList()
+) {
+    fun toAvailabilitySummary(): String {
+        val needCoordCount = (totalCount - availableCount).coerceAtLeast(0)
+        return if (availableCount >= totalCount && totalCount > 0) {
+            "모든 참여자(${totalCount})명 참여가능"
+        } else {
+            "참여자 ${availableCount}명 참여가능, ${needCoordCount}명 조율 필요"
+        }
+    }
+}
+
+data class RoomModel(
+    val id: Long = System.currentTimeMillis(),
+    val title: String,
+    val description: String,
+    val selectedDates: List<String>,
+    val hostName: String,
+    val ownerId: String = "admin",
+    val participants: List<String> = listOf("관리자"),
+    val unavailableSlots: List<UnavailableTimeSlot> = emptyList(),
+    val aiCandidates: List<AiCandidateSlot> = emptyList(),
+    val invitedCount: Int = 0,
+    val isConfirmed: Boolean = false,
+    val finalAiTime: String = ""
+)
+
+@Composable
+private fun appTextFieldColors(): TextFieldColors {
+    return OutlinedTextFieldDefaults.colors(
+        focusedTextColor = Color.Black,
+        unfocusedTextColor = Color.Black,
+        disabledTextColor = Color.Black,
+        cursorColor = Color(0xFFFF8F00),
+        focusedContainerColor = Color.White,
+        unfocusedContainerColor = Color.White,
+        disabledContainerColor = Color.White,
+        focusedBorderColor = Color(0xFFFF9800),
+        unfocusedBorderColor = Color(0xFFE0E0E0)
+    )
+}
+
+private fun buildDefaultAiCandidates(
+    selectedDates: List<String>,
+    participants: List<String>
+): List<AiCandidateSlot> {
+    val total = participants.size.coerceAtLeast(1)
+    val d1 = selectedDates.firstOrNull() ?: "11.14(토)"
+    val d2 = selectedDates.getOrNull(1) ?: "11.18(수)"
+    val d3 = selectedDates.getOrNull(2) ?: "11.22(일)"
+
+    return listOf(
+        AiCandidateSlot(
+            id = 0,
+            rankLabel = "1위 (최적 추천)",
+            timeStr = "$d1 19:00 ~ 20:30",
+            availableCount = total,
+            totalCount = total
+        ),
+        AiCandidateSlot(
+            id = 1,
+            rankLabel = "2위",
+            timeStr = "$d2 18:30 ~ 20:00",
+            availableCount = (total - 1).coerceAtLeast(1),
+            totalCount = total
+        ),
+        AiCandidateSlot(
+            id = 2,
+            rankLabel = "3위",
+            timeStr = "$d3 20:00 ~ 21:30",
+            availableCount = (total - 2).coerceAtLeast(1),
+            totalCount = total
+        )
+    )
+}
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            PotatoMeetTheme {
+                val currentScreen = remember { mutableStateOf("login") }
+
+                val adminAccount = remember {
+                    UserAccount(
+                        nickname = "관리자",
+                        id = "admin",
+                        pw = "admin!@#",
+                        twoFactorCode = ""
+                    )
+                }
+
+                val registeredAccounts = remember { mutableStateListOf<UserAccount>() }
+                val loggedInNickname = remember { mutableStateOf("") }
+                val loggedInId = remember { mutableStateOf("") }
+
+                val roomTitleInput = remember { mutableStateOf("") }
+                val roomDescInput = remember { mutableStateOf("") }
+                val selectedDatesList = remember { mutableStateListOf<String>() }
+
+                val roomsList = remember { mutableStateListOf<RoomModel>() }
+                var currentRoomId by remember { mutableStateOf<Long?>(null) }
+
+                val currentRoom = roomsList.find { it.id == currentRoomId }
+
+                fun updateRoom(transform: (RoomModel) -> RoomModel) {
+                    val idx = roomsList.indexOfFirst { it.id == currentRoomId }
+                    if (idx != -1) {
+                        roomsList[idx] = transform(roomsList[idx])
+                    }
+                }
+
+                BackHandler(enabled = currentScreen.value != "login") {
+                    when (currentScreen.value) {
+                        "signup" -> currentScreen.value = "login"
+                        "home", "friends", "mypage" -> finish()
+                        "create_room" -> currentScreen.value = "home"
+                        "room_detail" -> currentScreen.value = "home"
+                        "edit_unavailable" -> currentScreen.value = "room_detail"
+                        "ai_result" -> currentScreen.value = "room_detail"
+                    }
+                }
+
+                Surface(
+                    modifier = Modifier.fillMaxSize().imePadding(),
+                    color = Color(0xFFFFFCF3)
+                ) {
+                    when (currentScreen.value) {
+                        "login" -> {
+                            LoginScreen(
+                                adminAccount = adminAccount,
+                                registeredAccounts = registeredAccounts,
+                                onLoginSuccess = { nickname: String, id: String ->
+                                    loggedInNickname.value = nickname
+                                    loggedInId.value = id
+                                    currentScreen.value = "home"
+                                },
+                                onSignUpClick = { currentScreen.value = "signup" }
+                            )
+                        }
+                        "signup" -> {
+                            SignUpScreen(
+                                existingAccounts = registeredAccounts,
+                                onCompleteClick = { newAccount: UserAccount ->
+                                    registeredAccounts.add(newAccount)
+                                    currentScreen.value = "login"
+                                },
+                                onBackClick = { currentScreen.value = "login" }
+                            )
+                        }
+                        "home", "friends", "mypage", "create_room", "room_detail", "edit_unavailable", "ai_result" -> {
+                            val isAdmin = loggedInId.value == "admin"
+                            val visibleRooms = if (isAdmin) {
+                                roomsList
+                            } else {
+                                roomsList.filter { it.ownerId == loggedInId.value }
+                            }
+
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                when (currentScreen.value) {
+                                    "home" -> {
+                                        HomeScreen(
+                                            nickname = loggedInNickname.value,
+                                            isAdmin = isAdmin,
+                                            roomsList = visibleRooms,
+                                            onCreateRoomClick = {
+                                                roomTitleInput.value = ""
+                                                roomDescInput.value = ""
+                                                selectedDatesList.clear()
+                                                currentScreen.value = "create_room"
+                                            },
+                                            onRoomClick = { room ->
+                                                currentRoomId = room.id
+                                                currentScreen.value = "room_detail"
+                                            },
+                                            onFriendsClick = { currentScreen.value = "friends" },
+                                            onMyPageClick = { currentScreen.value = "mypage" }
+                                        )
+                                    }
+                                    "friends" -> {
+                                        FriendsScreen(
+                                            isAdmin = isAdmin,
+                                            onBackClick = { currentScreen.value = "home" }
+                                        )
+                                    }
+                                    "mypage" -> {
+                                        MyPageScreen(
+                                            nickname = loggedInNickname.value.ifBlank { "사용자" },
+                                            userId = loggedInId.value.ifBlank { "user" },
+                                            onLogoutClick = {
+                                                loggedInNickname.value = ""
+                                                loggedInId.value = ""
+                                                currentScreen.value = "login"
+                                            },
+                                            onNicknameChanged = { newNick ->
+                                                loggedInNickname.value = newNick
+                                                registeredAccounts.find { it.id == loggedInId.value }?.nickname = newNick
+                                            },
+                                            onBackClick = { currentScreen.value = "home" }
+                                        )
+                                    }
+                                    "create_room" -> {
+                                        CreateRoomScreen(
+                                            roomTitle = roomTitleInput.value,
+                                            onRoomTitleChange = { roomTitleInput.value = it },
+                                            roomDesc = roomDescInput.value,
+                                            onRoomDescChange = { roomDescInput.value = it },
+                                            selectedDates = selectedDatesList,
+                                            onBackClick = { currentScreen.value = "home" },
+                                            onCreateComplete = {
+                                                val dates = selectedDatesList.toList()
+                                                val members = listOf(loggedInNickname.value)
+                                                val newRoom = RoomModel(
+                                                    title = roomTitleInput.value.ifBlank { "새로운 모임" },
+                                                    description = roomDescInput.value.ifBlank { loggedInNickname.value },
+                                                    selectedDates = dates,
+                                                    hostName = loggedInNickname.value,
+                                                    ownerId = loggedInId.value,
+                                                    participants = members,
+                                                    aiCandidates = buildDefaultAiCandidates(dates, members)
+                                                )
+                                                roomsList.add(newRoom)
+                                                currentRoomId = newRoom.id
+                                                currentScreen.value = "room_detail"
+                                            }
+                                        )
+                                    }
+                                    "room_detail" -> {
+                                        currentRoom?.let { room ->
+                                            RoomDetailScreen(
+                                                room = room,
+                                                onBackClick = { currentScreen.value = "home" },
+                                                onEditUnavailableClick = {
+                                                    currentScreen.value = "edit_unavailable"
+                                                },
+                                                onAiResultClick = {
+                                                    if (room.aiCandidates.isEmpty()) {
+                                                        updateRoom { target ->
+                                                            target.copy(
+                                                                aiCandidates = buildDefaultAiCandidates(
+                                                                    target.selectedDates,
+                                                                    target.participants
+                                                                )
+                                                            )
+                                                        }
+                                                    }
+                                                    currentScreen.value = "ai_result"
+                                                },
+                                                onInviteKakao = { }
+                                            )
+                                        }
+                                    }
+                                    "edit_unavailable" -> {
+                                        currentRoom?.let { room ->
+                                            EditUnavailableScreen(
+                                                room = room,
+                                                onToggleSlot = { dateStr, hour, startMin ->
+                                                    updateRoom { target ->
+                                                        val exists = target.unavailableSlots.any {
+                                                            it.dateStr == dateStr && it.startHour == hour && it.startMin == startMin
+                                                        }
+                                                        val updated = if (exists) {
+                                                            target.unavailableSlots.filterNot {
+                                                                it.dateStr == dateStr && it.startHour == hour && it.startMin == startMin
+                                                            }
+                                                        } else {
+                                                            val endHour = if (startMin == 30) hour + 1 else hour
+                                                            val endMin = if (startMin == 30) 0 else 30
+                                                            target.unavailableSlots + UnavailableTimeSlot(
+                                                                dateStr = dateStr,
+                                                                startHour = hour,
+                                                                startMin = startMin,
+                                                                endHour = endHour,
+                                                                endMin = endMin
+                                                            )
+                                                        }
+                                                        target.copy(unavailableSlots = updated)
+                                                    }
+                                                },
+                                                onClearDateSlots = { dateStr ->
+                                                    updateRoom { target ->
+                                                        target.copy(
+                                                            unavailableSlots = target.unavailableSlots.filterNot { it.dateStr == dateStr }
+                                                        )
+                                                    }
+                                                },
+                                                onBackClick = { currentScreen.value = "room_detail" },
+                                                onSaveComplete = {
+                                                    currentScreen.value = "room_detail"
+                                                }
+                                            )
+                                        }
+                                    }
+                                    "ai_result" -> {
+                                        currentRoom?.let { room ->
+                                            val candidates = room.aiCandidates.ifEmpty {
+                                                buildDefaultAiCandidates(room.selectedDates, room.participants)
+                                            }
+                                            AiResultScreen(
+                                                room = room,
+                                                candidates = candidates,
+                                                voterName = loggedInNickname.value.ifBlank { "참여자" },
+                                                onToggleVote = { candidateId, voter ->
+                                                    updateRoom { target ->
+                                                        val baseList = target.aiCandidates.ifEmpty {
+                                                            buildDefaultAiCandidates(target.selectedDates, target.participants)
+                                                        }
+                                                        val updatedCandidates = baseList.map { item ->
+                                                            if (item.id == candidateId) {
+                                                                val nextVoters = if (item.voterNames.contains(voter)) {
+                                                                    item.voterNames - voter
+                                                                } else {
+                                                                    item.voterNames + voter
+                                                                }
+                                                                item.copy(voterNames = nextVoters)
+                                                            } else {
+                                                                item
+                                                            }
+                                                        }
+                                                        target.copy(aiCandidates = updatedCandidates)
+                                                    }
+                                                },
+                                                onBackClick = { currentScreen.value = "room_detail" },
+                                                onConfirmFinal = { finalTime ->
+                                                    updateRoom { it.copy(isConfirmed = true, finalAiTime = finalTime) }
+                                                    currentScreen.value = "home"
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun LoginScreen(
+    adminAccount: UserAccount,
+    registeredAccounts: List<UserAccount>,
+    onLoginSuccess: (String, String) -> Unit,
+    onSignUpClick: () -> Unit
+) {
+    var inputId by remember { mutableStateOf("") }
+    var inputPw by remember { mutableStateOf("") }
+    var input2Fa by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf("") }
+    val context = LocalContext.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 30.dp)
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            text = buildAnnotatedString {
+                withStyle(SpanStyle(color = Color(0xFF4A3B32), fontWeight = FontWeight.ExtraBold)) { append("potato ") }
+                withStyle(SpanStyle(color = Color(0xFFFF9800), fontWeight = FontWeight.ExtraBold)) { append("meet") }
+            },
+            fontSize = 32.sp
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(text = "함께하는 일정, 더 쉬운 약속", fontSize = 14.sp, color = Color(0xFF666666))
+        Spacer(modifier = Modifier.height(28.dp))
+
+        OutlinedTextField(
+            value = inputId,
+            onValueChange = { inputId = it; errorMessage = "" },
+            placeholder = { Text("아이디 입력", color = Color(0xFF9E9E9E)) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(26.dp),
+            colors = appTextFieldColors()
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+
+        OutlinedTextField(
+            value = inputPw,
+            onValueChange = { inputPw = it; errorMessage = "" },
+            placeholder = { Text("비밀번호 입력", color = Color(0xFF9E9E9E)) },
+            singleLine = true,
+            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                Text(
+                    text = if (passwordVisible) "숨김" else "표시",
+                    fontSize = 12.sp,
+                    color = Color.DarkGray,
+                    modifier = Modifier.clickable { passwordVisible = !passwordVisible }.padding(8.dp)
+                )
+            },
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(26.dp),
+            colors = appTextFieldColors()
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Button(
+                onClick = {
+                    if (inputId == adminAccount.id) {
+                        Toast.makeText(context, "관리자 계정은 인증코드가 필요 없습니다.", Toast.LENGTH_SHORT).show()
+                    } else {
+                        val targetUser = registeredAccounts.find { it.id == inputId }
+                        val codeToGuide = targetUser?.twoFactorCode ?: "가입 정보 없음"
+                        Toast.makeText(context, "회원가입 당시의 인증코드: $codeToGuide", Toast.LENGTH_LONG).show()
+                    }
+                },
+                modifier = Modifier.weight(1f).height(52.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F)),
+                shape = RoundedCornerShape(26.dp)
+            ) {
+                Text(text = "G  인증코드 확인", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3C1E1E))
+            }
+
+            OutlinedTextField(
+                value = input2Fa,
+                onValueChange = { input2Fa = it; errorMessage = "" },
+                placeholder = { Text("인증코드 입력", color = Color(0xFF9E9E9E)) },
+                singleLine = true,
+                modifier = Modifier.weight(1.1f).height(52.dp),
+                shape = RoundedCornerShape(26.dp),
+                colors = appTextFieldColors()
+            )
+        }
+
+        if (errorMessage.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = errorMessage,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFD32F2F),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Button(
+            onClick = {
+                when {
+                    inputId.isBlank() -> { errorMessage = "아이디를 입력하지 않았습니다." }
+                    inputPw.isBlank() -> { errorMessage = "비밀번호를 입력하지 않았습니다." }
+                    inputId == adminAccount.id && inputPw == adminAccount.pw -> {
+                        errorMessage = ""
+                        onLoginSuccess(adminAccount.nickname, adminAccount.id)
+                    }
+                    else -> {
+                        if (input2Fa.isBlank()) {
+                            errorMessage = "인증코드를 입력하지 않았습니다."
+                        } else {
+                            val matchedUser = registeredAccounts.find { it.id == inputId && it.pw == inputPw }
+                            if (matchedUser != null) {
+                                if (input2Fa == matchedUser.twoFactorCode) {
+                                    errorMessage = ""
+                                    onLoginSuccess(matchedUser.nickname, matchedUser.id)
+                                } else {
+                                    errorMessage = "인증코드가 일치하지 않습니다. (가입 시 설정한 인증코드 입력)"
+                                }
+                            } else {
+                                errorMessage = "회원가입이 되지 않았거나 아이디/비밀번호가 일치하지 않습니다."
+                            }
+                        }
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4A3B32)),
+            shape = RoundedCornerShape(26.dp)
+        ) {
+            Text(text = "로그인하기", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(text = "계정이 없으신가요?", fontSize = 14.sp, color = Color(0xFF888888))
+            Spacer(modifier = Modifier.width(6.dp))
+            TextButton(onClick = onSignUpClick, contentPadding = PaddingValues(0.dp)) {
+                Text(text = "회원가입", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFFB300))
+            }
+        }
+    }
+}
+
+@Composable
+fun SignUpScreen(
+    existingAccounts: List<UserAccount>,
+    onCompleteClick: (UserAccount) -> Unit,
+    onBackClick: () -> Unit
+) {
+    var nickname by remember { mutableStateOf("") }
+    var id by remember { mutableStateOf("") }
+    var pw by remember { mutableStateOf("") }
+    var pwConfirm by remember { mutableStateOf("") }
+    var twoFactorCode by remember { mutableStateOf("") }
+
+    var pwVisible by remember { mutableStateOf(false) }
+    var pwConfirmVisible by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf("") }
+    val context = LocalContext.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 30.dp)
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(text = "회원가입", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+        Spacer(modifier = Modifier.height(24.dp))
+
+        OutlinedTextField(
+            value = nickname,
+            onValueChange = { nickname = it; errorMessage = "" },
+            placeholder = { Text("사용할 닉네임", color = Color(0xFF9E9E9E)) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(26.dp),
+            colors = appTextFieldColors()
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+
+        OutlinedTextField(
+            value = id,
+            onValueChange = { id = it; errorMessage = "" },
+            placeholder = { Text("아이디", color = Color(0xFF9E9E9E)) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(26.dp),
+            colors = appTextFieldColors()
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+
+        OutlinedTextField(
+            value = pw,
+            onValueChange = { pw = it; errorMessage = "" },
+            placeholder = { Text("비밀번호", color = Color(0xFF9E9E9E)) },
+            singleLine = true,
+            visualTransformation = if (pwVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                Text(
+                    text = if (pwVisible) "숨김" else "표시",
+                    fontSize = 12.sp,
+                    color = Color.DarkGray,
+                    modifier = Modifier.clickable { pwVisible = !pwVisible }.padding(8.dp)
+                )
+            },
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(26.dp),
+            colors = appTextFieldColors()
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+
+        OutlinedTextField(
+            value = pwConfirm,
+            onValueChange = { pwConfirm = it; errorMessage = "" },
+            placeholder = { Text("비밀번호 확인", color = Color(0xFF9E9E9E)) },
+            singleLine = true,
+            visualTransformation = if (pwConfirmVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                Text(
+                    text = if (pwConfirmVisible) "숨김" else "표시",
+                    fontSize = 12.sp,
+                    color = Color.DarkGray,
+                    modifier = Modifier.clickable { pwConfirmVisible = !pwConfirmVisible }.padding(8.dp)
+                )
+            },
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(26.dp),
+            colors = appTextFieldColors()
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Button(
+                onClick = {
+                    twoFactorCode = "123456"
+                    Toast.makeText(context, "인증코드가 발송되었습니다 (코드: 123456)", Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier.weight(1f).height(52.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F)),
+                shape = RoundedCornerShape(26.dp)
+            ) {
+                Text(text = "G  인증코드 보내기", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3C1E1E))
+            }
+
+            OutlinedTextField(
+                value = twoFactorCode,
+                onValueChange = { twoFactorCode = it; errorMessage = "" },
+                placeholder = { Text("인증코드 입력", color = Color(0xFF9E9E9E)) },
+                singleLine = true,
+                modifier = Modifier.weight(1.1f).height(52.dp),
+                shape = RoundedCornerShape(26.dp),
+                colors = appTextFieldColors()
+            )
+        }
+
+        if (errorMessage.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = errorMessage,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFD32F2F),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Button(
+            onClick = {
+                when {
+                    nickname.isBlank() -> errorMessage = "사용할 닉네임을 입력하지 않았습니다."
+                    id.isBlank() -> errorMessage = "아이디를 입력하지 않았습니다."
+                    pw.isBlank() -> errorMessage = "비밀번호를 입력하지 않았습니다."
+                    pwConfirm.isBlank() -> errorMessage = "비밀번호 확인을 입력하지 않았습니다."
+                    pw != pwConfirm -> errorMessage = "비밀번호가 일치하지 않습니다."
+                    twoFactorCode.isBlank() -> errorMessage = "인증코드를 입력하지 않았습니다."
+                    id == "admin" || existingAccounts.any { it.id == id } -> errorMessage = "이미 사용 중인 아이디입니다."
+                    else -> {
+                        Toast.makeText(context, "회원가입이 완료되었습니다.", Toast.LENGTH_SHORT).show()
+                        onCompleteClick(UserAccount(nickname.trim(), id.trim(), pw.trim(), twoFactorCode.trim()))
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F)),
+            shape = RoundedCornerShape(26.dp)
+        ) {
+            Text(text = "회원가입 완료", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3C1E1E))
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        TextButton(onClick = onBackClick) {
+            Text(text = "돌아가기", fontSize = 14.sp, color = Color(0xFF888888))
+        }
+    }
+}
+
+@Composable
+fun FriendsScreen(
+    isAdmin: Boolean,
+    onBackClick: () -> Unit
+) {
+    val friendsList = if (isAdmin) listOf("민수", "지훈", "영희", "철수") else emptyList()
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFFFFFCF3))
+                .padding(horizontal = 20.dp, vertical = 12.dp)
+        ) {
+            TopLogoHeader(onBackClick = onBackClick)
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(20.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Text(text = "친구 목록", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+            Spacer(modifier = Modifier.height(16.dp))
+
+            if (friendsList.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().height(200.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = "등록된 친구가 없습니다.", fontSize = 14.sp, color = Color(0xFF999999))
+                }
+            } else {
+                friendsList.forEach { friend ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(12.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier.size(40.dp).clip(CircleShape).background(Color(0xFFE0E0E0)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(text = friend.take(1), fontWeight = FontWeight.Bold, color = Color.DarkGray)
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(text = friend, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+                            }
+                            Surface(
+                                color = Color(0xFFFFF3E0),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(text = "친구", fontSize = 12.sp, color = Color(0xFFFF8F00), modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MyPageScreen(
+    nickname: String,
+    userId: String,
+    onLogoutClick: () -> Unit,
+    onNicknameChanged: (String) -> Unit,
+    onBackClick: () -> Unit
+) {
+    var showEditProfileDialog by remember { mutableStateOf(false) }
+    var newNicknameInput by remember { mutableStateOf(nickname) }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFFFFFCF3))
+                .padding(horizontal = 20.dp, vertical = 12.dp)
+        ) {
+            TopLogoHeader(onBackClick = onBackClick)
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(20.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Text(text = "마이페이지", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(20.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier.size(60.dp).clip(CircleShape).background(Color(0xFFD7CCC8)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(text = nickname.take(1), fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = nickname, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+                        Text(text = userId, fontSize = 13.sp, color = Color(0xFF777777))
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            newNicknameInput = nickname
+                            showEditProfileDialog = true
+                        },
+                        shape = RoundedCornerShape(20.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text(text = "프로필 수정", fontSize = 12.sp, color = Color(0xFF555555))
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            val menuItems = listOf("내 모임 관리", "알림 설정", "시간 조율 설정", "친구 관리", "설정", "도움말")
+            menuItems.forEach { menu ->
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    shape = RoundedCornerShape(12.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(text = menu, fontSize = 15.sp, color = Color(0xFF333333))
+                        Text(text = "〉", fontSize = 14.sp, color = Color(0xFFAAAAAA))
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Button(
+                onClick = onLogoutClick,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFCDD2)),
+                shape = RoundedCornerShape(24.dp)
+            ) {
+                Text(text = "로그아웃", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFFC62828))
+            }
+        }
+    }
+
+    if (showEditProfileDialog) {
+        AlertDialog(
+            onDismissRequest = { showEditProfileDialog = false },
+            containerColor = Color.White,
+            title = { Text(text = "프로필 수정 (닉네임 변경)", fontWeight = FontWeight.Bold, color = Color(0xFF333333)) },
+            text = {
+                Column {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = newNicknameInput,
+                        onValueChange = { newNicknameInput = it },
+                        placeholder = { Text("변경할 닉네임 입력", color = Color(0xFF9E9E9E)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = appTextFieldColors()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newNicknameInput.isNotBlank()) {
+                            onNicknameChanged(newNicknameInput.trim())
+                            showEditProfileDialog = false
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F))
+                ) {
+                    Text(text = "저장", color = Color(0xFF3C1E1E), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditProfileDialog = false }) {
+                    Text(text = "취소", color = Color.DarkGray)
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun TopLogoHeader(onBackClick: (() -> Unit)? = null) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (onBackClick != null) {
+            Text(
+                text = "〈",
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF333333),
+                modifier = Modifier
+                    .clickable { onBackClick() }
+                    .padding(end = 12.dp)
+            )
+        }
+        Text(
+            text = buildAnnotatedString {
+                withStyle(SpanStyle(color = Color(0xFF4A3B32), fontWeight = FontWeight.ExtraBold)) { append("potato ") }
+                withStyle(SpanStyle(color = Color(0xFFFF9800), fontWeight = FontWeight.ExtraBold)) { append("meet") }
+            },
+            fontSize = 24.sp
+        )
+    }
+}
+
+@Composable
+fun HomeScreen(
+    nickname: String,
+    isAdmin: Boolean,
+    roomsList: List<RoomModel>,
+    onCreateRoomClick: () -> Unit,
+    onRoomClick: (RoomModel) -> Unit,
+    onFriendsClick: () -> Unit,
+    onMyPageClick: () -> Unit
+) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFFFFCF3))
+                    .padding(horizontal = 20.dp, vertical = 12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TopLogoHeader()
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (isAdmin) {
+                            Text(
+                                text = "친구",
+                                fontSize = 13.sp,
+                                color = Color(0xFF555555),
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clickable { onFriendsClick() }.padding(4.dp)
+                            )
+                        }
+                        Text(
+                            text = "MY",
+                            fontSize = 13.sp,
+                            color = Color(0xFF555555),
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.clickable { onMyPageClick() }.padding(4.dp)
+                        )
+                    }
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+            ) {
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(text = "모임 현황", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+                    Text(text = "더보기", fontSize = 13.sp, color = Color(0xFF888888))
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+
+                if (roomsList.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(250.dp)
+                            .background(Color.White, RoundedCornerShape(16.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "모임이 없습니다. 모임을 추가하시겠습니까?",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF666666)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Button(
+                                onClick = onCreateRoomClick,
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F)),
+                                shape = RoundedCornerShape(20.dp)
+                            ) {
+                                Text(text = "모임 추가하기", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3C1E1E))
+                            }
+                        }
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        roomsList.forEach { room ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onRoomClick(room) },
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                shape = RoundedCornerShape(16.dp),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = if (room.isConfirmed) "[확정완료] ${room.title}" else room.title,
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (room.isConfirmed) Color(0xFF2E7D32) else Color(0xFF333333)
+                                        )
+                                        if (room.isConfirmed) {
+                                            Surface(color = Color(0xFFE8F5E9), shape = RoundedCornerShape(6.dp)) {
+                                                Text(text = "확정", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32), modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                            }
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = if (room.isConfirmed) "📅 확정 시간: ${room.finalAiTime}" else room.description,
+                                        fontSize = 13.sp,
+                                        color = Color(0xFF666666)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(90.dp))
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(20.dp)
+        ) {
+            ExtendedFloatingActionButton(
+                onClick = onCreateRoomClick,
+                containerColor = Color(0xFFFFD54F),
+                contentColor = Color(0xFF3C1E1E),
+                shape = RoundedCornerShape(28.dp)
+            ) {
+                Text(
+                    text = "+ 모임 만들기",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun CreateRoomScreen(
+    roomTitle: String,
+    onRoomTitleChange: (String) -> Unit,
+    roomDesc: String,
+    onRoomDescChange: (String) -> Unit,
+    selectedDates: MutableList<String>,
+    onBackClick: () -> Unit,
+    onCreateComplete: () -> Unit
+) {
+    val allCalendarDays = (1..30).toList()
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFFFFFCF3))
+                .padding(horizontal = 20.dp, vertical = 12.dp)
+        ) {
+            TopLogoHeader(onBackClick = onBackClick)
+        }
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 20.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(20.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(text = "모임 이름 *", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF555555))
+                    Spacer(modifier = Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = roomTitle,
+                        onValueChange = onRoomTitleChange,
+                        placeholder = { Text("모임 이름을 입력해주세요", color = Color(0xFF9E9E9E)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = appTextFieldColors()
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(text = "모임 설명", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF555555))
+                    Spacer(modifier = Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = roomDesc,
+                        onValueChange = onRoomDescChange,
+                        placeholder = { Text("모임에 대한 간단한 설명", color = Color(0xFF9E9E9E)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = appTextFieldColors()
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(text = "모임 날짜 *", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF555555))
+                        Text(text = "모임을 열고 싶은 날짜를 모두 선택해 주세요.", fontSize = 11.sp, color = Color(0xFF888888))
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFFFFFAF0), RoundedCornerShape(12.dp))
+                            .border(1.dp, Color(0xFFFFE082), RoundedCornerShape(12.dp))
+                            .padding(12.dp)
+                    ) {
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(text = "〈 2026년 11월 〉", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4A3B32))
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            val daysOfWeek = listOf("일", "월", "화", "수", "목", "금", "토")
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
+                                daysOfWeek.forEach {
+                                    Text(text = it, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Gray, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(7),
+                                modifier = Modifier.fillMaxWidth().height(220.dp),
+                                userScrollEnabled = false
+                            ) {
+                                items(allCalendarDays) { day ->
+                                    val dayStr = String.format("11.%02d", day)
+                                    val dayOfWeekStr = when (day % 7) {
+                                        1 -> "(일)"
+                                        2 -> "(월)"
+                                        3 -> "(화)"
+                                        4 -> "(수)"
+                                        5 -> "(목)"
+                                        6 -> "(금)"
+                                        else -> "(토)"
+                                    }
+                                    val fullTag = "$dayStr$dayOfWeekStr"
+                                    val isSelected = selectedDates.contains(fullTag)
+
+                                    Box(
+                                        modifier = Modifier
+                                            .padding(2.dp)
+                                            .aspectRatio(1f)
+                                            .clip(CircleShape)
+                                            .background(if (isSelected) Color(0xFFFF8F00) else Color.Transparent)
+                                            .clickable {
+                                                if (isSelected) selectedDates.remove(fullTag)
+                                                else selectedDates.add(fullTag)
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "$day",
+                                            fontSize = 12.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isSelected) Color.White else Color.Black
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(text = "선택한 날짜 ${selectedDates.size}개", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF8F00))
+                        TextButton(onClick = { selectedDates.clear() }) {
+                            Text(text = "초기화", fontSize = 12.sp, color = Color.Gray)
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        selectedDates.forEach { date ->
+                            Surface(
+                                color = Color(0xFFFFECB3),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(text = date, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3C1E1E))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "✕",
+                                        fontSize = 10.sp,
+                                        color = Color.Gray,
+                                        modifier = Modifier.clickable { selectedDates.remove(date) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(20.dp))
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFFFFFCF3))
+                .padding(20.dp)
+        ) {
+            Button(
+                onClick = onCreateComplete,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F)),
+                shape = RoundedCornerShape(26.dp)
+            ) {
+                Text(text = "모임 만들기", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3C1E1E))
+            }
+        }
+    }
+}
+
+@Composable
+fun CalendarCutoutCard(dateTag: String) {
+    val monthPart = dateTag.substringBefore(".", "11")
+    val afterDot = dateTag.substringAfter(".", "14(토)")
+    val dayPart = afterDot.substringBefore("(", "14")
+    val dowPart = afterDot.substringAfter("(", "토)").substringBefore(")", "토")
+
+    val dowColor = when (dowPart) {
+        "일" -> Color(0xFFD32F2F)
+        "토" -> Color(0xFF1976D2)
+        else -> Color(0xFF666666)
+    }
+
+    Card(
+        modifier = Modifier.width(64.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, Color(0xFFFFE082)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFFFB300))
+                    .padding(vertical = 3.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "${monthPart}월",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = dowPart,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = dowColor
+            )
+
+            Text(
+                text = dayPart,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = Color(0xFF333333)
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+        }
+    }
+}
+
+@Composable
+fun RoomDetailScreen(
+    room: RoomModel,
+    onBackClick: () -> Unit,
+    onEditUnavailableClick: () -> Unit,
+    onAiResultClick: () -> Unit,
+    onInviteKakao: () -> Unit
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFFFFFCF3))
+                .padding(horizontal = 20.dp, vertical = 12.dp)
+        ) {
+            TopLogoHeader(onBackClick = onBackClick)
+        }
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 20.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(20.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Text(text = room.title, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(text = room.description, fontSize = 13.sp, color = Color(0xFF666666))
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFFFFFAF0), RoundedCornerShape(14.dp))
+                            .border(1.dp, Color(0xFFFFECB3), RoundedCornerShape(14.dp))
+                            .padding(12.dp)
+                    ) {
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(text = "2026년 11월", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4A3B32))
+                                Text(text = "후보일 ${room.selectedDates.size}개", fontSize = 11.sp, color = Color(0xFFFF8F00), fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            if (room.selectedDates.isEmpty()) {
+                                Text(text = "선택된 후보 날짜가 없습니다.", fontSize = 12.sp, color = Color(0xFF999999))
+                            } else {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    room.selectedDates.forEach { date ->
+                                        CalendarCutoutCard(dateTag = date)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+                    HorizontalDivider(color = Color(0xFFF0F0F0))
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(text = "현재 참여자", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+                        Text(text = "${room.participants.size}명", fontSize = 12.sp, color = Color(0xFF888888))
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    room.participants.forEach { member ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(text = if (member == room.hostName) "방장" else "참여자", fontSize = 13.sp, color = Color(0xFF666666))
+                            Surface(color = Color(0xFFFFF3E0), shape = RoundedCornerShape(8.dp)) {
+                                Text(text = member, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF8F00), modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+                    HorizontalDivider(color = Color(0xFFF0F0F0))
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Text(text = "친구 초대", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(text = "아직 초대된 친구가 없어요. 함께할 친구에게 모임을 보내주세요.", fontSize = 12.sp, color = Color(0xFF888888))
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Button(
+                        onClick = onInviteKakao,
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFEE58)),
+                        shape = RoundedCornerShape(24.dp)
+                    ) {
+                        Text(text = "💛 카카오톡으로 친구 초대", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3C1E1E))
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+                    HorizontalDivider(color = Color(0xFFF0F0F0))
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(text = "내 불가능 시간", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+                        Text(text = "총 ${room.unavailableSlots.size}개 구간", fontSize = 12.sp, color = Color(0xFFFF8F00), fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    if (room.unavailableSlots.isEmpty()) {
+                        Text(text = "설정된 불가능 시간이 없습니다.", fontSize = 13.sp, color = Color.Gray)
+                    } else {
+                        val sortedSlots = room.unavailableSlots.sortedWith(
+                            compareBy({ it.dateStr }, { it.startHour }, { it.startMin })
+                        )
+                        sortedSlots.forEach { slot ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFDF9)),
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, Color(0xFFFFE082))
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(text = slot.dateStr, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+                                    Text(
+                                        text = String.format("%02d:%02d ~ %02d:%02d", slot.startHour, slot.startMin, slot.endHour, slot.endMin),
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFE65100)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Button(
+                        onClick = onEditUnavailableClick,
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8D6E63)),
+                        shape = RoundedCornerShape(24.dp)
+                    ) {
+                        Text(text = "불가 시간 수정 (30분 단위 시간표)", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(20.dp))
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFFFFFCF3))
+                .padding(20.dp)
+        ) {
+            Button(
+                onClick = onAiResultClick,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F)),
+                shape = RoundedCornerShape(26.dp)
+            ) {
+                Text(text = "AI 최적 시간 조율 결과 보기 ✨", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3C1E1E))
+            }
+        }
+    }
+}
+
+@Composable
+fun EditUnavailableScreen(
+    room: RoomModel,
+    onToggleSlot: (dateStr: String, hour: Int, startMin: Int) -> Unit,
+    onClearDateSlots: (dateStr: String) -> Unit,
+    onBackClick: () -> Unit,
+    onSaveComplete: () -> Unit
+) {
+    val datesToShow = room.selectedDates.ifEmpty { listOf("11.14(토)") }
+    var selectedTabDate by remember { mutableStateOf(datesToShow.first()) }
+    var selectedTimePage by remember { mutableIntStateOf(1) }
+
+    val timeRanges = listOf(
+        Triple(0, 8, "00:00 ~ 08:00"),
+        Triple(8, 16, "08:00 ~ 16:00"),
+        Triple(16, 24, "16:00 ~ 24:00")
+    )
+
+    val (startHourOfPage, endHourOfPage, rangeLabel) = timeRanges[selectedTimePage]
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFFFFFCF3))
+                .padding(horizontal = 20.dp, vertical = 12.dp)
+        ) {
+            TopLogoHeader(onBackClick = onBackClick)
+        }
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 20.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(text = "내 불가능 시간 수정", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+                TextButton(onClick = { onClearDateSlots(selectedTabDate) }) {
+                    Text(text = "현재 날짜 초기화", fontSize = 12.sp, color = Color(0xFFFF8F00), fontWeight = FontWeight.Bold)
+                }
+            }
+            Text(text = "한 시간당 30분 단위(2파트)로 터치하여 불가 시간을 체크하세요.", fontSize = 12.sp, color = Color(0xFF777777))
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                datesToShow.forEach { date ->
+                    val isSelected = (date == selectedTabDate)
+                    Button(
+                        onClick = { selectedTabDate = date },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isSelected) Color(0xFFFF8F00) else Color.White
+                        ),
+                        border = if (!isSelected) BorderStroke(1.dp, Color(0xFFE0E0E0)) else null,
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            text = date,
+                            fontSize = 12.sp,
+                            color = if (isSelected) Color.White else Color(0xFF333333),
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                timeRanges.forEachIndexed { index, (_, _, label) ->
+                    val isPageSelected = (selectedTimePage == index)
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { selectedTimePage = index },
+                        color = if (isPageSelected) Color(0xFF4A3B32) else Color(0xFFF3EFE6),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "${index + 1}/3 구간",
+                                fontSize = 10.sp,
+                                color = if (isPageSelected) Color(0xFFFFD54F) else Color(0xFF888888),
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = label,
+                                fontSize = 11.sp,
+                                color = if (isPageSelected) Color.White else Color(0xFF4A3B32),
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(text = "시간표 ($rangeLabel)", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(modifier = Modifier.size(10.dp).background(Color(0xFFF5F5F5), RoundedCornerShape(2.dp)).border(1.dp, Color(0xFFE0E0E0), RoundedCornerShape(2.dp)))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(text = "가능", fontSize = 11.sp, color = Color.Gray)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(modifier = Modifier.size(10.dp).background(Color(0xFFFF8A65), RoundedCornerShape(2.dp)))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(text = "불가", fontSize = 11.sp, color = Color(0xFFD84315), fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFFFFFAF0), RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                            .border(1.dp, Color(0xFFFFE082), RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "시간",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF4A3B32),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.width(64.dp)
+                        )
+                        Text(
+                            text = "00분 ~ 30분",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF4A3B32),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "30분 ~ 60분",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF4A3B32),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    val hoursInPage = (startHourOfPage until endHourOfPage).toList()
+                    hoursInPage.forEach { hour ->
+                        val isFirstHalfUnavailable = room.unavailableSlots.any {
+                            it.dateStr == selectedTabDate && it.startHour == hour && it.startMin == 0
+                        }
+                        val isSecondHalfUnavailable = room.unavailableSlots.any {
+                            it.dateStr == selectedTabDate && it.startHour == hour && it.startMin == 30
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp)
+                                .border(width = 0.5.dp, color = Color(0xFFE0E0E0)),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .width(64.dp)
+                                    .fillMaxHeight()
+                                    .background(Color(0xFFFAFAFA)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = String.format("%02d시", hour),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF4A3B32)
+                                )
+                            }
+
+                            Box(modifier = Modifier.width(1.dp).fillMaxHeight().background(Color(0xFFE0E0E0)))
+
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .background(if (isFirstHalfUnavailable) Color(0xFFFFCCBC) else Color.White)
+                                    .clickable { onToggleSlot(selectedTabDate, hour, 0) },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (isFirstHalfUnavailable) {
+                                        String.format("%02d:00~%02d:30 불가", hour, hour)
+                                    } else {
+                                        String.format("%02d:00", hour)
+                                    },
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isFirstHalfUnavailable) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isFirstHalfUnavailable) Color(0xFFBF360C) else Color(0xFF888888)
+                                )
+                            }
+
+                            Box(modifier = Modifier.width(1.dp).fillMaxHeight().background(Color(0xFFE0E0E0)))
+
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .background(if (isSecondHalfUnavailable) Color(0xFFFFCCBC) else Color.White)
+                                    .clickable { onToggleSlot(selectedTabDate, hour, 30) },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (isSecondHalfUnavailable) {
+                                        String.format("%02d:30~%02d:00 불가", hour, hour + 1)
+                                    } else {
+                                        String.format("%02d:30", hour)
+                                    },
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSecondHalfUnavailable) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSecondHalfUnavailable) Color(0xFFBF360C) else Color(0xFF888888)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        OutlinedButton(
+                            onClick = { if (selectedTimePage > 0) selectedTimePage -= 1 },
+                            enabled = selectedTimePage > 0,
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(text = "〈 이전 8시간", fontSize = 12.sp)
+                        }
+                        OutlinedButton(
+                            onClick = { if (selectedTimePage < 2) selectedTimePage += 1 },
+                            enabled = selectedTimePage < 2,
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(text = "다음 8시간 〉", fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(20.dp))
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFFFFFCF3))
+                .padding(20.dp)
+        ) {
+            Button(
+                onClick = onSaveComplete,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F)),
+                shape = RoundedCornerShape(26.dp)
+            ) {
+                Text(text = "불가능 시간 저장", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3C1E1E))
+            }
+        }
+    }
+}
+
+@Composable
+fun AiResultScreen(
+    room: RoomModel,
+    candidates: List<AiCandidateSlot>,
+    voterName: String,
+    onToggleVote: (candidateId: Int, voterName: String) -> Unit,
+    onBackClick: () -> Unit,
+    onConfirmFinal: (String) -> Unit
+) {
+    var selectedConfirmIndex by remember { mutableIntStateOf(0) }
+    val memberTotalCount = room.participants.size.coerceAtLeast(1)
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFFFFFCF3))
+                .padding(horizontal = 20.dp, vertical = 12.dp)
+        ) {
+            TopLogoHeader(onBackClick = onBackClick)
+        }
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 20.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Text(text = "AI 결과 화면 ✨", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF333333))
+            Text(
+                text = "'${room.title}' 모임 후보 시간에 투표하고 확정 시간을 선택하세요.",
+                fontSize = 13.sp,
+                color = Color(0xFF777777)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+
+            candidates.forEachIndexed { index, candidate ->
+                val isConfirmSelected = (selectedConfirmIndex == index)
+                val votedCount = candidate.voterNames.size
+                val isVotedByMe = candidate.voterNames.contains(voterName)
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp)
+                        .clickable { selectedConfirmIndex = index },
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(
+                        width = if (isConfirmSelected) 2.dp else 1.dp,
+                        color = if (isConfirmSelected) Color(0xFFFFB300) else Color(0xFFE0E0E0)
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = candidate.rankLabel,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (index == 0) Color(0xFFFF8F00) else Color.Gray
+                            )
+                            Text(
+                                text = "(${votedCount}/${memberTotalCount})명 투표",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (votedCount > 0) Color(0xFF4A3B32) else Color(0xFF888888)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = candidate.timeStr,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF333333),
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            OutlinedButton(
+                                onClick = { onToggleVote(candidate.id, voterName) },
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = if (isVotedByMe) Color(0xFFFFECB3) else Color.White,
+                                    contentColor = Color(0xFF3C1E1E)
+                                ),
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isVotedByMe) Color(0xFFFF8F00) else Color(0xFFD0D0D0)
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = if (isVotedByMe) "투표 취소" else "투표하기",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        if (candidate.voterNames.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "투표 참여: ${candidate.voterNames.joinToString(", ")}",
+                                fontSize = 11.sp,
+                                color = Color(0xFF888888)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Text(
+                            text = candidate.toAvailabilitySummary(),
+                            fontSize = 11.sp,
+                            color = Color(0xFF666666)
+                        )
+                    }
+                }
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFFFFFCF3))
+                .padding(20.dp)
+        ) {
+            val targetCandidate = candidates.getOrElse(selectedConfirmIndex) { candidates.first() }
+            Button(
+                onClick = {
+                    onConfirmFinal(targetCandidate.timeStr)
+                },
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFD54F)),
+                shape = RoundedCornerShape(26.dp)
+            ) {
+                Text(text = "이 시간으로 최종 확정하기", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF3C1E1E))
+            }
+        }
+    }
+}

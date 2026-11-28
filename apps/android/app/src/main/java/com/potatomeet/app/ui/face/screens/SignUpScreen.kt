@@ -39,12 +39,11 @@ import androidx.compose.ui.unit.sp
 fun SignUpScreen(
     isLoading: Boolean = false,
     otpPending: Boolean = false,
-    onRequestOtp: (nickname: String, email: String, password: String, passwordConfirm: String) -> Unit,
+    onRequestOtp: (email: String, password: String, passwordConfirm: String) -> Unit,
     onVerifyOtp: (code: String) -> Unit,
     onResendOtp: () -> Unit = {},
     onBackClick: () -> Unit,
 ) {
-    var nickname by remember { mutableStateOf("") }
     var id by remember { mutableStateOf("") }
     var pw by remember { mutableStateOf("") }
     var pwConfirm by remember { mutableStateOf("") }
@@ -72,21 +71,6 @@ fun SignUpScreen(
     ) {
         Text(text = "회원가입", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color(0xFF333333))
         Spacer(modifier = Modifier.height(24.dp))
-
-        OutlinedTextField(
-            value = nickname,
-            onValueChange = {
-                nickname = it
-                errorMessage = ""
-            },
-            placeholder = { Text("사용할 닉네임", color = Color(0xFFAAAAAA)) },
-            singleLine = true,
-            enabled = !isLoading,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = RoundedCornerShape(26.dp),
-            colors = fieldColors,
-        )
-        Spacer(modifier = Modifier.height(10.dp))
 
         OutlinedTextField(
             value = id,
@@ -168,14 +152,13 @@ fun SignUpScreen(
             Button(
                 onClick = {
                     when {
-                        nickname.isBlank() -> errorMessage = "사용할 닉네임을 입력하지 않았습니다."
                         id.isBlank() -> errorMessage = "이메일을 입력하지 않았습니다."
                         pw.isBlank() -> errorMessage = "비밀번호를 입력하지 않았습니다."
                         pwConfirm.isBlank() -> errorMessage = "비밀번호 확인을 입력하지 않았습니다."
                         pw != pwConfirm -> errorMessage = "비밀번호가 일치하지 않습니다."
                         else -> {
                             errorMessage = ""
-                            if (otpPending) onResendOtp() else onRequestOtp(nickname, id, pw, pwConfirm)
+                            if (otpPending) onResendOtp() else onRequestOtp(id, pw, pwConfirm)
                         }
                     }
                 },

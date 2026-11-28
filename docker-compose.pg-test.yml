@@ -1,0 +1,21 @@
+# Ephemeral isolated Postgres for local SCHEDULE_PG_URL tests only.
+# Never uses potato_server_v2. Host port 55432 avoids clashing with local 5432.
+name: mashlab-pg-test
+
+services:
+  postgres-test:
+    image: postgres:18-alpine
+    container_name: mashlab-postgres-delete-test
+    environment:
+      POSTGRES_USER: mashlab
+      POSTGRES_PASSWORD: mashlab
+      POSTGRES_DB: potato_meet_delete_test
+    ports:
+      - "127.0.0.1:55432:5432"
+    tmpfs:
+      - /var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mashlab -d potato_meet_delete_test"]
+      interval: 3s
+      timeout: 5s
+      retries: 10

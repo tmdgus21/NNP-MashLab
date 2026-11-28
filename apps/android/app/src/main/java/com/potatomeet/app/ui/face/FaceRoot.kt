@@ -30,7 +30,9 @@ import com.potatomeet.app.ui.face.screens.AiResultScreen
 import com.potatomeet.app.ui.face.screens.CreateRoomScreen
 import com.potatomeet.app.ui.face.screens.EditUnavailableScreen
 import com.potatomeet.app.ui.face.screens.FriendsScreen
+import com.potatomeet.app.core.InviteLinkParser
 import com.potatomeet.app.ui.face.screens.HomeScreen
+import com.potatomeet.app.ui.face.screens.InviteConfirmScreen
 import com.potatomeet.app.ui.face.screens.LoginScreen
 import com.potatomeet.app.ui.face.screens.MyPageScreen
 import com.potatomeet.app.ui.face.screens.ResultScreen
@@ -49,6 +51,8 @@ import com.potatomeet.app.ui.feature.meeting.MeetingViewModel
  */
 @Composable
 fun FaceRoot(
+    deepLinkInviteCode: String? = null,
+    onDeepLinkInviteConsumed: () -> Unit = {},
     authViewModel: AuthViewModel = hiltViewModel(),
     meetingViewModel: MeetingViewModel = hiltViewModel(),
 ) {
@@ -60,6 +64,7 @@ fun FaceRoot(
     val currentScreen = remember { mutableStateOf("login") }
     val loggedInNickname = remember { mutableStateOf("") }
     val loggedInId = remember { mutableStateOf("") }
+    val pendingInviteCode = remember { mutableStateOf<String?>(null) }
 
     val roomTitle = remember { mutableStateOf("") }
     val roomDesc = remember { mutableStateOf("") }
@@ -68,6 +73,21 @@ fun FaceRoot(
     val detailAppointment = remember { mutableStateOf<Appointment?>(null) }
 
     val appointmentsList = meetingState.meetings.map { it.toAppointment() }
+
+    fun goInviteConfirm(code: String) {
+        pendingInviteCode.value = code
+        if (authState.isLoggedIn && !authState.checkingSession) {
+            currentScreen.value = "invite_confirm"
+        } else if (!authState.checkingSession) {
+            currentScreen.value = "login"
+        }
+    }
+
+    LaunchedEffect(deepLinkInviteCode) {
+        val code = InviteLinkParser.normalize(deepLinkInviteCode) ?: return@LaunchedEffect
+        onDeepLinkInviteConsumed()
+        goInviteConfirm(code)
+    }
 
     LaunchedEffect(Unit) {
         authViewModel.events.collect { event ->
@@ -89,6 +109,7 @@ fun FaceRoot(
                             else -> event.route
                         }
                     if (route == "room_detail") {
+                        pendingInviteCode.value = null
                         meetingViewModel.uiState.value.activeMeeting
                             ?.toAppointment()
                             ?.let { detailAppointment.value = it }
@@ -108,12 +129,18 @@ fun FaceRoot(
                 authState.nickname?.takeIf { it.isNotBlank() }
                     ?: email.substringBefore('@').ifBlank { "사용자" }
             if (currentScreen.value == "login" || currentScreen.value == "signup") {
-                currentScreen.value = "home"
+                currentScreen.value =
+                    if (!pendingInviteCode.value.isNullOrBlank()) {
+                        "invite_confirm"
+                    } else {
+                        "home"
+                    }
             }
             meetingViewModel.refreshList()
             meetingViewModel.loadServerBounds()
         } else if (currentScreen.value !in setOf("login", "signup")) {
             meetingViewModel.clearActive()
+            // Keep pendingInviteCode so login/OTP can return to invite confirm.
             currentScreen.value = "login"
             loggedInNickname.value = ""
             loggedInId.value = ""
@@ -123,6 +150,10 @@ fun FaceRoot(
     BackHandler(enabled = currentScreen.value != "login") {
         when (currentScreen.value) {
             "signup" -> currentScreen.value = "login"
+            "invite_confirm" -> {
+                pendingInviteCode.value = null
+                currentScreen.value = if (authState.isLoggedIn) "home" else "login"
+            }
             "home" -> activity?.finish()
             "friends", "mypage" -> currentScreen.value = "home"
             "create_room" -> currentScreen.value = "home"
@@ -161,8 +192,8 @@ fun FaceRoot(
                 SignUpScreen(
                     isLoading = authState.registerLoading,
                     otpPending = authState.otpPurpose == "REGISTER" && authState.pendingChallenge != null,
-                    onRequestOtp = { nickname, email, password, passwordConfirm ->
-                        authViewModel.register(nickname, email, password, passwordConfirm)
+                    onRequestOtp = { email, password, passwordConfirm ->
+                        authViewModel.register(email, password, passwordConfirm)
                     },
                     onVerifyOtp = { code -> authViewModel.verifyOtp(code) },
                     onResendOtp = { authViewModel.resendOtp() },
@@ -171,6 +202,36 @@ fun FaceRoot(
                         currentScreen.value = "login"
                     },
                 )
+            }
+            currentScreen.value == "invite_confirm" -> {
+                if (!authState.isLoggedIn) {
+                    LaunchedEffect(Unit) { currentScreen.value = "login" }
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color(0xFFFF9800))
+                    }
+                } else {
+                    val code = pendingInviteCode.value.orEmpty()
+                    if (code.isBlank()) {
+                        LaunchedEffect(Unit) { currentScreen.value = "home" }
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = Color(0xFFFF9800))
+                        }
+                    } else {
+                        InviteConfirmScreen(
+                            inviteCode = code,
+                            isLoading = meetingState.mutating,
+                            errorMessage = meetingState.errorMessage,
+                            onJoinClick = {
+                                meetingViewModel.joinMeeting(code, fromInviteConfirm = true)
+                            },
+                            onCancelClick = {
+                                pendingInviteCode.value = null
+                                meetingViewModel.clearError()
+                                currentScreen.value = "home"
+                            },
+                        )
+                    }
+                }
             }
             currentScreen.value in
                 setOf(
@@ -290,15 +351,18 @@ fun FaceRoot(
                                         }
                                     }
                                     val col = meetingState.collection
-                                    val availableLines =
-                                        AvailabilityConverter.formatAvailableDisplay(
+                                    val unavailableLines =
+                                        AvailabilityConverter.formatUnavailableDisplay(
+                                            selectedIsoDates = merged.selectedDates,
                                             myAvailable = col?.myAvailable.orEmpty(),
                                             mySubmitted = col?.mySubmitted == true,
+                                            scopeStartsAt = col?.scopeStartsAt,
+                                            scopeEndsAt = col?.scopeEndsAt,
                                         )
                                     RoomDetailScreen(
                                         appointment = merged,
                                         mySubmitted = col?.mySubmitted == true,
-                                        myAvailableLines = availableLines,
+                                        myAvailableLines = unavailableLines,
                                         onBackClick = { currentScreen.value = "home" },
                                         onEditAvailabilityClick = {
                                             currentScreen.value = "edit_unavailable"
@@ -357,7 +421,7 @@ fun FaceRoot(
                                     val col = meetingState.collection ?: return@LaunchedEffect
                                     if (meetingId != null && col.id.isNotBlank()) {
                                         val restored =
-                                            AvailabilityConverter.toAvailableSlots(
+                                            AvailabilityConverter.toUnavailableSlots(
                                                 selectedIsoDates = dates,
                                                 myAvailable = col.myAvailable,
                                                 mySubmitted = col.mySubmitted,
@@ -393,28 +457,39 @@ fun FaceRoot(
                                             localUnavailable.add(slot)
                                         }
                                     },
+                                    onBulkSetSlots = { slots, markUnavailable ->
+                                        if (meetingState.mutating) return@EditUnavailableScreen
+                                        val selectable =
+                                            slots.filter {
+                                                AvailabilityConverter.isSlotInScope(
+                                                    it,
+                                                    scopeStartsAt,
+                                                    scopeEndsAt,
+                                                )
+                                            }
+                                        if (selectable.isEmpty()) return@EditUnavailableScreen
+                                        val next =
+                                            UnavailableBulkToggle.apply(
+                                                current = localUnavailable.toList(),
+                                                selectable = selectable,
+                                                markUnavailable = markUnavailable,
+                                            )
+                                        localUnavailable.clear()
+                                        localUnavailable.addAll(next)
+                                    },
                                     onBackClick = { currentScreen.value = "room_detail" },
                                     onSaveClick = {
                                         if (meetingState.mutating) return@EditUnavailableScreen
                                         val payload =
                                             AvailabilityConverter.toAvailablePayload(
                                                 selectedIsoDates = dates,
-                                                selectedAvailable = localUnavailable.toList(),
+                                                unavailable = localUnavailable.toList(),
                                                 scopeStartsAt = scopeStartsAt,
                                                 scopeEndsAt = scopeEndsAt,
                                             )
-                                        if (payload.ranges.isEmpty()) {
-                                            Toast
-                                                .makeText(
-                                                    context,
-                                                    "가능 시간을 1개 이상 선택해 주세요.",
-                                                    Toast.LENGTH_SHORT,
-                                                ).show()
-                                            return@EditUnavailableScreen
-                                        }
                                         meetingViewModel.submitAvailability(
                                             payload.ranges,
-                                            allUnavailable = false,
+                                            allUnavailable = payload.allUnavailable,
                                         )
                                     },
                                 )
@@ -508,10 +583,16 @@ fun FaceRoot(
                                     nickname =
                                         authState.nickname?.takeIf { it.isNotBlank() }
                                             ?: loggedInNickname.value.ifBlank { "사용자" },
-                                    userId = loggedInId.value.ifBlank { "user@example.com" },
+                                    userId =
+                                        authState.email?.takeIf { it.isNotBlank() }
+                                            ?: loggedInId.value.ifBlank { "user@example.com" },
+                                    deletingAccount = authState.deletingAccount,
                                     onLogoutClick = { authViewModel.logout() },
                                     onNicknameChanged = { newNick ->
                                         authViewModel.updateNickname(newNick)
+                                    },
+                                    onDeleteAccountClick = { password ->
+                                        authViewModel.deleteAccount(password)
                                     },
                                     onBackClick = { currentScreen.value = "home" },
                                 )

@@ -2,6 +2,7 @@ package com.potatomeet.app.ui.feature.auth
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.potatomeet.app.domain.usecase.DeleteAccountUseCase
 import com.potatomeet.app.domain.usecase.LogoutUseCase
 import com.potatomeet.app.domain.usecase.ResendLoginOtpUseCase
 import com.potatomeet.app.domain.usecase.ResendRegisterOtpUseCase
@@ -39,6 +40,7 @@ class AuthViewModel
         private val restoreSessionUseCase: RestoreSessionUseCase,
         private val updateNicknameUseCase: UpdateNicknameUseCase,
         private val logoutUseCase: LogoutUseCase,
+        private val deleteAccountUseCase: DeleteAccountUseCase,
     ) : ViewModel() {
         private val _uiState = MutableStateFlow(AuthUiState())
         val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
@@ -107,14 +109,13 @@ class AuthViewModel
         }
 
         fun register(
-            nickname: String,
             email: String,
             password: String,
             passwordConfirm: String,
         ) {
             viewModelScope.launch {
                 _uiState.update { it.copy(registerLoading = true, errorMessage = null) }
-                startRegisterUseCase(nickname, email, password, passwordConfirm)
+                startRegisterUseCase(email, password, passwordConfirm)
                     .onSuccess { challenge ->
                         _uiState.update {
                             it.copy(
@@ -122,7 +123,6 @@ class AuthViewModel
                                 otpPurpose = "REGISTER",
                                 pendingChallenge = challenge.challenge,
                                 pendingEmail = email.trim(),
-                                pendingNickname = nickname.trim(),
                                 resendAfterSec = challenge.resendAfter,
                             )
                         }
@@ -152,7 +152,7 @@ class AuthViewModel
                     if (purpose == "LOGIN") {
                         verifyLoginUseCase(challenge, code, state.pendingEmail.orEmpty())
                     } else {
-                        verifyRegisterUseCase(challenge, code, state.pendingNickname.orEmpty())
+                        verifyRegisterUseCase(challenge, code)
                     }
                 result
                     .onSuccess { session ->
@@ -223,7 +223,6 @@ class AuthViewModel
                     otpPurpose = null,
                     pendingChallenge = null,
                     pendingEmail = null,
-                    pendingNickname = null,
                 )
             }
         }
@@ -247,6 +246,24 @@ class AuthViewModel
                     }.onFailure { e ->
                         val msg = e.message ?: "닉네임 변경에 실패했습니다."
                         _uiState.update { it.copy(errorMessage = msg) }
+                        _events.tryEmit(AuthEvent.Toast(msg))
+                    }
+            }
+        }
+
+        fun deleteAccount(password: String) {
+            if (_uiState.value.deletingAccount) return
+            viewModelScope.launch {
+                _uiState.update { it.copy(deletingAccount = true, errorMessage = null) }
+                deleteAccountUseCase(password)
+                    .onSuccess {
+                        _uiState.update { AuthUiState(checkingSession = false, isLoggedIn = false) }
+                        _events.tryEmit(AuthEvent.Toast("계정이 삭제되었습니다."))
+                    }.onFailure { e ->
+                        val msg = e.message ?: "계정 삭제에 실패했습니다."
+                        _uiState.update {
+                            it.copy(deletingAccount = false, errorMessage = msg)
+                        }
                         _events.tryEmit(AuthEvent.Toast(msg))
                     }
             }

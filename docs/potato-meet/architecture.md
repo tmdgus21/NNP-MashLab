@@ -73,7 +73,8 @@ server-api/
 | `GET /v1/meetings/{id}/events` | **실시간 이벤트 스트림 (SSE)** | 멤버 | R3~R7 | P4~P8 |
 | `PUT /v1/devices/me` · `DELETE /v1/devices/me` | 푸시 토큰 등록·해제 `{token}` | 로그인 | R9 | – |
 | `GET` · `PUT /v1/notification-settings` | 알림 on/off `{start, remind, extend}` | 로그인 | R9 | P9 |
-| `GET /join?code=` · `/.well-known/assetlinks.json` | **기존 그대로** (패키지·서명 갱신 필요) | – | R3 | 초대 |
+| `DELETE /v1/auth/me` | 계정 하드 삭제 `{password}`. Bearer 본인만. 멤버십 익명화(`탈퇴한 사용자`+LEFT+`account_id` NULL), 세션·챌린지·계정 PII 삭제. 모임·타인 유지. 비활성화(DISABLED) 아님 | 로그인 | 심사 | 마이페이지 |
+| `GET /join?code=` · `/.well-known/assetlinks.json` | Potato Meet `/join` HTML + `assetlinks` 예시(debug SHA). 운영 assetlinks·릴리스 SHA는 별도 배포 | – | R3 | 초대 |
 
 ## 부하 테스트 (Q36) — JMeter
 - 모임 인원 상한 `MAX_MEMBERS`는 **부하 테스트 결과로 정하는 설정값**(환경 변수). 결정 전에는 코드에 숫자를 박지 않는다

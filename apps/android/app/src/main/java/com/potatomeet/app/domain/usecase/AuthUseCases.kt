@@ -92,14 +92,11 @@ class StartRegisterUseCase
         private val authRepository: AuthRepository,
     ) {
         suspend operator fun invoke(
-            nickname: String,
             email: String,
             password: String,
             passwordConfirm: String,
         ): Result<AuthChallenge> {
-            val nick = nickname.trim()
             val trimmed = email.trim()
-            if (nick.isBlank()) return Result.failure(IllegalStateException("닉네임을 입력해 주세요."))
             if (trimmed.isBlank()) return Result.failure(IllegalStateException("이메일을 입력해 주세요."))
             if ('@' !in trimmed) return Result.failure(IllegalStateException("유효한 이메일을 입력해 주세요."))
             if (password.isBlank()) return Result.failure(IllegalStateException("비밀번호를 입력해 주세요."))
@@ -124,7 +121,6 @@ class VerifyRegisterUseCase
         suspend operator fun invoke(
             challenge: String,
             code: String,
-            @Suppress("UNUSED_PARAMETER") nickname: String = "",
         ): Result<AuthSession> {
             val trimmedCode = code.trim()
             if (trimmedCode.length != 6 || trimmedCode.any { !it.isDigit() }) {
@@ -213,5 +209,21 @@ class LogoutUseCase
     ) {
         suspend operator fun invoke() {
             authRepository.logout()
+        }
+    }
+
+class DeleteAccountUseCase
+    @Inject
+    constructor(
+        private val authRepository: AuthRepository,
+    ) {
+        suspend operator fun invoke(password: String): Result<Unit> {
+            if (password.isBlank()) {
+                return Result.failure(IllegalStateException("비밀번호를 입력해 주세요."))
+            }
+            return runCatching { authRepository.deleteAccount(password) }.fold(
+                onSuccess = { Result.success(Unit) },
+                onFailure = { Result.failure(IllegalStateException(ApiError.messageOf(it))) },
+            )
         }
     }

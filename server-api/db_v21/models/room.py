@@ -89,8 +89,9 @@ class RoomMember(Base):
     room_id: Mapped[str] = mapped_column(
         ForeignKey("rooms.id", ondelete="CASCADE"), index=True
     )
-    account_id: Mapped[str] = mapped_column(
-        ForeignKey("accounts.id", ondelete="RESTRICT"), index=True
+    # Nullable so account deletion can anonymize membership (ON DELETE SET NULL).
+    account_id: Mapped[str | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True, index=True
     )
     nickname: Mapped[str] = mapped_column(String(30))
     room_role: Mapped[str] = mapped_column(String(20), default="MEMBER")
